@@ -87,18 +87,51 @@ The app is mounted via volume and will auto-reload on changes.
 
 ---
 
+
+
 ## 🧪 Local Development
 
-To develop locally without Docker:
+There are two ways to develop locally without docker:
 
-1. Create and activate a virtual environment.
-2. Install dependencies from `requirements.txt`.
-3. Create a `.env` from `.env.template`.
-4. Run using Uvicorn:
+### 🔹 With Poetry (recommended)
 
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
+1. Install Poetry:
+   ```bash
+   curl -sSL https://install.python-poetry.org | python3 -
+   ```
+
+2. Install dependencies:
+   ```bash
+   poetry install
+   ```
+
+3. Enter Poetry environment:
+   ```bash
+   poetry shell
+   ```
+
+4. Run the server:
+   ```bash
+   poetry run uvicorn main:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+### 🔹 Without Poetry (classic pip)
+
+1. Create and activate a virtual environment:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   ```
+
+2. Install dependencies from requirements.txt:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. Run the server:
+   ```bash
+   uvicorn main:app --reload --host 0.0.0.0 --port 8000
+   ```
 
 ---
 
@@ -136,6 +169,8 @@ http://localhost:8080/openapi.json
 ├── docker-compose.yml
 ├── Dockerfile
 ├── requirements.txt
+├── poetry.lock
+├── pyproject.toml
 └── README.md
 ```
 
