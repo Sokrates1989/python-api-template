@@ -9,20 +9,22 @@ A reusable, Dockerized FastAPI template for building Python-based APIs with envi
 ## Table of Contents
 
 1. [📖 Overview](#-overview)
-
 2. [🧑‍💻 Usage](#-usage)
-
 3. [🛠️ Configuration](#-configuration)
-
+   - [📁 1. Clone the Project](#-1-clone-the-project)
+   - [⚙️ 2. Create the .env File](#-2-create-the-env-file)
+   - [🔐 3. Retrieve Secrets from 1Password](#-3-retrieve-secrets-from-1password)
+   - [🧩 4. Environment Variables Overview](#-4-environment-variables-overview)
+   - [📝 Example .env](#-example-env)
+   - [📦 Note](#-note)
 4. [📦 Docker Deployment](#-docker-deployment)
-
 5. [🧪 Local Development](#-local-development)
-
+   - [🔹 With Poetry (recommended)](#-with-poetry-recommended)
+   - [🔹 Without Poetry (classic pip)](#-without-poetry-classic-pip)
 6. [🔍 API Testing](#-api-testing)
-
 7. [🔧 Project Structure](#-project-structure)
-
 8. [🚀 Summary](#-summary)
+
 
 ---
 
@@ -40,39 +42,80 @@ This project is a lightweight API starter built using:
 
 To run the application locally with Docker Compose:
 
-```bash
-docker-compose up --build
-```
+[📦 Docker Deployment](#-docker-deployment)
 
 Or without Docker:
 
-```bash
-# Activate virtualenv and install dependencies
-pip install -r requirements.txt
-
-# Run the server
-uvicorn main:app --host 0.0.0.0 --port 8000
-```
+[🧪 Local Development](#-local-development)
 
 ---
 
 ## 🛠️ Configuration
 
-Configuration is managed through environment variables. Copy the template and fill in your values:
+Follow these steps to configure your local environment:
+
+---
+
+### 📁 1. Clone the Project
+
+```bash
+cd path/to/appropriate/dir # Choose a dir where you want to save all your apis or python code repos
+git clone https://gitlab.com/pmichiels/python-api-template
+cd python-api-template
+```
+
+---
+
+### ⚙️ 2. Create the `.env` File
+
+Copy the example environment template and edit your personal values:
 
 ```bash
 cp .env.template .env
 ```
 
-Environment variables include:
+---
 
-- `PORT`
-- `NEO4J_URL`
-- `DB_USER`
-- `DB_PASSWORD`
+### 🔐 3. Retrieve Secrets from 1Password
 
-All values are loaded automatically using `pydantic-settings`.
+All required secrets are stored securely in 1Password.
 
+- Vault: **Fontanherzen**
+- Search for entries like:
+  - `NEO4J_URL`
+  - `DB_USER`
+  - `DB_PASSWORD`
+  - (Optional) `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, etc.
+
+---
+
+### 🧩 4. Environment Variables Overview
+
+These variables are automatically loaded using `pydantic-settings`:
+
+- `PORT`: Port number the API runs on (e.g. `8000`)
+- `NEO4J_URL`: Neo4j connection URL
+- `DB_USER`: Neo4j database user
+- `DB_PASSWORD`: Neo4j password
+- (Optional) `AWS_` variables or others based on use case
+
+---
+
+### 📝 Example `.env`
+
+```dotenv
+PORT=8000
+NEO4J_URL=bolt://localhost:7687
+DB_USER=neo4j
+DB_PASSWORD=your-secure-password
+```
+
+---
+
+### 📦 Note
+
+The `.env` file is **local only** and should **never be committed** to version control.  
+Make sure it is included in `.gitignore`.
 ---
 
 ## 📦 Docker Deployment
