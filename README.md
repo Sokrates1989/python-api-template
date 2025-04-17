@@ -130,7 +130,7 @@ http://localhost:8080/openapi.json
 │   ├── test.py
 │   └── settings.py
 ├── backend/
-│   ├── Neo4jHandler.py
+│   └── Neo4jHandler.py
 ├── .env.template
 ├── .gitignore
 ├── docker-compose.yml
