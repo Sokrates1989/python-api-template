@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     AWS_REGION: str = ""
     AWS_ACCESS_KEY_ID: str = ""
     AWS_SECRET_ACCESS_KEY: str = ""
+    IMAGE_TAG: str = "local non docker"
 
     class Config:
         env_file = ".env"

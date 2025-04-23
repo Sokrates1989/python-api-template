@@ -35,3 +35,8 @@ def read_root():
 @app.get("/health")
 def check_health():
     return {"status": "OK"}
+
+# Get Image version.
+@app.get("/version")
+def get_version():
+    return {"IMAGE_TAG": f"{settings.IMAGE_TAG}"}

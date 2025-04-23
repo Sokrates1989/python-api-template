@@ -1,6 +1,10 @@
 # Use the official Python base image
 FROM python:3.12-slim
 
+# Bake Image tag into the image.
+ARG IMAGE_TAG=local_docker
+ENV IMAGE_TAG=$IMAGE_TAG
+
 # Set the working directory in the container
 WORKDIR /app
 
