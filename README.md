@@ -1,202 +1,210 @@
-# 🚀 FastAPI Python API Template
+# 🚀 FastAPI Redis API Template
 
-## 📜 Description
-
-A reusable, Dockerized FastAPI template for building Python-based APIs with environment-based configuration and optional AWS/Neo4j integration.
+A production-grade, Dockerized FastAPI template project using environment-based configuration, Redis cache support, and optional integrations like Neo4j or AWS – with full support for both **Docker Compose** and **Poetry**-based development.
 
 ---
 
-## Table of Contents
+## 📚 Table of Contents
 
-1. [📖 Overview](#-overview)
-2. [🧑‍💻 Usage](#-usage)
-3. [🛠️ Configuration](#-configuration)
-   - [📁 1. Clone the Project](#-1-clone-the-project)
-   - [⚙️ 2. Create the .env File](#-2-create-the-env-file)
-   - [🔐 3. Retrieve Secrets from 1Password](#-3-retrieve-secrets-from-1password)
-   - [🧩 4. Environment Variables Overview](#-4-environment-variables-overview)
-   - [📝 Example .env](#-example-env)
-   - [📦 Note](#-note)
-4. [📦 Docker Deployment](#-docker-deployment)
-5. [🧪 Local Development](#-local-development)
-   - [🔹 With Poetry (recommended)](#-with-poetry-recommended)
-   - [🔹 Without Poetry (classic pip)](#-without-poetry-classic-pip)
-6. [🔍 API Testing](#-api-testing)
-7. [🔧 Project Structure](#-project-structure)
-8. [🚀 Summary](#-summary)
-
+1. [📖 Overview](#-overview)  
+2. [🧑‍💻 Usage](#-usage)  
+3. [🛠️ Configuration](#-configuration)  
+   - [📁 1. Clone the Project](#-1-clone-the-project)  
+   - [⚙️ 2. Setup the .env File](#-2-setup-the-env-file)  
+   - [🔐 3. Secrets from 1Password](#-3-secrets-from-1password)  
+   - [🧩 4. Environment Variable Reference](#-4-environment-variable-reference)  
+   - [📝 Example .env File](#-example-env-file)  
+4. [📦 Docker Deployment](#-docker-deployment)  
+5. [🧪 Local Development](#-local-development)  
+   - [🔹 With Poetry (recommended)](#-with-poetry-recommended)  
+   - [🔹 Without Poetry (classic pip)](#-without-poetry-classic-pip)  
+6. [🧪 API Testing](#-api-testing)  
+7. [🗂️ Project Structure](#-project-structure)  
+8. [🚀 Summary](#-summary)  
 
 ---
 
 ## 📖 Overview
 
-This project is a lightweight API starter built using:
-- **FastAPI** for high-performance async APIs
-- **Docker & Docker Compose** for containerization
-- **`.env` config loading** using `pydantic-settings`
-- Optional **Neo4j**, **AWS Cognito**, or other services
+This template is a clean and extensible Python FastAPI project that includes:
+
+- ✅ FastAPI framework with automatic docs
+- ✅ Redis integration as a caching layer
+- ✅ Docker & Docker Compose for reproducible environments
+- ✅ Support for `.env`-based config via `pydantic-settings`
+- ✅ Optional integrations for Neo4j and AWS
+- ✅ Fully Poetry-compatible for Python dependency management
 
 ---
 
 ## 🧑‍💻 Usage
 
-To run the application locally with Docker Compose:
+You can start the project using either:
 
-[📦 Docker Deployment](#-docker-deployment)
-
-Or without Docker:
-
-[🧪 Local Development](#-local-development)
+- Docker Compose  
+- Local Python environment using Poetry (or pip)
 
 ---
 
 ## 🛠️ Configuration
 
-Follow these steps to configure your local environment:
-
----
-
 ### 📁 1. Clone the Project
 
 ```bash
-cd path/to/appropriate/dir # Choose a dir where you want to save all your apis or python code repos
-git clone https://gitlab.com/pmichiels/python-api-template
-cd python-api-template
+git clone https://gitlab.com/speedie3/fastapi-redis-api-test
+cd fastapi-redis-api-test
 ```
 
 ---
 
-### ⚙️ 2. Create the `.env` File
+### ⚙️ 2. Setup the `.env` File
 
-Copy the example environment template and edit your personal values:
+Start by copying the template:
 
 ```bash
 cp .env.template .env
 ```
 
----
-
-### 🔐 3. Retrieve Secrets from 1Password
-
-All required secrets are stored securely in 1Password.
-
-- Vault: **Fontanherzen**
-- Search for entries like:
-  - `NEO4J_URL`
-  - `DB_USER`
-  - `DB_PASSWORD`
-  - (Optional) `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, etc.
+Then fill in your actual values (see below).
 
 ---
 
-### 🧩 4. Environment Variables Overview
+### 🔐 3. Secrets from 1Password
 
-These variables are automatically loaded using `pydantic-settings`:
+Secrets like DB passwords or tokens are stored in the **1Password Vault `Fontanherzen`**:
 
-- `PORT`: Port number the API runs on (e.g. `8000`)
-- `NEO4J_URL`: Neo4j connection URL
-- `DB_USER`: Neo4j database user
-- `DB_PASSWORD`: Neo4j password
-- (Optional) `AWS_` variables or others based on use case
+- `NEO4J_URL`
+- `DB_USER`
+- `DB_PASSWORD`
+- (optional) `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, etc.
 
 ---
 
-### 📝 Example `.env`
+### 🧩 4. Environment Variable Reference
+
+| Variable               | Purpose                                |
+|------------------------|----------------------------------------|
+| `PORT`                | Port to expose API on (default: `8000`) |
+| `REDIS_URL`           | URL to connect to Redis instance        |
+| `NEO4J_URL`           | (optional) Neo4j DB connection URL      |
+| `DB_USER`             | (optional) DB user                      |
+| `DB_PASSWORD`         | (optional) DB password                  |
+
+---
+
+### 📝 Example `.env` File
 
 ```dotenv
 PORT=8000
+REDIS_URL=redis://redis:6379
 NEO4J_URL=bolt://localhost:7687
 DB_USER=neo4j
-DB_PASSWORD=your-secure-password
+DB_PASSWORD=secret-password
 ```
 
 ---
 
-### 📦 Note
-
-The `.env` file is **local only** and should **never be committed** to version control.  
-Make sure it is included in `.gitignore`.
----
-
 ## 📦 Docker Deployment
 
-Build and run the containerized API with Docker Compose:
+Run the app and Redis DB together:
 
 ```bash
 docker-compose up --build
 ```
 
-The app is mounted via volume and will auto-reload on changes.
-
+**Use this value in your `.env`:**
+```
+dotenv
+REDIS_URL=redis://redis:6379
+```
 ---
 
+You can then access the app at [http://localhost:8000/docs](http://localhost:8000/docs)
 
+---
 
 ## 🧪 Local Development
 
-There are two ways to develop locally without docker:
-
 ### 🔹 With Poetry (recommended)
 
-1. Install Poetry:
-   ```bash
-   curl -sSL https://install.python-poetry.org | python3 -
-   ```
+1. Install Poetry (if not already installed):
 
-2. Install dependencies:
-   ```bash
-   poetry install
-   ```
+```bash
+curl -sSL https://install.python-poetry.org | python3 -
+```
 
-3. Enter Poetry environment:
-   ```bash
-   poetry shell
-   ```
+2. Start Redis manually (in another terminal):
+```
+bash
+docker run --rm -p 6379:6379 redis:6.0
+```
 
-4. Run the server:
-   ```bash
-   poetry run uvicorn main:app --reload --host 0.0.0.0 --port 8000
-   ```
+3. Use the following `.env` value:
+```
+dotenv
+REDIS_URL=redis://localhost:6379
+```
+
+4. Generate new lockfile:
+
+```bash
+poetry lock
+```
+
+5. Install dependencies:
+
+```bash
+poetry install
+```
+
+6. Start the API server:
+
+```bash
+poetry run uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+---
 
 ### 🔹 Without Poetry (classic pip)
 
-1. Create and activate a virtual environment:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   ```
+1. Create a virtual environment:
 
-2. Install dependencies from requirements.txt:
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+2. Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
 
 3. Run the server:
-   ```bash
-   uvicorn main:app --reload --host 0.0.0.0 --port 8000
-   ```
+
+```bash
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
 
 ---
 
-## 🔍 API Testing
+## 🧪 API Testing
 
-Once your server is up and running (via Docker or Uvicorn), open your browser and visit:
+After the app is up:
 
-```bash
-http://localhost:8080/docs
-```
-This will load the Swagger UI auto-generated by FastAPI, where you can test and explore all your endpoints interactively.
+- Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
+- OpenAPI JSON: [http://localhost:8000/openapi.json](http://localhost:8000/openapi.json)
 
-You can also view the OpenAPI spec directly:
-
-```bash
-http://localhost:8080/openapi.json
-```
-
+Test routes:
+- `GET /` – Increments Redis key `visits`
+- `GET /cache/{key}` – Get cache value
+- `POST /cache/{key}` – Set cache value
+- `GET /health` – Health check
+- `GET /version` – Shows current image tag
 
 ---
 
-## 🔧 Project Structure
+## 🗂️ Project Structure
 
 ```bash
 .
@@ -208,12 +216,11 @@ http://localhost:8080/openapi.json
 ├── backend/
 │   └── Neo4jHandler.py
 ├── .env.template
-├── .gitignore
 ├── docker-compose.yml
 ├── Dockerfile
 ├── requirements.txt
-├── poetry.lock
 ├── pyproject.toml
+├── poetry.lock
 └── README.md
 ```
 
@@ -221,12 +228,8 @@ http://localhost:8080/openapi.json
 
 ## 🚀 Summary
 
-✅ **Ready-to-use FastAPI Docker Template**
-
-✅ **Environment-based config support**
-
-✅ **Dockerized and local run options**
-
-✅ **Supports AWS/Neo4j if needed**
-
-✅ **Flexible enough for microservice APIs**
+✅ **FastAPI + Redis integrated template**  
+✅ **Supports Docker, Poetry & pip workflows**  
+✅ **Secure config with `.env` and 1Password usage**  
+✅ **Extensible architecture for real-world use cases**  
+✅ **Interactive docs out of the box**

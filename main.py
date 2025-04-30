@@ -1,12 +1,16 @@
 # Entry point for the FastAPI app
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 import uvicorn
+import redis
 from api.settings import settings
 from api.test import router as test_router
 
 app = FastAPI()
 app.include_router(test_router)
 
+
+print(f"🔧 Connecting to Redis at: {settings.REDIS_URL}")
+r = redis.Redis.from_url(settings.REDIS_URL)
 
 # Middleware to log request headers
 @app.middleware("http")
@@ -26,10 +30,26 @@ async def log_request_headers(request: Request, call_next):
     response = await call_next(request)
     return response
 
-# Get Root endpoint.
-@app.get('/')
+
+# Redis test Endpoints.
+@app.get("/")
 def read_root():
-    return {'message': 'Hello from FastAPI Template!'}
+    visits = r.incr("visits")
+    return {"message": f"Hello from FastAPI! This page has been visited {visits} times."}
+
+@app.get("/cache/{key}")
+def get_cache(key: str):
+    value = r.get(key)
+    if value is None:
+        raise HTTPException(status_code=404, detail="Key not found")
+    return {"key": key, "value": value.decode()}
+
+@app.post("/cache/{key}")
+def set_cache(key: str, value: str):
+    r.set(key, value)
+    return {"message": f"Stored key '{key}' with value '{value}'"}
+
+
 
 # Health check endpoint.
 @app.get("/health")
