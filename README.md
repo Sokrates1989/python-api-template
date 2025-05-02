@@ -2,8 +2,6 @@
 
 A production-grade, Dockerized FastAPI template project using environment-based configuration, Redis cache support, and optional integrations like Neo4j or AWS – with full support for both **Docker Compose** and **Poetry**-based development.
 
----
-
 ## 📚 Table of Contents
 
 1. [📖 Overview](#-overview)  
@@ -20,11 +18,13 @@ A production-grade, Dockerized FastAPI template project using environment-based 
    - [🔹 Without Poetry (classic pip)](#-without-poetry-classic-pip)  
 6. [🧪 API Testing](#-api-testing)  
 7. [🗂️ Project Structure](#-project-structure)  
-8. [🚀 Summary](#-summary)  
+8. [📤 Build & Publish Docker Image](#-build--publish-docker-image)  
+9. [🚀 Summary](#-summary)
 
----
+<br>
+<br>
 
-## 📖 Overview
+# 📖 Overview
 
 This template is a clean and extensible Python FastAPI project that includes:
 
@@ -35,29 +35,32 @@ This template is a clean and extensible Python FastAPI project that includes:
 - ✅ Optional integrations for Neo4j and AWS
 - ✅ Fully Poetry-compatible for Python dependency management
 
----
+<br>
+<br>
 
-## 🧑‍💻 Usage
+# 🧑‍💻 Usage
 
 You can start the project using either:
 
 - Docker Compose  
 - Local Python environment using Poetry (or pip)
 
----
+<br>
+<br>
 
-## 🛠️ Configuration
+# 🛠️ Configuration
 
-### 📁 1. Clone the Project
+## 📁 1. Clone the Project
 
 ```bash
 git clone https://gitlab.com/speedie3/fastapi-redis-api-test
 cd fastapi-redis-api-test
 ```
 
----
+<br>
+<br>
 
-### ⚙️ 2. Setup the `.env` File
+## ⚙️ 2. Setup the `.env` File
 
 Start by copying the template:
 
@@ -67,9 +70,10 @@ cp .env.template .env
 
 Then fill in your actual values (see below).
 
----
+<br>
+<br>
 
-### 🔐 3. Secrets from 1Password
+## 🔐 3. Secrets from 1Password
 
 Secrets like DB passwords or tokens are stored in the **1Password Vault `Fontanherzen`**:
 
@@ -78,9 +82,10 @@ Secrets like DB passwords or tokens are stored in the **1Password Vault `Fontanh
 - `DB_PASSWORD`
 - (optional) `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, etc.
 
----
+<br>
+<br>
 
-### 🧩 4. Environment Variable Reference
+## 🧩 4. Environment Variable Reference
 
 | Variable               | Purpose                                |
 |------------------------|----------------------------------------|
@@ -90,9 +95,10 @@ Secrets like DB passwords or tokens are stored in the **1Password Vault `Fontanh
 | `DB_USER`             | (optional) DB user                      |
 | `DB_PASSWORD`         | (optional) DB password                  |
 
----
+<br>
+<br>
 
-### 📝 Example `.env` File
+## 📝 Example `.env` File
 
 ```dotenv
 PORT=8000
@@ -102,9 +108,10 @@ DB_USER=neo4j
 DB_PASSWORD=secret-password
 ```
 
----
+<br>
+<br>
 
-## 📦 Docker Deployment
+# 📦 Docker Deployment
 
 Run the app and Redis DB together:
 
@@ -117,15 +124,15 @@ docker-compose up --build
 dotenv
 REDIS_URL=redis://redis:6379
 ```
----
 
-You can then access the app at [http://localhost:8000/docs](http://localhost:8000/docs)
+you can then access the app at [http://localhost:8000/docs](http://localhost:8000/docs)
 
----
+<br>
+<br>
 
-## 🧪 Local Development
+# 🧪 Local Development
 
-### 🔹 With Poetry (recommended)
+## 🔹 With Poetry (recommended)
 
 1. Install Poetry (if not already installed):
 
@@ -163,9 +170,10 @@ poetry install
 poetry run uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
----
+<br>
+<br>
 
-### 🔹 Without Poetry (classic pip)
+## 🔹 Without Poetry (classic pip)
 
 1. Create a virtual environment:
 
@@ -186,9 +194,10 @@ pip install -r requirements.txt
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
----
+<br>
+<br>
 
-## 🧪 API Testing
+# 🧪 API Testing
 
 After the app is up:
 
@@ -202,9 +211,10 @@ Test routes:
 - `GET /health` – Health check
 - `GET /version` – Shows current image tag
 
----
+<br>
+<br>
 
-## 🗂️ Project Structure
+# 🗂️ Project Structure
 
 ```bash
 .
@@ -227,9 +237,127 @@ Test routes:
 └── README.md
 ```
 
----
+<br>
+<br>
 
-## 🚀 Summary
+
+# 📤 Build & Publish Docker Image
+
+This section explains how to build and publish a **Linux/amd64-compatible Docker image** to GitLab's container registry for use in Azure Container Apps (ACA).
+
+## ⚡ TL;DR
+
+If everything is configured correctly, you can just run:
+
+```bash
+export IMAGE_TAG=0.1.0
+docker login registry.gitlab.com -u gitlab+deploy-token-XXXXXX -p YOUR_DEPLOY_TOKEN
+docker buildx build --platform linux/amd64 --build-arg IMAGE_TAG=$IMAGE_TAG -t registry.gitlab.com/speedie3/fastapi-redis-api-test:$IMAGE_TAG --push .
+```
+
+
+<br>
+
+## 📋 Notes
+
+- You **must** use `docker buildx` to ensure compatibility with Azure's Linux-based runtime.
+- Your **IMAGE_TAG** should match the version you want to deploy (e.g. `0.1.0`).
+- The final image will be pushed to:
+
+```yaml
+registry.gitlab.com/speedie3/fastapi-redis-api-test:<IMAGE_TAG>
+```
+
+<br>
+
+
+## ✅ Precheck (Optional but Recommended)
+
+Before building or pushing your image, verify the following:
+
+### 🧱 Is `buildx` available?
+
+```bash
+docker buildx version
+```
+
+### 🔐 Test registry access
+
+Get Deploy token username and pw from [1Password](https://engaigegmbh.1password.com/)
+
+```bash
+docker login registry.gitlab.com -u gitlab+deploy-token-123456 -p YOUR_GENERATED_TOKEN
+```
+
+### 🔑 How to Create a GitLab Deploy Token 
+
+To publish Docker images to GitLab’s Container Registry, you need a **Deploy Token** with write access.
+
+Follow these steps:
+
+1. Go to your GitLab project  
+   ➤ [GitLab Repo Settings → Repository](https://gitlab.com/pmichiels/fastapi-redis-api-test/-/settings/repository#js-deploy-tokens)
+
+2. Scroll to **Deploy Tokens**.
+
+3. Fill in:
+   - **Name**: e.g. `Docker Push`
+   - **Username**: Auto-generated
+   - **Scopes**:
+     - ✅ **Read Registry**
+     - ✅ **Write Registry**
+
+4. Click **Create Deploy Token**.
+
+5. Copy the generated:
+   - `username` (e.g. `gitlab+deploy-token-123456`)
+   - `password` (will be shown **once**)
+
+6. Use them in your Docker login step:
+
+```bash
+docker login registry.gitlab.com -u gitlab+deploy-token-123456 -p YOUR_GENERATED_TOKEN
+```
+
+
+<br>
+<br>
+
+## 🔐 0. Docker Login (required once)
+
+Login using your **GitLab Deploy Token** (must have write access):
+
+```bash
+docker login registry.gitlab.com -u gitlab+deploy-token-XXXXXX -p YOUR_DEPLOY_TOKEN
+```
+
+<br>
+
+## 🏗️ 1. Set the desired image tag
+
+Set your version string (only the tag, not the full registry path):
+
+```bash
+export IMAGE_TAG=0.1.0
+```
+
+<br>
+
+### 🧱 2. Build and push the image (Linux/amd64)
+
+Use `docker buildx` to build for the correct platform and push directly to the registry:
+
+;;;bash
+docker buildx build --platform linux/amd64 --build-arg IMAGE_TAG=$IMAGE_TAG -t registry.gitlab.com/speedie3/fastapi-redis-api-test:$IMAGE_TAG --push .
+;;;
+
+> 📝 `--push` is required because `buildx` builds in a separate context and won't store the image locally unless you use `--load`.
+
+
+<br>
+<br>
+
+# 🚀 Summary
 
 ✅ **FastAPI + Redis integrated template**  
 ✅ **Supports Docker, Poetry & pip workflows**  
