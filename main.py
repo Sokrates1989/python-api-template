@@ -3,10 +3,11 @@ from fastapi import FastAPI, Request, HTTPException
 import uvicorn
 import redis
 from api.settings import settings
-from api.routes import test
+from api.routes import test, files
 
 app = FastAPI()
 app.include_router(test.router)
+app.include_router(files.router)
 
 
 print(f"🔧 Connecting to Redis at: {settings.REDIS_URL}")
