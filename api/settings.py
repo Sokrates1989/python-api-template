@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     DB_PASSWORD: str = ""
     IMAGE_TAG: str = "local non docker"
     REDIS_URL: str = "redis://localhost:6379"
+    IMAGE_TAG: str = "local non docker"
+    DEBUG: bool = False
 
     class Config:
         env_file = ".env"
