@@ -1,12 +1,31 @@
+# Environments
 .env
+.venv/
+venv/
+
+# IDE / Editor specific
+.vscode/
+.idea/
+
+# Setup marker
+.setup-complete
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 *.sqlite3
 *.db
+
+# Build artifacts
 dist/
 build/
 *.egg-info/
+
+# OS specific
 .DS_Store
+
+# Dependency Management
 python-dependency-management/config.env
+"pyproject 2.toml"

@@ -49,6 +49,10 @@ else
     echo "📝 Bitte öffne die .env Datei und passe die Werte an:"
     echo "   nano .env"
     echo ""
+    echo "🔐 Alternativ kannst du die .env auch für ein erfolgreiches Test-Setup kopieren von:"
+    echo "   https://engaigegmbh.1password.com/app#/owzedt7yssm3ztfznims4metkm/AllItems/owzedt7yssm3ztfznims4metkm4dkrqgkllfr5f7ohu62orikvii"
+    echo "   Falls diese Datei nicht freigegeben ist, bitte den Administrator um Freigabe zum Tresor: FASTAPI-REDIS-API-TEST"
+    echo ""
     read -p "Drücke Enter, wenn du die .env Datei angepasst hast ..."
   else
     echo "❌ .env.template nicht gefunden! Bitte stelle sicher, dass die Vorlage existiert."
@@ -60,42 +64,64 @@ fi
 PORT=$(grep "^PORT=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo "8000")
 
 echo ""
-echo "🐳 Starte Backend mit Docker Compose..."
-echo "Backend wird verfügbar sein auf: http://localhost:$PORT"
-echo ""
 
-# Auswahlmenü vor dem Start
-echo "Wähle eine Option:"
-echo "1) Backend direkt starten (docker compose up)"
-echo "2) Zuerst Dependency Management öffnen"
-echo "3) Beides - Dependency Management und dann Backend starten"
-echo ""
-read -p "Deine Wahl (1-3): " choice
+# Prüfen, ob dies der erste Setup-Lauf ist
+if [ ! -f ".setup-complete" ]; then
+    echo "🎯 Erstes Setup erkannt - Führe automatische Dependency-Konfiguration durch..."
+    echo "⚡ Beim ersten Start kann es etwas länger dauern, danach geht es meist deutlich schneller."
+    echo ""
+    echo "📦 Starte Dependency Management für initiales Setup..."
+    
+    # Führe das Dependency Management im initial-run Modus aus
+    ./manage-python-project-dependencies.sh initial-run
+    
+    # Markiere Setup als abgeschlossen
+    touch .setup-complete
+    
+    echo ""
+    echo "🎉 Erstes Setup abgeschlossen!"
+    echo "🐳 Starte nun das Backend..."
+    echo "Backend wird verfügbar sein auf: http://localhost:$PORT"
+    echo ""
+    docker compose up --build
+else
+    echo "🐳 Starte Backend mit Docker Compose..."
+    echo "Backend wird verfügbar sein auf: http://localhost:$PORT"
+    echo ""
 
-case $choice in
-  1)
-    echo "🚀 Starte Backend direkt..."
-    docker compose up --build
-    ;;
-  2)
-    echo "📦 Öffne Dependency Management..."
-    ./manage-python-project-dependencies.sh
+    # Auswahlmenü für nachfolgende Starts
+    echo "Wähle eine Option:"
+    echo "1) Backend direkt starten (docker compose up)"
+    echo "2) Zuerst Dependency Management öffnen"
+    echo "3) Beides - Dependency Management und dann Backend starten"
     echo ""
-    echo "ℹ️  Dependency Management beendet."
-    echo "💡 Um das Backend zu starten, führe aus: docker compose up --build"
-    ;;
-  3)
-    echo "📦 Öffne zuerst Dependency Management..."
-    ./manage-python-project-dependencies.sh
-    echo ""
-    echo "🚀 Starte nun das Backend..."
-    docker compose up --build
-    ;;
-  *)
-    echo "❌ Ungültige Auswahl. Starte Backend direkt..."
-    docker compose up --build
-    ;;
-esac
+    read -p "Deine Wahl (1-3): " choice
+
+    case $choice in
+      1)
+        echo "🚀 Starte Backend direkt..."
+        docker compose up --build
+        ;;
+      2)
+        echo "📦 Öffne Dependency Management..."
+        ./manage-python-project-dependencies.sh
+        echo ""
+        echo "ℹ️  Dependency Management beendet."
+        echo "💡 Um das Backend zu starten, führe aus: docker compose up --build"
+        ;;
+      3)
+        echo "📦 Öffne zuerst Dependency Management..."
+        ./manage-python-project-dependencies.sh
+        echo ""
+        echo "🚀 Starte nun das Backend..."
+        docker compose up --build
+        ;;
+      *)
+        echo "❌ Ungültige Auswahl. Starte Backend direkt..."
+        docker compose up --build
+        ;;
+    esac
+fi
 
 echo ""
 echo "📋 Nützliche Befehle für später:"

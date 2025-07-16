@@ -51,24 +51,49 @@ cd fastapi-redis-api-test
 ./quick-start.sh
 ```
 
-Das Script:
+**Beim ersten Aufruf:**
 - ✅ Überprüft Docker-Installation
 - ✅ Erstellt `.env` aus `.env.template` (falls nicht vorhanden)
-- ✅ Bietet Auswahlmenü für Dependency-Management oder direkten Backend-Start
+- ✅ Führt automatisch Dependency Management durch (`initial-run`)
+- ✅ Aktualisiert PDM Lock-Dateien für Docker-Builds
 - ✅ Startet Backend automatisch mit `docker compose up --build`
+- ⚡ **Hinweis:** Beim ersten Start kann es etwas länger dauern, danach geht es meist deutlich schneller
 
-### 3. API verwenden
+**Bei nachfolgenden Aufrufen:**
+- 🎛️ Bietet Auswahlmenü:
+  1. Backend direkt starten
+  2. Zuerst Dependency Management öffnen
+  3. Dependency Management + Backend starten
+
+### 3. .env Konfiguration
+Falls die automatisch erstellte `.env` nicht ausreicht, kannst du:
+- 📝 Die `.env` Datei manuell bearbeiten: `nano .env`
+- 🔐 Oder die Konfiguration aus dem 1Password Vault kopieren (Link wird im Script angezeigt)
+- 📧 Bei fehlender Berechtigung: Administrator um Zugang zum Tresor `FASTAPI-REDIS-API-TEST` bitten
+
+### 4. API verwenden
 - **Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
 - **API-Endpunkte:** Port aus deiner `.env` (Standard: 8000)
 
 ## 🔧 Dependency Management
 
-### Python-Pakete verwalten (optional)
+### Automatisches Setup (beim ersten quick-start.sh)
+Das initiale Dependency Management wird automatisch ausgeführt:
+```bash
+./manage-python-project-dependencies.sh initial-run
+```
+- 🔄 Aktualisiert PDM Lock-Dateien automatisch
+- 🚀 Bereitet Docker-Builds vor
+- 📦 Führt `pdm install` im Container aus
+- ⚡ Nicht-interaktiv, läuft im Hintergrund
+
+### Interaktives Dependency Management
+Für manuelle Paket-Verwaltung:
 ```bash
 ./manage-python-project-dependencies.sh
 ```
 
-Im interaktiven Container:
+**Im interaktiven Container:**
 ```bash
 # Pakete hinzufügen
 pdm add requests
@@ -82,6 +107,9 @@ pdm install
 
 # Lock-Datei aktualisieren
 pdm lock
+
+# Container verlassen
+exit
 ```
 
 **Wichtige PDM-Befehle:**
@@ -90,24 +118,33 @@ pdm lock
 - `pdm install` - Alle Abhängigkeiten installieren
 - `pdm update` - Alle Pakete aktualisieren
 - `pdm list` - Installierte Pakete anzeigen
+- `pdm lock` - Lock-Datei aktualisieren
 - `exit` - Container verlassen
+
+### Modi im Überblick
+| Modus | Befehl | Verwendung |
+|-------|--------|------------|
+| **Initial** | `./manage-python-project-dependencies.sh initial-run` | Automatisches Setup beim ersten Start |
+| **Interaktiv** | `./manage-python-project-dependencies.sh` | Manuelle Paket-Verwaltung |
 
 ## 📁 Projekt-Struktur
 
 ```
 fastapi-redis-api-test/
-├── api/                          # API-Module
-│   ├── routes/                   # API-Routen
-│   └── settings.py              # Konfiguration
-├── backend/                      # Backend-Logic
-├── python-dependency-management/ # Docker-Dependency-Tools
-├── main.py                      # FastAPI-Hauptdatei
-├── docker-compose.yml           # Docker-Services
-├── Dockerfile                   # Backend-Container
-├── pyproject.toml              # PDM-Konfiguration
-├── .env.template               # Umgebungsvariablen-Vorlage
-├── quick-start.sh              # Onboarding-Tool
-└── manage-python-project-dependencies.sh # Dependency-Management
+├── app/                          # Main application code
+│   ├── api/                      # API-specific modules (routes, settings)
+│   ├── backend/                  # Business logic
+│   ├── mounted_data/             # Example data for volume mounts
+│   └── main.py                   # FastAPI application entrypoint
+├── python-dependency-management/ # Dockerized dependency management tools
+├── .env.template               # Environment variable template
+├── .gitignore                  # Git ignore file
+├── docker-compose.yml           # Docker services configuration
+├── Dockerfile                   # Docker build file for the backend
+├── pdm.lock                      # PDM lock file
+├── pyproject.toml              # Project metadata and dependencies (PDM)
+├── quick-start.sh              # Smart onboarding script
+└── manage-python-project-dependencies.sh # Dependency management script
 ```
 
 ## ⚙️ Konfiguration
@@ -161,11 +198,28 @@ docker compose up --build --force-recreate
 
 ## 🔄 Entwicklungsworkflow
 
-1. **Projekt-Setup:** `./quick-start.sh`
-2. **Pakete hinzufügen:** `./manage-python-project-dependencies.sh` → `pdm add <package>`
-3. **Backend testen:** [http://localhost:8000/docs](http://localhost:8000/docs)
-4. **Code ändern:** Automatisches Reload in Docker
-5. **Deployment:** `docker compose up --build`
+### Erstes Setup (einmalig)
+1. **Projekt clonen:** `git clone ...`
+2. **Quick Start:** `./quick-start.sh` (läuft automatisch alles durch)
+3. **API testen:** [http://localhost:8000/docs](http://localhost:8000/docs)
+
+### Tägliche Entwicklung
+1. **Backend starten:** `./quick-start.sh` (mit Auswahlmenü)
+2. **Code ändern:** Automatisches Reload in Docker
+3. **Pakete hinzufügen:** `./manage-python-project-dependencies.sh` → `pdm add <package>`
+4. **API testen:** [http://localhost:8000/docs](http://localhost:8000/docs)
+
+### Deployment
+```bash
+docker compose up --build
+```
+
+### Reset (bei Problemen)
+```bash
+# Setup-Marker löschen für kompletten Neustart
+rm .setup-complete
+./quick-start.sh
+```
 
 ## 🏗️ Docker Image Build & Deploy
 
@@ -183,17 +237,22 @@ docker buildx build --platform linux/amd64 --build-arg IMAGE_TAG=$IMAGE_TAG \
 
 ## ✨ Vorteile
 
-- **🚀 Einfaches Onboarding:** Ein Befehl startet alles
+- **🚀 Intelligentes Onboarding:** Automatisches Setup beim ersten Aufruf
+- **🎯 Adaptive UX:** Unterschiedliche Menüs für erste vs. wiederholte Nutzung
 - **🔒 Konsistente Umgebung:** Alle Entwickler verwenden dieselbe Docker-Umgebung
-- **⚡ Schnelle Abhängigkeitsverwaltung:** PDM mit uv-Backend
+- **⚡ Schnelle Abhängigkeitsverwaltung:** PDM mit uv-Backend, automatische Lock-Updates
 - **🛠️ Keine lokalen Tools:** Nur Docker erforderlich
 - **🔄 Automatisches Reload:** Code-Änderungen werden sofort übernommen
+- **🔐 Sichere Konfiguration:** 1Password-Integration für Produktions-Einstellungen
+- **🧘 Stressfreies Setup:** Alles läuft automatisch, beim ersten Mal kann es etwas länger dauern
 
 ## 📚 Weitere Informationen
 
-- **Secrets:** Gespeichert in 1Password Vault `Fontanherzen`
+- **Secrets:** Gespeichert in 1Password Vault `FASTAPI-REDIS-API-TEST`
 - **Registry:** GitLab Container Registry
 - **Deployment:** Azure Container Apps kompatibel
+- **Setup-Marker:** `.setup-complete` wird automatisch erstellt/gelöscht
+- **Konfiguration:** 1Password-Link wird automatisch in `quick-start.sh` angezeigt
 
 ---
 

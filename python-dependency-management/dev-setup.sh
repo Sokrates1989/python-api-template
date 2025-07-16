@@ -27,6 +27,10 @@ print_color() {
 
 print_color $YELLOW "[python-dependency-management] Initializing project dependency files..."
 
+# Ensure PDM does not create a .venv in the project directory
+print_color $BLUE "🔧 Configuring PDM to install packages globally in the container..."
+pdm config python.use_venv false
+
 # Apply configuration from environment variables
 if [ "${USE_UV_BACKEND:-true}" = "true" ]; then
     print_color $BLUE "🚀 Configuring PDM to use uv backend for faster operations..."

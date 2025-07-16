@@ -8,27 +8,19 @@ ENV IMAGE_TAG=$IMAGE_TAG
 # Set the working directory in the container
 WORKDIR /app
 
-# Copy PDM project files
+# Copy only dependency files first for better build caching
 COPY pyproject.toml pdm.lock ./
 
-RUN apt-get update && apt-get install -y \
-    gobject-introspection \
-    libpango1.0-dev \
-    libcairo2-dev \
-    libgdk-pixbuf2.0-dev \
-    libffi-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install PDM and project dependencies
+# Install PDM and project dependencies (creates a fresh .venv)
 RUN pip install pdm && pdm install --prod
 
-# Copy the application code to the container
-COPY . .
+# Now copy the rest of the application code
+COPY app/ .
 
 # Expose the port that the FastAPI application will run on
 EXPOSE 8000
 
-# Start the FastAPI application
+# Use 'pdm run' to execute uvicorn from within the project's virtual environment.
+ENTRYPOINT ["pdm", "run"]
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 

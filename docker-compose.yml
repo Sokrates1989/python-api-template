@@ -12,14 +12,20 @@ services:
       REDIS_URL: ${REDIS_URL}
       DEBUG: ${DEBUG}
     volumes:
-      - .:/app
-      - ./mounted_data:/mnt/data
-    command: >
-      uvicorn main:app
-      --host 0.0.0.0
-      --port ${PORT}
+      # Mount individual directories for live-reloading of code.
+      # This ensures the pyproject.toml and pdm.lock from the build are not overwritten.
+      - ./app/main.py:/app/main.py
+      - ./app/api:/app/api
+      - ./app/backend:/app/backend
+      - ./app/mounted_data:/app/mounted_data
+      # Use a named volume for the .venv to ensure it's persistent and isolated from the host.
+      - pdm-venv:/app/.venv
 
   redis:
     image: redis:6.0
     ports:
       - "6379:6379"
+
+# Define the named volume for the virtual environment.
+volumes:
+  pdm-venv:
