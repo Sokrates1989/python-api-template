@@ -1,106 +1,129 @@
-# 🚀 FastAPI Redis API Template
+# 🚀 FastAPI Redis API Test
 
-A production-grade, Dockerized FastAPI template project using environment-based configuration, Redis cache support, and optional integrations like Neo4j or AWS – with full support for both **Docker Compose** and **Poetry**-based development.
+Ein produktionsreifes FastAPI-Template mit Redis-Cache, Docker-basierter Entwicklung und modernem Python-Dependency-Management.
 
-## 📚 Table of Contents
+## 📚 Inhaltsverzeichnis
 
-1. [📖 Overview](#-overview)  
-2. [🧑‍💻 Usage](#-usage)  
-3. [🛠️ Configuration](#-configuration)  
-   - [📁 1. Clone the Project](#-1-clone-the-project)  
-   - [⚙️ 2. Setup the .env File](#-2-setup-the-env-file)  
-   - [🔐 3. Secrets from 1Password](#-3-secrets-from-1password)  
-   - [🧩 4. Environment Variable Reference](#-4-environment-variable-reference)  
-   - [📝 Example .env File](#-example-env-file)  
-4. [📦 Docker Deployment](#-docker-deployment)  
-5. [🧪 Local Development](#-local-development)  
-   - [🔹 With Poetry (recommended)](#-with-poetry-recommended)  
-   - [🔹 Without Poetry (classic pip)](#-without-poetry-classic-pip)  
-6. [🧪 API Testing](#-api-testing)  
-7. [🗂️ Project Structure](#-project-structure)  
-8. [📤 Build & Publish Docker Image](#-build--publish-docker-image)  
-9. [🚀 Summary](#-summary)
+1. [📖 Übersicht](#-übersicht)
+2. [📋 Voraussetzungen](#-voraussetzungen)
+3. [🚀 Schnellstart](#-schnellstart)
+4. [🔧 Dependency Management](#-dependency-management)
+5. [📁 Projekt-Struktur](#-projekt-struktur)
+6. [⚙️ Konfiguration](#-konfiguration)
+7. [🧪 API-Tests](#-api-tests)
+8. [🐳 Docker-Befehle](#-docker-befehle)
+9. [🔄 Entwicklungsworkflow](#-entwicklungsworkflow)
+10. [🏗️ Docker Image Build & Deploy](#-docker-image-build--deploy)
+11. [✨ Vorteile](#-vorteile)
+12. [📚 Weitere Informationen](#-weitere-informationen)
+13. [⚠️ Deprecated: Alternative Installationsmethoden](#-deprecated-alternative-installationsmethoden)
 
-<br>
-<br>
+## 📖 Übersicht
 
-# 📖 Overview
+Dieses Template ist ein sauberes und erweiterbares FastAPI-Projekt mit:
 
-This template is a clean and extensible Python FastAPI project that includes:
+- ✅ FastAPI-Framework mit automatischer Dokumentation
+- ✅ Redis-Integration als Caching-Layer
+- ✅ Docker & Docker Compose für reproduzierbare Umgebungen
+- ✅ Umgebungsvariablen-basierte Konfiguration
+- ✅ Optionale Integrationen für Neo4j und AWS
+- ✅ Modernes Python-Dependency-Management mit PDM
 
-- ✅ FastAPI framework with automatic docs
-- ✅ Redis integration as a caching layer
-- ✅ Docker & Docker Compose for reproducible environments
-- ✅ Support for `.env`-based config via `pydantic-settings`
-- ✅ Optional integrations for Neo4j and AWS
-- ✅ Fully Poetry-compatible for Python dependency management
+## 📋 Voraussetzungen
 
-<br>
-<br>
+**Einzige Voraussetzung:** Docker muss installiert und gestartet sein.
 
-# 🧑‍💻 Usage
+- [Docker Desktop herunterladen](https://www.docker.com/get-started)
+- Docker Desktop starten
 
-You can start the project using either:
+> **Wichtig:** Keine lokale Python-, Poetry- oder PDM-Installation erforderlich! Alles läuft in Docker-Containern.
 
-- Docker Compose  
-- Local Python environment using Poetry (or pip)
+## 🚀 Schnellstart
 
-<br>
-<br>
-
-# 🛠️ Configuration
-
-## 📁 1. Clone the Project
-
+### 1. Projekt clonen
 ```bash
 git clone https://gitlab.com/speedie3/fastapi-redis-api-test
 cd fastapi-redis-api-test
 ```
 
-<br>
-<br>
-
-## ⚙️ 2. Setup the `.env` File
-
-Start by copying the template:
-
+### 2. Quick Start ausführen
 ```bash
-cp .env.template .env
+./quick-start.sh
 ```
 
-Then fill in your actual values (see below).
+Das Script:
+- ✅ Überprüft Docker-Installation
+- ✅ Erstellt `.env` aus `.env.template` (falls nicht vorhanden)
+- ✅ Bietet Auswahlmenü für Dependency-Management oder direkten Backend-Start
+- ✅ Startet Backend automatisch mit `docker compose up --build`
 
-<br>
-<br>
+### 3. API verwenden
+- **Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
+- **API-Endpunkte:** Port aus deiner `.env` (Standard: 8000)
 
-## 🔐 3. Secrets from 1Password
+## 🔧 Dependency Management
 
-Secrets like DB passwords or tokens are stored in the **1Password Vault `Fontanherzen`**:
+### Python-Pakete verwalten (optional)
+```bash
+./manage-python-project-dependencies.sh
+```
 
-- `NEO4J_URL`
-- `DB_USER`
-- `DB_PASSWORD`
-- (optional) `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, etc.
+Im interaktiven Container:
+```bash
+# Pakete hinzufügen
+pdm add requests
+pdm add pytest --dev
 
-<br>
-<br>
+# Pakete entfernen
+pdm remove requests
 
-## 🧩 4. Environment Variable Reference
+# Abhängigkeiten installieren
+pdm install
 
-| Variable               | Purpose                                |
-|------------------------|----------------------------------------|
-| `PORT`                | Port to expose API on (default: `8000`) |
-| `REDIS_URL`           | URL to connect to Redis instance        |
-| `NEO4J_URL`           | (optional) Neo4j DB connection URL      |
-| `DB_USER`             | (optional) DB user                      |
-| `DB_PASSWORD`         | (optional) DB password                  |
+# Lock-Datei aktualisieren
+pdm lock
+```
 
-<br>
-<br>
+**Wichtige PDM-Befehle:**
+- `pdm add <package>` - Paket hinzufügen
+- `pdm remove <package>` - Paket entfernen
+- `pdm install` - Alle Abhängigkeiten installieren
+- `pdm update` - Alle Pakete aktualisieren
+- `pdm list` - Installierte Pakete anzeigen
+- `exit` - Container verlassen
 
-## 📝 Example `.env` File
+## 📁 Projekt-Struktur
 
-```dotenv
+```
+fastapi-redis-api-test/
+├── api/                          # API-Module
+│   ├── routes/                   # API-Routen
+│   └── settings.py              # Konfiguration
+├── backend/                      # Backend-Logic
+├── python-dependency-management/ # Docker-Dependency-Tools
+├── main.py                      # FastAPI-Hauptdatei
+├── docker-compose.yml           # Docker-Services
+├── Dockerfile                   # Backend-Container
+├── pyproject.toml              # PDM-Konfiguration
+├── .env.template               # Umgebungsvariablen-Vorlage
+├── quick-start.sh              # Onboarding-Tool
+└── manage-python-project-dependencies.sh # Dependency-Management
+```
+
+## ⚙️ Konfiguration
+
+### Umgebungsvariablen (.env)
+
+| Variable | Beschreibung | Standard |
+|----------|-------------|----------|
+| `PORT` | API-Port | `8000` |
+| `REDIS_URL` | Redis-Verbindung | `redis://redis:6379` |
+| `NEO4J_URL` | Neo4j-Verbindung (optional) | - |
+| `DB_USER` | Datenbank-Benutzer | - |
+| `DB_PASSWORD` | Datenbank-Passwort | - |
+
+### Beispiel .env
+```env
 PORT=8000
 REDIS_URL=redis://redis:6379
 NEO4J_URL=bolt://localhost:7687
@@ -108,324 +131,109 @@ DB_USER=neo4j
 DB_PASSWORD=secret-password
 ```
 
-<br>
-<br>
+## 🧪 API-Tests
 
-# 📦 Docker Deployment
+**Verfügbare Endpunkte:**
+- `GET /` - Besucher-Zähler (Redis)
+- `GET /cache/{key}` - Cache-Wert abrufen
+- `POST /cache/{key}` - Cache-Wert setzen
+- `GET /health` - Gesundheitscheck
+- `GET /version` - Version anzeigen
 
-Run the app and Redis DB together:
-
-```bash
-docker-compose up --build
-```
-
-> **Note:** The Dockerfile now uses PDM for dependency management. You can still use Poetry or pip locally if you prefer.
-
-**Use this value in your `.env`:**
-```
-dotenv
-REDIS_URL=redis://redis:6379
-```
-
-you can then access the app at [http://localhost:8000/docs](http://localhost:8000/docs)
-
-<br>
-<br>
-
-# 🧪 Local Development
-
-## 🔹 With PDM (new!)
-
-1. Install PDM (if not already installed):
+## 🐳 Docker-Befehle
 
 ```bash
-pipx install pdm
+# Backend starten
+docker compose up --build
+
+# Backend stoppen
+docker compose down
+
+# Logs anzeigen
+docker compose logs -f
+
+# Container neu bauen
+docker compose up --build --force-recreate
+
+# Dependency Management
+./manage-python-project-dependencies.sh
 ```
 
-2. Start Redis manually (in another terminal):
-```
-bash
-docker run --rm -p 6379:6379 redis:6.0
-```
+## 🔄 Entwicklungsworkflow
 
-3. Use the following `.env` value:
-```
-dotenv
-REDIS_URL=redis://localhost:6379
-```
+1. **Projekt-Setup:** `./quick-start.sh`
+2. **Pakete hinzufügen:** `./manage-python-project-dependencies.sh` → `pdm add <package>`
+3. **Backend testen:** [http://localhost:8000/docs](http://localhost:8000/docs)
+4. **Code ändern:** Automatisches Reload in Docker
+5. **Deployment:** `docker compose up --build`
 
-4. Install dependencies:
+## 🏗️ Docker Image Build & Deploy
 
 ```bash
-pdm install
+# Image-Tag setzen
+export IMAGE_TAG=0.1.0
+
+# Docker Registry Login
+docker login registry.gitlab.com -u gitlab+deploy-token-XXXXXX -p YOUR_DEPLOY_TOKEN
+
+# Build & Push (Linux/amd64 für Azure)
+docker buildx build --platform linux/amd64 --build-arg IMAGE_TAG=$IMAGE_TAG \
+  -t registry.gitlab.com/speedie3/fastapi-redis-api-test:$IMAGE_TAG --push .
 ```
 
-5. Start the API server:
+## ✨ Vorteile
+
+- **🚀 Einfaches Onboarding:** Ein Befehl startet alles
+- **🔒 Konsistente Umgebung:** Alle Entwickler verwenden dieselbe Docker-Umgebung
+- **⚡ Schnelle Abhängigkeitsverwaltung:** PDM mit uv-Backend
+- **🛠️ Keine lokalen Tools:** Nur Docker erforderlich
+- **🔄 Automatisches Reload:** Code-Änderungen werden sofort übernommen
+
+## 📚 Weitere Informationen
+
+- **Secrets:** Gespeichert in 1Password Vault `Fontanherzen`
+- **Registry:** GitLab Container Registry
+- **Deployment:** Azure Container Apps kompatibel
+
+---
+
+## ⚠️ Deprecated: Alternative Installationsmethoden
+
+> **Hinweis:** Die folgenden Methoden sind veraltet und werden nicht mehr empfohlen. Verwende stattdessen den Docker-Workflow oben.
+
+<details>
+<summary>🔽 Lokale Poetry-Installation (Deprecated)</summary>
 
 ```bash
-pdm run uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-<br>
-<br>
-
-## 🔹 With Poetry (recommended)
-
-1. Install Poetry (if not already installed):
-
-```bash
+# Nicht empfohlen - nur für Legacy-Zwecke
 curl -sSL https://install.python-poetry.org | python3 -
-```
-
-2. Start Redis manually (in another terminal):
-```
-bash
-docker run --rm -p 6379:6379 redis:6.0
-```
-
-3. Use the following `.env` value:
-```
-dotenv
-REDIS_URL=redis://localhost:6379
-```
-
-4. Generate new lockfile:
-
-```bash
-poetry lock
-```
-
-5. Install dependencies:
-
-```bash
 poetry install
+poetry run uvicorn main:app --reload
 ```
 
-6. Start the API server:
+</details>
+
+<details>
+<summary>🔽 Lokale PDM-Installation (Deprecated)</summary>
 
 ```bash
-poetry run uvicorn main:app --reload --host 0.0.0.0 --port 8000
+# Nicht empfohlen - nur für Legacy-Zwecke
+pipx install pdm
+pdm install
+pdm run uvicorn main:app --reload
 ```
 
-<br>
-<br>
+</details>
 
-## 🔹 Without Poetry (classic pip)
-
-1. Create a virtual environment:
+<details>
+<summary>🔽 Pip-Installation (Deprecated)</summary>
 
 ```bash
+# Nicht empfohlen - nur für Legacy-Zwecke
 python -m venv .venv
 source .venv/bin/activate
-```
-
-2. Install dependencies:
-
-```bash
 pip install -r requirements.txt
+uvicorn main:app --reload
 ```
 
-3. Run the server:
-
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-<br>
-<br>
-
-# 🧪 API Testing
-
-After the app is up:
-
-- Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
-- OpenAPI JSON: [http://localhost:8000/openapi.json](http://localhost:8000/openapi.json)
-
-Test routes:
-- `GET /` – Increments Redis key `visits`
-- `GET /cache/{key}` – Get cache value
-- `POST /cache/{key}` – Set cache value
-- `GET /health` – Health check
-- `GET /version` – Shows current image tag
-
-<br>
-<br>
-
-# 🗂️ Project Structure
-
-```bash
-.
-├── main.py
-├── api/
-│   ├── __init__.py
-│   ├── routes/
-│   │   ├── __init__.py
-│   │   ├── files.py
-│   │   └── test.py
-│   └── settings.py
-├── backend/
-│   └── Neo4jHandler.py
-├── .env.template
-├── docker-compose.yml
-├── Dockerfile
-├── requirements.txt
-├── pyproject.toml
-├── poetry.lock
-└── README.md
-```
-
-<br>
-<br>
-
-
-# 📤 Build & Publish Docker Image
-
-This section explains how to build and publish a **Linux/amd64-compatible Docker image** to GitLab's container registry for use in Azure Container Apps (ACA).
-
-## ⚡ TL;DR
-
-If everything is configured correctly, you can just run:
-
-```bash
-export IMAGE_TAG=0.1.0
-docker login registry.gitlab.com -u gitlab+deploy-token-XXXXXX -p YOUR_DEPLOY_TOKEN
-docker buildx build --platform linux/amd64 --build-arg IMAGE_TAG=$IMAGE_TAG -t registry.gitlab.com/speedie3/fastapi-redis-api-test:$IMAGE_TAG --push .
-```
-
-
-<br>
-
-## 📋 Notes
-
-- You **must** use `docker buildx` to ensure compatibility with Azure's Linux-based runtime.
-- Your **IMAGE_TAG** should match the version you want to deploy (e.g. `0.1.0`).
-- The final image will be pushed to:
-
-```yaml
-registry.gitlab.com/speedie3/fastapi-redis-api-test:<IMAGE_TAG>
-```
-
-<br>
-
-
-## ✅ Precheck (Optional but Recommended)
-
-Before building or pushing your image, verify the following:
-
-### 🧱 Is `buildx` available?
-
-```bash
-docker buildx version
-```
-
-### 🔐 Test registry access
-
-Get Deploy token username and pw from [1Password](https://engaigegmbh.1password.com/)
-
-```bash
-docker login registry.gitlab.com -u gitlab+deploy-token-123456 -p YOUR_GENERATED_TOKEN
-```
-
-### 🔑 How to Create a GitLab Deploy Token 
-
-To publish Docker images to GitLab’s Container Registry, you need a **Deploy Token** with write access.
-
-Follow these steps:
-
-1. Go to your GitLab project  
-   ➤ [GitLab Repo Settings → Repository](https://gitlab.com/pmichiels/fastapi-redis-api-test/-/settings/repository#js-deploy-tokens)
-
-2. Scroll to **Deploy Tokens**.
-
-3. Fill in:
-   - **Name**: e.g. `Docker Push`
-   - **Username**: Auto-generated
-   - **Scopes**:
-     - ✅ **Read Registry**
-     - ✅ **Write Registry**
-
-4. Click **Create Deploy Token**.
-
-5. Copy the generated:
-   - `username` (e.g. `gitlab+deploy-token-123456`)
-   - `password` (will be shown **once**)
-
-6. Use them in your Docker login step:
-
-```bash
-docker login registry.gitlab.com -u gitlab+deploy-token-123456 -p YOUR_GENERATED_TOKEN
-```
-
-
-<br>
-<br>
-
-## 🔐 0. Docker Login (required once)
-
-Login using your **GitLab Deploy Token** (must have write access):
-
-```bash
-docker login registry.gitlab.com -u gitlab+deploy-token-XXXXXX -p YOUR_DEPLOY_TOKEN
-```
-
-<br>
-
-## 🏗️ 1. Set the desired image tag
-
-Set your version string (only the tag, not the full registry path):
-
-```bash
-export IMAGE_TAG=0.1.0
-```
-
-<br>
-
-### 🧱 2. Build and push the image (Linux/amd64)
-
-Use `docker buildx` to build for the correct platform and push directly to the registry:
-
-;;;bash
-docker buildx build --platform linux/amd64 --build-arg IMAGE_TAG=$IMAGE_TAG -t registry.gitlab.com/speedie3/fastapi-redis-api-test:$IMAGE_TAG --push .
-;;;
-
-> 📝 `--push` is required because `buildx` builds in a separate context and won't store the image locally unless you use `--load`.
-
-
-<br>
-<br>
-
-# 🚀 Summary
-
-✅ **FastAPI + Redis integrated template**  
-✅ **Supports Docker, Poetry & pip workflows**  
-✅ **Secure config with `.env` and 1Password usage**  
-✅ **Extensible architecture for real-world use cases**  
-✅ **Interactive docs out of the box**
-
-# 🐳 Python Dependency Management with Docker (Recommended)
-
-You can manage all Python dependencies and lock files (Poetry, PDM) without installing any Python tools locally—just Docker!
-
-## Quick Start
-
-1. **Run the all-in-one script:**
-   ```bash
-   ./manage-python-project-dependencies.sh
-   ```
-   - This will build the dev environment, generate/update `poetry.lock` and `pdm.lock`, and drop you into an interactive shell with `pdm` and `poetry` ready to use.
-
-2. **Use PDM or Poetry as usual:**
-   ```bash
-   pdm add <package>
-   poetry add <package>
-   pdm lock
-   poetry lock
-   # ...etc.
-   ```
-   All changes will persist in your project directory.
-
-## Benefits
-- No need to install Poetry, PDM, or pipx locally—just Docker.
-- Fully reproducible, isolated environment for dependency management.
-- Easy onboarding: new devs just run one script.
-- All lock/config files are generated in a consistent environment.
+</details>

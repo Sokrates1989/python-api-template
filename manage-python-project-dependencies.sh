@@ -5,6 +5,7 @@
 # This script automates the setup and interactive use of a Dockerized Python dependency management environment.
 # Usage: ./manage-python-project-dependencies.sh
 #
+# - Checks Docker installation and availability
 # - Builds the dev Docker image (if needed)
 # - Runs the setup script to generate poetry.lock and pdm.lock
 # - Drops the user into an interactive shell with Poetry and PDM ready to use
@@ -26,6 +27,31 @@ print_color() {
 }
 
 print_color $BLUE "🐳 Python Dependency Management with Docker"
+
+# Docker-Verfügbarkeit prüfen
+print_color $BLUE "🔍 Überprüfe Docker-Installation..."
+if ! command -v docker &> /dev/null; then
+    print_color $RED "❌ Docker ist nicht installiert!"
+    print_color $YELLOW "📥 Bitte installiere Docker von: https://www.docker.com/get-started"
+    exit 1
+fi
+
+# Docker-Daemon prüfen
+if ! docker info &> /dev/null; then
+    print_color $RED "❌ Docker-Daemon läuft nicht!"
+    print_color $YELLOW "🔄 Bitte starte Docker Desktop oder den Docker-Service"
+    exit 1
+fi
+
+# Docker Compose prüfen
+if ! docker compose version &> /dev/null; then
+    print_color $RED "❌ Docker Compose ist nicht verfügbar!"
+    print_color $YELLOW "📥 Bitte installiere eine aktuelle Docker-Version mit Compose-Plugin"
+    exit 1
+fi
+
+print_color $GREEN "✅ Docker ist installiert und läuft"
+print_color $BLUE ""
 
 # Change to the python-dependency-management directory
 cd python-dependency-management
