@@ -9,3 +9,4 @@ dist/
 build/
 *.egg-info/
 .DS_Store
+python-dependency-management/config.env

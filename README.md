@@ -119,6 +119,8 @@ Run the app and Redis DB together:
 docker-compose up --build
 ```
 
+> **Note:** The Dockerfile now uses PDM for dependency management. You can still use Poetry or pip locally if you prefer.
+
 **Use this value in your `.env`:**
 ```
 dotenv
@@ -131,6 +133,41 @@ you can then access the app at [http://localhost:8000/docs](http://localhost:800
 <br>
 
 # 🧪 Local Development
+
+## 🔹 With PDM (new!)
+
+1. Install PDM (if not already installed):
+
+```bash
+pipx install pdm
+```
+
+2. Start Redis manually (in another terminal):
+```
+bash
+docker run --rm -p 6379:6379 redis:6.0
+```
+
+3. Use the following `.env` value:
+```
+dotenv
+REDIS_URL=redis://localhost:6379
+```
+
+4. Install dependencies:
+
+```bash
+pdm install
+```
+
+5. Start the API server:
+
+```bash
+pdm run uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+<br>
+<br>
 
 ## 🔹 With Poetry (recommended)
 
@@ -364,3 +401,31 @@ docker buildx build --platform linux/amd64 --build-arg IMAGE_TAG=$IMAGE_TAG -t r
 ✅ **Secure config with `.env` and 1Password usage**  
 ✅ **Extensible architecture for real-world use cases**  
 ✅ **Interactive docs out of the box**
+
+# 🐳 Python Dependency Management with Docker (Recommended)
+
+You can manage all Python dependencies and lock files (Poetry, PDM) without installing any Python tools locally—just Docker!
+
+## Quick Start
+
+1. **Run the all-in-one script:**
+   ```bash
+   ./manage-python-project-dependencies.sh
+   ```
+   - This will build the dev environment, generate/update `poetry.lock` and `pdm.lock`, and drop you into an interactive shell with `pdm` and `poetry` ready to use.
+
+2. **Use PDM or Poetry as usual:**
+   ```bash
+   pdm add <package>
+   poetry add <package>
+   pdm lock
+   poetry lock
+   # ...etc.
+   ```
+   All changes will persist in your project directory.
+
+## Benefits
+- No need to install Poetry, PDM, or pipx locally—just Docker.
+- Fully reproducible, isolated environment for dependency management.
+- Easy onboarding: new devs just run one script.
+- All lock/config files are generated in a consistent environment.
