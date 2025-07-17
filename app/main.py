@@ -62,3 +62,8 @@ def check_health():
 @app.get("/version")
 def get_version():
     return {"IMAGE_TAG": f"{settings.IMAGE_TAG}"}
+
+# Test endpoint for hot-reloading demonstration
+@app.get("/hot-reload-test")
+def hot_reload_test():
+    return {"message": "This endpoint was added while the container was running!", "timestamp": "2024-01-01"}
