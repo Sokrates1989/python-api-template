@@ -86,7 +86,7 @@ if [ ! -f ".setup-complete" ]; then
             echo "1. Check if .env file exists and contains PYTHON_VERSION=3.13"
             echo "2. Ensure Docker is running: docker --version"
             echo "3. Verify .env file format: cat .env"
-            echo "4. Try manual test: ./test-python-version.sh"
+            echo "4. Try manual test: ./test-python-version.sh (forces fresh build with latest Python base)"
             echo ""
             echo "The following steps may fail if Python version is not configured correctly."
             read -p "Continue anyway? (y/N): " continue_anyway
