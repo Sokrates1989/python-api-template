@@ -7,7 +7,9 @@
 # - Designed to be used with docker-compose and a /workspace volume mount
 # - Intended for interactive use and automation
 
-FROM python:3.13-slim
+# Build argument for Python version (defaults to 3.13 if not provided)
+ARG PYTHON_VERSION=3.13-slim
+FROM python:${PYTHON_VERSION}
 
 # Install system dependencies, including bash for interactive shells
 RUN apt-get update && apt-get install -y \

@@ -3,8 +3,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION}
     ports:
       - "${PORT}:${PORT}"
+    env_file:
+      - .env
     environment:
       NEO4J_URL: ${NEO4J_URL}
       DB_USER: ${DB_USER}

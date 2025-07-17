@@ -7,16 +7,20 @@
 services:
   dev:
     build:
-      context: .
+      context: ./python-dependency-management
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION}
     image: python-dependency-management:latest
     volumes:
-      - ../:/workspace
+      - .:/workspace
     working_dir: /workspace
     tty: true
     stdin_open: true
     user: "${UID:-1000}:${GID:-1000}"
     env_file:
-      - config.env
+      - python-dependency-management/config.env
+      - .env
     environment:
       - PIPX_HOME=/home/devuser/.local/pipx
       - PIPX_BIN_DIR=/home/devuser/.local/bin

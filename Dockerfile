@@ -1,5 +1,7 @@
 # Use the official Python base image
-FROM python:3.13-slim
+# Build argument for Python version (defaults to 3.13 if not provided)
+ARG PYTHON_VERSION=3.13-slim
+FROM python:${PYTHON_VERSION}
 
 # Bake Image tag into the image.
 ARG IMAGE_TAG=local_docker

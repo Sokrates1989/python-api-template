@@ -70,6 +70,36 @@ if [ ! -f ".setup-complete" ]; then
     echo "🎯 Erstes Setup erkannt - Führe automatische Dependency-Konfiguration durch..."
     echo "⚡ Beim ersten Start kann es etwas länger dauern, danach geht es meist deutlich schneller."
     echo ""
+    
+    # Test Python version configuration first
+    echo "🔍 Testing Python version configuration..."
+    if [ -f "test-python-version.sh" ]; then
+        echo "Running Python version tests..."
+        if ./test-python-version.sh; then
+            echo "✅ Python version configuration test passed"
+        else
+            echo ""
+            echo "❌ Python version configuration test failed!"
+            echo "This indicates a problem with your .env file or Docker setup."
+            echo ""
+            echo "🔧 Troubleshooting steps:"
+            echo "1. Check if .env file exists and contains PYTHON_VERSION=3.13"
+            echo "2. Ensure Docker is running: docker --version"
+            echo "3. Verify .env file format: cat .env"
+            echo "4. Try manual test: ./test-python-version.sh"
+            echo ""
+            echo "The following steps may fail if Python version is not configured correctly."
+            read -p "Continue anyway? (y/N): " continue_anyway
+            if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
+                echo "Setup aborted. Please fix the Python version configuration first."
+                exit 1
+            fi
+            echo "⚠️  Continuing with potentially broken configuration..."
+        fi
+    else
+        echo "⚠️  test-python-version.sh not found - skipping version test"
+    fi
+    echo ""
     echo "📦 Starte Dependency Management für initiales Setup..."
     
     # Führe das Dependency Management im initial-run Modus aus
@@ -94,8 +124,9 @@ else
     echo "1) Backend direkt starten (docker compose up)"
     echo "2) Zuerst Dependency Management öffnen"
     echo "3) Beides - Dependency Management und dann Backend starten"
+    echo "4) Python Version Konfiguration testen"
     echo ""
-    read -p "Deine Wahl (1-3): " choice
+    read -p "Deine Wahl (1-4): " choice
 
     case $choice in
       1)
@@ -116,6 +147,14 @@ else
         echo "🚀 Starte nun das Backend..."
         docker compose up --build
         ;;
+      4)
+        echo "🔍 Testing Python version configuration..."
+        if [ -f "test-python-version.sh" ]; then
+            ./test-python-version.sh
+        else
+            echo "❌ test-python-version.sh not found"
+        fi
+        ;;
       *)
         echo "❌ Ungültige Auswahl. Starte Backend direkt..."
         docker compose up --build
@@ -126,9 +165,13 @@ fi
 echo ""
 echo "📋 Nützliche Befehle für später:"
 echo "================================"
+echo "• Guided usage -> Backend starten/ dependency management menu: "    
+echo "./quick-start.sh"
+echo ""
 echo "• Backend starten:           docker compose up --build"
 echo "• Backend stoppen:           Ctrl+C oder docker compose down"
 echo "• Dependency Management:     ./manage-python-project-dependencies.sh"
+echo "• Python Version Test:       ./test-python-version.sh"
 echo "• Logs anzeigen:             docker compose logs -f"
 echo "• Container neu bauen:       docker compose up --build"
 echo ""
