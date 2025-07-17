@@ -1,230 +1,230 @@
-# 🐳 Docker-basiertes Python Dependency Management für Teams
+# 🐳 Docker-based Python Dependency Management for Teams
 
-Ein modernes, Docker-basiertes System für Python Dependency Management, das lokale Installationen von Python, pip, PDM und Poetry überflüssig macht.
+A modern, Docker-based system for Python dependency management that eliminates the need for local installations of Python, pip, PDM, and Poetry.
 
-## 🎯 Hauptvorteile
+## 🎯 Main Benefits
 
-**Keine lokale Installation mehr erforderlich:**
-- ✅ Kein Python, pip, PDM, Poetry oder pipx auf lokalen Entwicklungsrechnern nötig
-- ✅ Nur Docker erforderlich - einheitliche Entwicklungsumgebung für alle Teammitglieder
-- ✅ Konsistente Python 3.13 Umgebung unabhängig vom Betriebssystem
-- ✅ Nahtloser Übergang: Package Management → Backend-Start mit `docker-compose up`
+**No local installation required anymore:**
+- ✅ No Python, pip, PDM, Poetry, or pipx needed on local development machines
+- ✅ Only Docker required - unified development environment for all team members
+- ✅ Consistent Python 3.13 environment regardless of operating system
+- ✅ Seamless transition: Package Management → Backend start with `docker-compose up`
 
-## 🚀 Schnellstart
+## 🚀 Quick Start
 
-### 1. Einmalige Einrichtung
+### 1. One-time Setup
 ```bash
-# Aus dem Projekt-Root-Verzeichnis:
+# From the project root directory:
 ./manage-python-project-dependencies.sh
 ```
 
-Das Script führt automatisch folgende Schritte aus:
-- Erstellt `config.env` aus `config.env.example` (falls nicht vorhanden)
-- Zeigt aktuelle Konfiguration an
-- Baut Docker Image mit Python 3.13 + PDM + Poetry + uv
-- Generiert/aktualisiert `pdm.lock` und `poetry.lock`
-- Startet interaktive Shell mit allen Tools
+The script automatically performs the following steps:
+- Creates `config.env` from `config.env.example` (if not present)
+- Shows current configuration
+- Builds Docker image with Python 3.13 + PDM + Poetry + uv
+- Generates/updates `pdm.lock` and `poetry.lock`
+- Starts interactive shell with all tools
 
-### 2. Dependencies verwalten
+### 2. Manage Dependencies
 ```bash
-# Im Container:
-pdm add requests fastapi        # Pakete hinzufügen
+# In the container:
+pdm add requests fastapi        # Add packages
 pdm add pytest --dev          # Development Dependencies
-pdm remove old-package        # Pakete entfernen
-pdm list                       # Installierte Pakete anzeigen
-pdm update                     # Alle Dependencies aktualisieren
+pdm remove old-package        # Remove packages
+pdm list                       # Show installed packages
+pdm update                     # Update all dependencies
 ```
 
-### 3. Backend starten
+### 3. Start Backend
 ```bash
-# Container verlassen:
+# Exit container:
 exit
 
-# Backend mit aktualisierten Dependencies starten:
+# Start backend with updated dependencies:
 docker-compose up --build
 ```
 
-## 🛠️ Technische Features
+## 🛠️ Technical Features
 
-### **Moderne Tools integriert:**
-- **PDM** mit **uv-Backend** für blitzschnelle Dependency-Resolution
-- **Poetry** als Alternative verfügbar
-- **uv** für ultraschnelle Package-Installation
-- Alle Tools über **pipx** isoliert installiert
+### **Modern Tools Integrated:**
+- **PDM** with **uv backend** for lightning-fast dependency resolution
+- **Poetry** available as alternative
+- **uv** for ultra-fast package installation
+- All tools installed isolated via **pipx**
 
-### **Automatisierte Konfiguration:**
-- `config.env` für teamweite Einstellungen
-- PDM nutzt uv-Backend standardmäßig (konfigurierbar)
-- Parallel-Installation und Caching aktiviert
-- Alle Änderungen persistent in Projektdateien
+### **Automated Configuration:**
+- `config.env` for team-wide settings
+- PDM uses uv backend by default (configurable)
+- Parallel installation and caching enabled
+- All changes persistent in project files
 
-## 📁 Verzeichnisstruktur
+## 📁 Directory Structure
 
 ```
 python-dependency-management/
 ├── Dockerfile              # Python 3.13 + PDM + Poetry + uv
-├── docker-compose.yml      # Service-Definition
-├── dev-setup.sh           # Initialisierung + Konfiguration
-├── config.env.example     # Konfigurationsvorlage
-├── config.env             # Lokale Konfiguration (gitignored)
-└── README.md              # Diese Dokumentation
+├── docker-compose.yml      # Service definition
+├── dev-setup.sh           # Initialization + configuration
+├── config.env.example     # Configuration template
+├── config.env             # Local configuration (gitignored)
+└── README.md              # This documentation
 ```
 
-## ⚙️ Konfiguration
+## ⚙️ Configuration
 
-### **config.env Optionen:**
+### **config.env Options:**
 ```bash
-# uv als PDM Backend verwenden (empfohlen)
+# Use uv as PDM backend (recommended)
 USE_UV_BACKEND=true
 
-# PDM Install Cache aktivieren
+# Enable PDM install cache
 PDM_INSTALL_CACHE=true
 
-# Parallele Installation aktivieren
+# Enable parallel installation
 PDM_PARALLEL_INSTALL=true
 
-# Python Version (muss mit Dockerfile übereinstimmen)
+# Python version (must match Dockerfile)
 PYTHON_VERSION=3.13
 ```
 
-## 💡 Häufige PDM-Kommandos
+## 💡 Common PDM Commands
 
-### **📦 Basis Package Management:**
+### **📦 Basic Package Management:**
 ```bash
-pdm add requests                    # Paket hinzufügen
-pdm add "requests>=2.28.0"         # Mit Versionsbeschränkung
-pdm add pytest --dev               # Development Dependency
-pdm remove requests                 # Paket entfernen
-pdm install                         # Alle Dependencies installieren
-pdm list                            # Installierte Pakete anzeigen
+pdm add requests                    # Add package
+pdm add "requests>=2.28.0"         # With version constraint
+pdm add pytest --dev               # Development dependency
+pdm remove requests                 # Remove package
+pdm install                         # Install all dependencies
+pdm list                            # Show installed packages
 ```
 
 ### **🔄 Dependency Management:**
 ```bash
-pdm update                          # Alle Dependencies aktualisieren
-pdm update requests                 # Spezifisches Paket aktualisieren
-pdm lock                            # Lock-Datei aktualisieren
-pdm lock --check                    # Lock-Datei auf Aktualität prüfen
-pdm sync                            # Umgebung mit Lock-Datei synchronisieren
+pdm update                          # Update all dependencies
+pdm update requests                 # Update specific package
+pdm lock                            # Update lock file
+pdm lock --check                    # Check lock file for updates
+pdm sync                            # Sync environment with lock file
 ```
 
-### **🔧 Troubleshooting & Konflikte:**
+### **🔧 Troubleshooting & Conflicts:**
 ```bash
-pdm lock --update-reuse             # Lock-Update mit Konfliktlösung
-pdm install --no-lock               # Installation ohne Lock-Update
-pdm cache clear                     # Package Cache leeren
-pdm info                            # Projekt-Informationen anzeigen
-pdm info requests                   # Paket-Details anzeigen
+pdm lock --update-reuse             # Lock update with conflict resolution
+pdm install --no-lock               # Install without lock update
+pdm cache clear                     # Clear package cache
+pdm info                            # Show project information
+pdm info requests                   # Show package details
 ```
 
 ### **🐍 Python Version Management:**
 ```bash
-pdm python list                     # Verfügbare Python-Versionen
-pdm python install 3.12             # Spezifische Python-Version installieren
-pdm use 3.12                        # Zu Python 3.12 wechseln
+pdm python list                     # List available Python versions
+pdm python install 3.12             # Install specific Python version
+pdm use 3.12                        # Switch to Python 3.12
 ```
 
-### **🚀 Scripts ausführen:**
+### **🚀 Running Scripts:**
 ```bash
-pdm run python script.py            # Script mit Projekt-Dependencies
-pdm run pytest                      # Tests ausführen
-pdm run --list                      # Verfügbare Scripts anzeigen
+pdm run python script.py            # Run script with project dependencies
+pdm run pytest                      # Run tests
+pdm run --list                      # List available scripts
 ```
 
 ### **🔍 Debugging Dependency Issues:**
 ```bash
-pdm show --graph                    # Dependency-Baum anzeigen
-pdm show --reverse requests         # Was hängt von requests ab?
-pdm export -f requirements          # Export zu requirements.txt
-pdm import requirements.txt         # Import aus requirements.txt
+pdm show --graph                    # Show dependency tree
+pdm show --reverse requests         # Show what depends on requests
+pdm export -f requirements          # Export to requirements.txt format
+pdm import requirements.txt         # Import from requirements.txt
 ```
 
-### **⚡ Quick Fixes für häufige Probleme:**
+### **⚡ Quick Fixes for Common Issues:**
 ```bash
-# Dependency-Konflikt-Lösung:
+# Dependency conflict resolution:
 pdm lock --update-reuse --resolution=highest
 
-# Alle Pakete neu installieren:
+# Reinstall all packages:
 pdm sync --reinstall
 
-# Frische Lock-Datei erstellen:
+# Create fresh lock file:
 rm pdm.lock && pdm lock && pdm install
 ```
 
-## 👥 Vorteile für Teams
+## 👥 Benefits for Teams
 
-### **Konsistenz:**
-- Identische Python-Umgebung für alle Entwickler
-- Keine "works on my machine"-Probleme
-- Einheitliche Tool-Versionen (PDM, Poetry, uv)
+### **Consistency:**
+- Identical Python environment for all developers
+- No "works on my machine" problems
+- Unified tool versions (PDM, Poetry, uv)
 
 ### **Onboarding:**
-- Neue Teammitglieder brauchen nur Docker
-- Ein Befehl für komplette Einrichtung
-- Integrierte Dokumentation und Hilfe
+- New team members only need Docker
+- One command for complete setup
+- Integrated documentation and help
 
-### **Wartung:**
-- Zentrale Konfiguration in `config.env.example`
-- Einfache Updates durch Docker Image Rebuild
-- Keine Konflikte mit lokalen Python-Installationen
+### **Maintenance:**
+- Central configuration in `config.env.example`
+- Easy updates through Docker image rebuild
+- No conflicts with local Python installations
 
-## 🔧 Workflow für Entwickler
+## 🔧 Workflow for Developers
 
-### **Typischer Entwicklungsworkflow:**
-1. **Dependencies verwalten:** `./manage-python-project-dependencies.sh`
-2. **Pakete hinzufügen/entfernen** im interaktiven Container
-3. **Container verlassen:** `exit`
-4. **Backend testen:** `docker-compose up --build`
-5. **Deployment:** Dockerfile nutzt PDM für Produktionsumgebung
+### **Typical Development Workflow:**
+1. **Manage dependencies:** `./manage-python-project-dependencies.sh`
+2. **Add/remove packages** in interactive container
+3. **Exit container:** `exit`
+4. **Test backend:** `docker-compose up --build`
+5. **Deployment:** Dockerfile uses PDM for production environment
 
-### **Dateien werden automatisch aktualisiert:**
-- `pyproject.toml` - Dependency-Definitionen
-- `pdm.lock` - Exakte Versionen für Reproduzierbarkeit
-- `poetry.lock` - Falls Poetry parallel genutzt wird
+### **Files are automatically updated:**
+- `pyproject.toml` - Dependency definitions
+- `pdm.lock` - Exact versions for reproducibility
+- `poetry.lock` - If Poetry is used in parallel
 
 ## 🚨 Troubleshooting
 
-### **Container startet nicht:**
+### **Container won't start:**
 ```bash
-# Docker Image neu bauen:
+# Rebuild Docker image:
 cd python-dependency-management
 docker-compose build --no-cache
 ```
 
-### **Konfiguration ändern:**
+### **Change configuration:**
 ```bash
-# config.env bearbeiten:
+# Edit config.env:
 nano python-dependency-management/config.env
 
-# Script erneut ausführen:
+# Run script again:
 ./manage-python-project-dependencies.sh
 ```
 
-### **PDM-Kommando nicht gefunden:**
+### **PDM command not found:**
 ```bash
-# Überprüfen ob uv-Backend aktiviert ist:
+# Check if uv backend is enabled:
 pdm config use_uv
 
-# PATH-Probleme debuggen:
+# Debug PATH issues:
 echo $PATH
 which pdm
 ```
 
-## 🎉 Fazit
+## 🎉 Conclusion
 
-**Ein Befehl ersetzt komplette lokale Python-Infrastruktur:**
-- Kein manuelles Setup von Python-Umgebungen
-- Moderne, schnelle Tools (PDM + uv) out-of-the-box
-- Nahtlose Integration in Docker-basierte Entwicklung
-- Teamweite Konsistenz und einfaches Onboarding
+**One command replaces complete local Python infrastructure:**
+- No manual setup of Python environments
+- Modern, fast tools (PDM + uv) out-of-the-box
+- Seamless integration into Docker-based development
+- Team-wide consistency and easy onboarding
 
-**Perfekt für moderne Python-Teams, die auf Docker setzen!** 🐳
+**Perfect for modern Python teams that rely on Docker!** 🐳
 
 ---
 
-## 📝 Weitere Informationen
+## 📝 Additional Information
 
-- **Hauptprojekt README:** `../README.md`
-- **PDM Dokumentation:** https://pdm.fming.dev/
-- **uv Dokumentation:** https://docs.astral.sh/uv/
-- **Docker Compose Referenz:** https://docs.docker.com/compose/ 
+- **Main project README:** `../README.md`
+- **PDM Documentation:** https://pdm.fming.dev/
+- **uv Documentation:** https://docs.astral.sh/uv/
+- **Docker Compose Reference:** https://docs.docker.com/compose/ 

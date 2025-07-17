@@ -1,133 +1,133 @@
 # 🚀 FastAPI Redis API Test
 
-Ein produktionsreifes FastAPI-Template mit Redis-Cache, Docker-basierter Entwicklung und modernem Python-Dependency-Management.
+A production-ready FastAPI template with Redis cache, Docker-based development, and modern Python dependency management.
 
-## 📚 Inhaltsverzeichnis
+## 📚 Table of Contents
 
-1. [📖 Übersicht](#-übersicht)
-2. [📋 Voraussetzungen](#-voraussetzungen)
-3. [🚀 Schnellstart](#-schnellstart)
+1. [📖 Overview](#-overview)
+2. [📋 Prerequisites](#-prerequisites)
+3. [🚀 Quick Start](#-quick-start)
 4. [🔧 Dependency Management](#-dependency-management)
-5. [📁 Projekt-Struktur](#-projekt-struktur)
-6. [⚙️ Konfiguration](#-konfiguration)
-7. [🧪 API-Tests](#-api-tests)
-8. [🐳 Docker-Befehle](#-docker-befehle)
-9. [🔄 Entwicklungsworkflow](#-entwicklungsworkflow)
+5. [📁 Project Structure](#-project-structure)
+6. [⚙️ Configuration](#-configuration)
+7. [🧪 API Tests](#-api-tests)
+8. [🐳 Docker Commands](#-docker-commands)
+9. [🔄 Development Workflow](#-development-workflow)
 10. [🏗️ Docker Image Build & Deploy](#-docker-image-build--deploy)
-11. [✨ Vorteile](#-vorteile)
-12. [📚 Weitere Informationen](#-weitere-informationen)
-13. [⚠️ Deprecated: Alternative Installationsmethoden](#-deprecated-alternative-installationsmethoden)
+11. [✨ Benefits](#-benefits)
+12. [📚 Additional Information](#-additional-information)
+13. [⚠️ Deprecated: Alternative Installation Methods](#-deprecated-alternative-installation-methods)
 
-## 📖 Übersicht
+## 📖 Overview
 
-Dieses Template ist ein sauberes und erweiterbares FastAPI-Projekt mit:
+This template is a clean and extensible FastAPI project with:
 
-- ✅ FastAPI-Framework mit automatischer Dokumentation
-- ✅ Redis-Integration als Caching-Layer
-- ✅ Docker & Docker Compose für reproduzierbare Umgebungen
-- ✅ Umgebungsvariablen-basierte Konfiguration
-- ✅ Optionale Integrationen für Neo4j und AWS
-- ✅ Modernes Python-Dependency-Management mit PDM
+- ✅ FastAPI framework with automatic documentation
+- ✅ Redis integration as caching layer
+- ✅ Docker & Docker Compose for reproducible environments
+- ✅ Environment variable-based configuration
+- ✅ Optional integrations for Neo4j and AWS
+- ✅ Modern Python dependency management with PDM
 
-## 📋 Voraussetzungen
+## 📋 Prerequisites
 
-**Einzige Voraussetzung:** Docker muss installiert und gestartet sein.
+**Only requirement:** Docker must be installed and running.
 
-- [Docker Desktop herunterladen](https://www.docker.com/get-started)
-- Docker Desktop starten
+- [Download Docker Desktop](https://www.docker.com/get-started)
+- Start Docker Desktop
 
-> **Wichtig:** Keine lokale Python-, Poetry- oder PDM-Installation erforderlich! Alles läuft in Docker-Containern.
+> **Important:** No local Python, Poetry, or PDM installation required! Everything runs in Docker containers.
 
-## 🚀 Schnellstart
+## 🚀 Quick Start
 
-### 1. Projekt clonen
+### 1. Clone the project
 ```bash
 git clone https://gitlab.com/speedie3/fastapi-redis-api-test
 cd fastapi-redis-api-test
 ```
 
-### 2. Quick Start ausführen
+### 2. Run Quick Start
 ```bash
 ./quick-start.sh
 ```
 
-**Beim ersten Aufruf:**
-- ✅ Überprüft Docker-Installation
-- ✅ Erstellt `.env` aus `.env.template` (falls nicht vorhanden)
-- ✅ Führt automatisch Dependency Management durch (`initial-run`)
-- ✅ Aktualisiert PDM Lock-Dateien für Docker-Builds
-- ✅ Startet Backend automatisch mit `docker compose up --build`
-- ⚡ **Hinweis:** Beim ersten Start kann es etwas länger dauern, danach geht es meist deutlich schneller
+**On first run:**
+- ✅ Checks Docker installation
+- ✅ Creates `.env` from `.env.template` (if not present)
+- ✅ Automatically runs dependency management (`initial-run`)
+- ✅ Updates PDM lock files for Docker builds
+- ✅ Starts backend automatically with `docker compose up --build`
+- ⚡ **Note:** First start may take longer, subsequent runs are usually much faster
 
-**Bei nachfolgenden Aufrufen:**
-- 🎛️ Bietet Auswahlmenü:
-  1. Backend direkt starten
-  2. Zuerst Dependency Management öffnen
-  3. Dependency Management + Backend starten
+**On subsequent runs:**
+- 🎛️ Provides selection menu:
+  1. Start backend directly
+  2. Open dependency management first
+  3. Dependency management + start backend
 
-### 3. .env Konfiguration
-Falls die automatisch erstellte `.env` nicht ausreicht, kannst du:
-- 📝 Die `.env` Datei manuell bearbeiten: `nano .env`
-- 🔐 Oder die Konfiguration aus dem 1Password Vault kopieren (Link wird im Script angezeigt)
-- 📧 Bei fehlender Berechtigung: Administrator um Zugang zum Tresor `FASTAPI-REDIS-API-TEST` bitten
+### 3. .env Configuration
+If the automatically created `.env` is not sufficient, you can:
+- 📝 Manually edit the `.env` file: `nano .env`
+- 🔐 Or copy configuration from the 1Password vault (link shown in script)
+- 📧 If permission is missing: Ask administrator for access to vault `FASTAPI-REDIS-API-TEST`
 
-### 4. API verwenden
+### 4. Use the API
 - **Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
-- **API-Endpunkte:** Port aus deiner `.env` (Standard: 8000)
+- **API Endpoints:** Port from your `.env` (default: 8000)
 
 ## 🔧 Dependency Management
 
-### Automatisches Setup (beim ersten quick-start.sh)
-Das initiale Dependency Management wird automatisch ausgeführt:
+### Automatic Setup (on first quick-start.sh)
+Initial dependency management is executed automatically:
 ```bash
 ./manage-python-project-dependencies.sh initial-run
 ```
-- 🔄 Aktualisiert PDM Lock-Dateien automatisch
-- 🚀 Bereitet Docker-Builds vor
-- 📦 Führt `pdm install` im Container aus
-- ⚡ Nicht-interaktiv, läuft im Hintergrund
+- 🔄 Updates PDM lock files automatically
+- 🚀 Prepares Docker builds
+- 📦 Runs `pdm install` in container
+- ⚡ Non-interactive, runs in background
 
-### Interaktives Dependency Management
-Für manuelle Paket-Verwaltung:
+### Interactive Dependency Management
+For manual package management:
 ```bash
 ./manage-python-project-dependencies.sh
 ```
 
-**Im interaktiven Container:**
+**In the interactive container:**
 ```bash
-# Pakete hinzufügen
+# Add packages
 pdm add requests
 pdm add pytest --dev
 
-# Pakete entfernen
+# Remove packages
 pdm remove requests
 
-# Abhängigkeiten installieren
+# Install dependencies
 pdm install
 
-# Lock-Datei aktualisieren
+# Update lock file
 pdm lock
 
-# Container verlassen
+# Exit container
 exit
 ```
 
-**Wichtige PDM-Befehle:**
-- `pdm add <package>` - Paket hinzufügen
-- `pdm remove <package>` - Paket entfernen
-- `pdm install` - Alle Abhängigkeiten installieren
-- `pdm update` - Alle Pakete aktualisieren
-- `pdm list` - Installierte Pakete anzeigen
-- `pdm lock` - Lock-Datei aktualisieren
-- `exit` - Container verlassen
+**Important PDM commands:**
+- `pdm add <package>` - Add package
+- `pdm remove <package>` - Remove package
+- `pdm install` - Install all dependencies
+- `pdm update` - Update all packages
+- `pdm list` - Show installed packages
+- `pdm lock` - Update lock file
+- `exit` - Exit container
 
-### Modi im Überblick
-| Modus | Befehl | Verwendung |
-|-------|--------|------------|
-| **Initial** | `./manage-python-project-dependencies.sh initial-run` | Automatisches Setup beim ersten Start |
-| **Interaktiv** | `./manage-python-project-dependencies.sh` | Manuelle Paket-Verwaltung |
+### Modes Overview
+| Mode | Command | Usage |
+|------|---------|-------|
+| **Initial** | `./manage-python-project-dependencies.sh initial-run` | Automatic setup on first start |
+| **Interactive** | `./manage-python-project-dependencies.sh` | Manual package management |
 
-## 📁 Projekt-Struktur
+## 📁 Project Structure
 
 ```
 fastapi-redis-api-test/
@@ -147,19 +147,19 @@ fastapi-redis-api-test/
 └── manage-python-project-dependencies.sh # Dependency management script
 ```
 
-## ⚙️ Konfiguration
+## ⚙️ Configuration
 
-### Umgebungsvariablen (.env)
+### Environment Variables (.env)
 
-| Variable | Beschreibung | Standard |
-|----------|-------------|----------|
-| `PORT` | API-Port | `8000` |
-| `REDIS_URL` | Redis-Verbindung | `redis://redis:6379` |
-| `NEO4J_URL` | Neo4j-Verbindung (optional) | - |
-| `DB_USER` | Datenbank-Benutzer | - |
-| `DB_PASSWORD` | Datenbank-Passwort | - |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | API Port | `8000` |
+| `REDIS_URL` | Redis connection | `redis://redis:6379` |
+| `NEO4J_URL` | Neo4j connection (optional) | - |
+| `DB_USER` | Database user | - |
+| `DB_PASSWORD` | Database password | - |
 
-### Beispiel .env
+### Example .env
 ```env
 PORT=8000
 REDIS_URL=redis://redis:6379
@@ -168,55 +168,55 @@ DB_USER=neo4j
 DB_PASSWORD=secret-password
 ```
 
-## 🧪 API-Tests
+## 🧪 API Tests
 
-**Verfügbare Endpunkte:**
-- `GET /` - Besucher-Zähler (Redis)
-- `GET /cache/{key}` - Cache-Wert abrufen
-- `POST /cache/{key}` - Cache-Wert setzen
-- `GET /health` - Gesundheitscheck
-- `GET /version` - Version anzeigen
+**Available endpoints:**
+- `GET /` - Visitor counter (Redis)
+- `GET /cache/{key}` - Get cache value
+- `POST /cache/{key}` - Set cache value
+- `GET /health` - Health check
+- `GET /version` - Show version
 
-## 🐳 Docker-Befehle
+## 🐳 Docker Commands
 
 ```bash
-# Backend starten
+# Start backend
 docker compose up --build
 
-# Backend stoppen
+# Stop backend
 docker compose down
 
-# Logs anzeigen
+# Show logs
 docker compose logs -f
 
-# Container neu bauen
+# Rebuild containers
 docker compose up --build --force-recreate
 
 # Dependency Management
 ./manage-python-project-dependencies.sh
 ```
 
-## 🔄 Entwicklungsworkflow
+## 🔄 Development Workflow
 
-### Erstes Setup (einmalig)
-1. **Projekt clonen:** `git clone ...`
-2. **Quick Start:** `./quick-start.sh` (läuft automatisch alles durch)
-3. **API testen:** [http://localhost:8000/docs](http://localhost:8000/docs)
+### First Setup (one-time)
+1. **Clone project:** `git clone ...`
+2. **Quick Start:** `./quick-start.sh` (runs everything automatically)
+3. **Test API:** [http://localhost:8000/docs](http://localhost:8000/docs)
 
-### Tägliche Entwicklung
-1. **Backend starten:** `./quick-start.sh` (mit Auswahlmenü)
-2. **Code ändern:** Automatisches Reload in Docker
-3. **Pakete hinzufügen:** `./manage-python-project-dependencies.sh` → `pdm add <package>`
-4. **API testen:** [http://localhost:8000/docs](http://localhost:8000/docs)
+### Daily Development
+1. **Start backend:** `./quick-start.sh` (with selection menu)
+2. **Change code:** Automatic reload in Docker
+3. **Add packages:** `./manage-python-project-dependencies.sh` → `pdm add <package>`
+4. **Test API:** [http://localhost:8000/docs](http://localhost:8000/docs)
 
 ### Deployment
 ```bash
 docker compose up --build
 ```
 
-### Reset (bei Problemen)
+### Reset (if problems occur)
 ```bash
-# Setup-Marker löschen für kompletten Neustart
+# Delete setup marker for complete restart
 rm .setup-complete
 ./quick-start.sh
 ```
@@ -224,47 +224,47 @@ rm .setup-complete
 ## 🏗️ Docker Image Build & Deploy
 
 ```bash
-# Image-Tag setzen
+# Set image tag
 export IMAGE_TAG=0.1.0
 
 # Docker Registry Login
 docker login registry.gitlab.com -u gitlab+deploy-token-XXXXXX -p YOUR_DEPLOY_TOKEN
 
-# Build & Push (Linux/amd64 für Azure)
+# Build & Push (Linux/amd64 for Azure)
 docker buildx build --platform linux/amd64 --build-arg IMAGE_TAG=$IMAGE_TAG \
   -t registry.gitlab.com/speedie3/fastapi-redis-api-test:$IMAGE_TAG --push .
 ```
 
-## ✨ Vorteile
+## ✨ Benefits
 
-- **🚀 Intelligentes Onboarding:** Automatisches Setup beim ersten Aufruf
-- **🎯 Adaptive UX:** Unterschiedliche Menüs für erste vs. wiederholte Nutzung
-- **🔒 Konsistente Umgebung:** Alle Entwickler verwenden dieselbe Docker-Umgebung
-- **⚡ Schnelle Abhängigkeitsverwaltung:** PDM mit uv-Backend, automatische Lock-Updates
-- **🛠️ Keine lokalen Tools:** Nur Docker erforderlich
-- **🔄 Automatisches Reload:** Code-Änderungen werden sofort übernommen
-- **🔐 Sichere Konfiguration:** 1Password-Integration für Produktions-Einstellungen
-- **🧘 Stressfreies Setup:** Alles läuft automatisch, beim ersten Mal kann es etwas länger dauern
+- **🚀 Smart Onboarding:** Automatic setup on first run
+- **🎯 Adaptive UX:** Different menus for first vs. repeated usage
+- **🔒 Consistent Environment:** All developers use the same Docker environment
+- **⚡ Fast Dependency Management:** PDM with uv backend, automatic lock updates
+- **🛠️ No Local Tools:** Only Docker required
+- **🔄 Automatic Reload:** Code changes are immediately applied
+- **🔐 Secure Configuration:** 1Password integration for production settings
+- **🧘 Stress-free Setup:** Everything runs automatically, first time may take longer
 
-## 📚 Weitere Informationen
+## 📚 Additional Information
 
-- **Secrets:** Gespeichert in 1Password Vault `FASTAPI-REDIS-API-TEST`
+- **Secrets:** Stored in 1Password Vault `FASTAPI-REDIS-API-TEST`
 - **Registry:** GitLab Container Registry
-- **Deployment:** Azure Container Apps kompatibel
-- **Setup-Marker:** `.setup-complete` wird automatisch erstellt/gelöscht
-- **Konfiguration:** 1Password-Link wird automatisch in `quick-start.sh` angezeigt
+- **Deployment:** Azure Container Apps compatible
+- **Setup Marker:** `.setup-complete` is automatically created/deleted
+- **Configuration:** 1Password link is automatically shown in `quick-start.sh`
 
 ---
 
-## ⚠️ Deprecated: Alternative Installationsmethoden
+## ⚠️ Deprecated: Alternative Installation Methods
 
-> **Hinweis:** Die folgenden Methoden sind veraltet und werden nicht mehr empfohlen. Verwende stattdessen den Docker-Workflow oben.
+> **Note:** The following methods are deprecated and no longer recommended. Use the Docker workflow above instead.
 
 <details>
-<summary>🔽 Lokale Poetry-Installation (Deprecated)</summary>
+<summary>🔽 Local Poetry Installation (Deprecated)</summary>
 
 ```bash
-# Nicht empfohlen - nur für Legacy-Zwecke
+# Not recommended - only for legacy purposes
 curl -sSL https://install.python-poetry.org | python3 -
 poetry install
 poetry run uvicorn main:app --reload
@@ -273,10 +273,10 @@ poetry run uvicorn main:app --reload
 </details>
 
 <details>
-<summary>🔽 Lokale PDM-Installation (Deprecated)</summary>
+<summary>🔽 Local PDM Installation (Deprecated)</summary>
 
 ```bash
-# Nicht empfohlen - nur für Legacy-Zwecke
+# Not recommended - only for legacy purposes
 pipx install pdm
 pdm install
 pdm run uvicorn main:app --reload
@@ -285,10 +285,10 @@ pdm run uvicorn main:app --reload
 </details>
 
 <details>
-<summary>🔽 Pip-Installation (Deprecated)</summary>
+<summary>🔽 Pip Installation (Deprecated)</summary>
 
 ```bash
-# Nicht empfohlen - nur für Legacy-Zwecke
+# Not recommended - only for legacy purposes
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
