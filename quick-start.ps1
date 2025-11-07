@@ -14,7 +14,7 @@ try {
     $null = docker --version 2>&1
     if ($LASTEXITCODE -ne 0) { throw "Docker not found" }
 } catch {
-    Write-Host "Docker is not installed!" -ForegroundColor Red
+    Write-Host "[ERROR] Docker is not installed!" -ForegroundColor Red
     Write-Host "Please install Docker from: https://www.docker.com/get-started" -ForegroundColor Yellow
     exit 1
 }
@@ -24,7 +24,7 @@ try {
     $null = docker info 2>&1
     if ($LASTEXITCODE -ne 0) { throw "Docker daemon not running" }
 } catch {
-    Write-Host "Docker daemon is not running!" -ForegroundColor Red
+    Write-Host "[ERROR] Docker daemon is not running!" -ForegroundColor Red
     Write-Host "Please start Docker Desktop or the Docker service" -ForegroundColor Yellow
     exit 1
 }
@@ -34,7 +34,7 @@ try {
     $null = docker compose version 2>&1
     if ($LASTEXITCODE -ne 0) { throw "Docker Compose not available" }
 } catch {
-    Write-Host "Docker Compose is not available!" -ForegroundColor Red
+    Write-Host "[ERROR] Docker Compose is not available!" -ForegroundColor Red
     Write-Host "Please install a current Docker version with Compose plugin" -ForegroundColor Yellow
     exit 1
 }
@@ -55,7 +55,7 @@ if (Test-Path .env) {
         Write-Host ""
         Read-Host "Press Enter when you have adjusted the .env file"
     } else {
-        Write-Host ".env.template not found! Please ensure the template exists." -ForegroundColor Red
+        Write-Host "[ERROR] .env.template not found! Please ensure the template exists." -ForegroundColor Red
         exit 1
     }
 }
@@ -115,58 +115,54 @@ if (-not (Test-Path .setup-complete)) {
     Write-Host "The first start may take a bit longer, but it will be much faster afterwards." -ForegroundColor Yellow
     Write-Host ""
     
-    # Test Python version configuration first (skip if bash not available)
-    $bashAvailable = $false
-    try {
-        $null = bash --version 2>&1
-        if ($LASTEXITCODE -eq 0) { $bashAvailable = $true }
-    } catch { }
-    
-    if ($bashAvailable -and (Test-Path test-python-version.sh)) {
+    # Test Python version configuration first
+    if (Test-Path test-python-version.ps1) {
         Write-Host "Testing Python version configuration..." -ForegroundColor Yellow
         Write-Host "Running Python version tests..." -ForegroundColor Gray
-        bash ./test-python-version.sh
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "Python version configuration test passed" -ForegroundColor Green
-        } else {
-            Write-Host ""
-            Write-Host "Python version configuration test failed!" -ForegroundColor Red
-            Write-Host "This indicates a problem with your .env file or Docker setup." -ForegroundColor Yellow
-            Write-Host ""
-            Write-Host "Troubleshooting steps:" -ForegroundColor Yellow
-            Write-Host "1. Check if .env file exists and contains PYTHON_VERSION=3.13" -ForegroundColor Gray
-            Write-Host "2. Ensure Docker is running: docker --version" -ForegroundColor Gray
-            Write-Host "3. Verify .env file format: Get-Content .env" -ForegroundColor Gray
-            Write-Host ""
-            Write-Host "The following steps may fail if Python version is not configured correctly." -ForegroundColor Yellow
-            $continue = Read-Host "Continue anyway? (y/N)"
-            if ($continue -notmatch "^[Yy]$") {
-                Write-Host "Setup aborted. Please fix the Python version configuration first." -ForegroundColor Red
-                exit 1
+        try {
+            & .\test-python-version.ps1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "Python version configuration test passed" -ForegroundColor Green
+            } else {
+                Write-Host ""
+                Write-Host "Python version configuration test failed!" -ForegroundColor Red
+                Write-Host "This indicates a problem with your .env file or Docker setup." -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "Troubleshooting steps:" -ForegroundColor Yellow
+                Write-Host "1. Check if .env file exists and contains PYTHON_VERSION=3.13" -ForegroundColor Gray
+                Write-Host "2. Ensure Docker is running: docker --version" -ForegroundColor Gray
+                Write-Host "3. Verify .env file format: Get-Content .env" -ForegroundColor Gray
+                Write-Host ""
+                Write-Host "The following steps may fail if Python version is not configured correctly." -ForegroundColor Yellow
+                $continue = Read-Host "Continue anyway? (y/N)"
+                if ($continue -notmatch "^[Yy]$") {
+                    Write-Host "Setup aborted. Please fix the Python version configuration first." -ForegroundColor Red
+                    exit 1
+                }
+                Write-Host "Continuing with potentially broken configuration..." -ForegroundColor Yellow
             }
-            Write-Host "Continuing with potentially broken configuration..." -ForegroundColor Yellow
+        } catch {
+            Write-Host "Error running Python version test: $_" -ForegroundColor Red
+            Write-Host "Skipping version test..." -ForegroundColor Yellow
         }
     } else {
-        if (-not $bashAvailable) {
-            Write-Host "Bash not available - skipping version test (this is OK on Windows)" -ForegroundColor Yellow
-        } else {
-            Write-Host "test-python-version.sh not found - skipping version test" -ForegroundColor Yellow
-        }
+        Write-Host "test-python-version.ps1 not found - skipping version test" -ForegroundColor Yellow
     }
     
     Write-Host ""
     
-    # Run Dependency Management in initial-run mode (skip if bash not available)
-    if ($bashAvailable -and (Test-Path manage-python-project-dependencies.sh)) {
+    # Run Dependency Management in initial-run mode
+    if (Test-Path manage-python-project-dependencies.ps1) {
         Write-Host "Starting Dependency Management for initial setup..." -ForegroundColor Cyan
-        bash ./manage-python-project-dependencies.sh initial-run
-    } else {
-        if (-not $bashAvailable) {
-            Write-Host "Bash not available - skipping dependency management (this is OK on Windows)" -ForegroundColor Yellow
+        try {
+            & .\manage-python-project-dependencies.ps1 -InitialRun
+        } catch {
+            Write-Host "Error running dependency management: $_" -ForegroundColor Red
             Write-Host "Dependencies will be installed when Docker builds the container" -ForegroundColor Yellow
-        } else {
-            Write-Host "manage-python-project-dependencies.sh not found - skipping" -ForegroundColor Yellow
         }
+    } else {
+        Write-Host "manage-python-project-dependencies.ps1 not found - skipping" -ForegroundColor Yellow
+        Write-Host "Dependencies will be installed when Docker builds the container" -ForegroundColor Yellow
     }
     
     # Mark setup as complete
@@ -198,56 +194,37 @@ if (-not (Test-Path .setup-complete)) {
             docker compose -f $COMPOSE_FILE up --build
         }
         "2" {
-            # Check bash availability
-            $bashAvailable = $false
-            try { $null = bash --version 2>&1; if ($LASTEXITCODE -eq 0) { $bashAvailable = $true } } catch { }
-            
-            if ($bashAvailable -and (Test-Path manage-python-project-dependencies.sh)) {
+            if (Test-Path manage-python-project-dependencies.ps1) {
                 Write-Host "Opening Dependency Management..." -ForegroundColor Cyan
-                bash ./manage-python-project-dependencies.sh
+                & .\manage-python-project-dependencies.ps1
             } else {
-                if (-not $bashAvailable) {
-                    Write-Host "Bash not available. This feature requires Git Bash or WSL." -ForegroundColor Red
-                } else {
-                    Write-Host "manage-python-project-dependencies.sh not found" -ForegroundColor Red
-                }
+                Write-Host "manage-python-project-dependencies.ps1 not found" -ForegroundColor Red
             }
             Write-Host ""
             Write-Host "To start the backend, run: docker compose -f $COMPOSE_FILE up --build" -ForegroundColor Yellow
         }
         "3" {
-            # Check bash availability
-            $bashAvailable = $false
-            try { $null = bash --version 2>&1; if ($LASTEXITCODE -eq 0) { $bashAvailable = $true } } catch { }
-            
-            if ($bashAvailable -and (Test-Path manage-python-project-dependencies.sh)) {
+            if (Test-Path manage-python-project-dependencies.ps1) {
                 Write-Host "Opening Dependency Management first..." -ForegroundColor Cyan
-                bash ./manage-python-project-dependencies.sh
+                & .\manage-python-project-dependencies.ps1
             } else {
-                if (-not $bashAvailable) {
-                    Write-Host "Bash not available. Skipping dependency management." -ForegroundColor Yellow
-                } else {
-                    Write-Host "manage-python-project-dependencies.sh not found" -ForegroundColor Red
-                }
+                Write-Host "manage-python-project-dependencies.ps1 not found" -ForegroundColor Red
+                Write-Host "Skipping dependency management." -ForegroundColor Yellow
             }
             Write-Host ""
             Write-Host "Starting backend now..." -ForegroundColor Cyan
+            Write-Host "Note: Rebuilding to use updated dependencies (removing old volumes)..." -ForegroundColor Yellow
+            
+            # Remove volumes to ensure fresh .venv, then rebuild and start
+            docker compose -f $COMPOSE_FILE down -v
             docker compose -f $COMPOSE_FILE up --build
         }
         "4" {
-            # Check bash availability
-            $bashAvailable = $false
-            try { $null = bash --version 2>&1; if ($LASTEXITCODE -eq 0) { $bashAvailable = $true } } catch { }
-            
-            if ($bashAvailable -and (Test-Path test-python-version.sh)) {
+            if (Test-Path test-python-version.ps1) {
                 Write-Host "Testing Python version configuration..." -ForegroundColor Yellow
-                bash ./test-python-version.sh
+                & .\test-python-version.ps1
             } else {
-                if (-not $bashAvailable) {
-                    Write-Host "Bash not available. This feature requires Git Bash or WSL." -ForegroundColor Red
-                } else {
-                    Write-Host "test-python-version.sh not found" -ForegroundColor Red
-                }
+                Write-Host "test-python-version.ps1 not found" -ForegroundColor Red
             }
         }
         default {
@@ -265,8 +242,8 @@ Write-Host "  .\quick-start.ps1" -ForegroundColor White
 Write-Host ""
 Write-Host "Start backend:           docker compose -f $COMPOSE_FILE up --build" -ForegroundColor Gray
 Write-Host "Stop backend:            Ctrl+C or docker compose -f $COMPOSE_FILE down" -ForegroundColor Gray
-Write-Host "Dependency Management:   bash ./manage-python-project-dependencies.sh" -ForegroundColor Gray
-Write-Host "Python Version Test:     bash ./test-python-version.sh" -ForegroundColor Gray
+Write-Host "Dependency Management:   .\manage-python-project-dependencies.ps1" -ForegroundColor Gray
+Write-Host "Python Version Test:     .\test-python-version.ps1" -ForegroundColor Gray
 Write-Host "Show logs:               docker compose -f $COMPOSE_FILE logs -f" -ForegroundColor Gray
 Write-Host "Rebuild containers:      docker compose -f $COMPOSE_FILE up --build" -ForegroundColor Gray
 Write-Host ""

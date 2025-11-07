@@ -3,7 +3,7 @@ from fastapi import FastAPI, Request, HTTPException
 import uvicorn
 import redis
 from api.settings import settings
-from api.routes import test, files
+from api.routes import test, files, packages
 from backend.database import initialize_database, close_database
 
 app = FastAPI()
@@ -21,6 +21,7 @@ async def shutdown_event():
 
 app.include_router(test.router)
 app.include_router(files.router)
+app.include_router(packages.router)
 
 
 print(f"🔧 Connecting to Redis at: {settings.REDIS_URL}")

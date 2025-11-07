@@ -21,8 +21,8 @@ services:
       - ./app/backend:/app/backend
       - ./app/models:/app/models
       - ./app/mounted_data:/app/mounted_data
-      # Use a named volume for the .venv to ensure it's persistent and isolated from the host.
-      - pdm-venv:/app/.venv
+      # Note: .venv is built into the image, not mounted as a volume
+      # This ensures dependencies always match pdm.lock from the build
     depends_on:
       postgres:
         condition: service_healthy
@@ -55,7 +55,3 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-
-# Define the named volume for the virtual environment.
-volumes:
-  pdm-venv:
