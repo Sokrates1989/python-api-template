@@ -333,6 +333,7 @@ See `docs/DATABASE.md` for detailed database configuration and usage.
 
 - **Docker Setup**: `docs/DOCKER_SETUP.md` - Complete Docker setup guide ⭐
 - **How to Add Endpoint**: `docs/HOW_TO_ADD_ENDPOINT.md` - Step-by-step guide ⭐
+- **Database Credentials**: `docs/DATABASE_CREDENTIALS.md` - Security & credential management ⭐
 - **Project Structure**: `docs/PROJECT_STRUCTURE.md` - Structure explanation
 - **Quick Start**: `docs/QUICK_START.md` - Get started quickly
 - **Database Guide**: `docs/DATABASE.md` - Database configuration and usage
