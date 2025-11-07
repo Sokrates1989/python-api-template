@@ -22,7 +22,7 @@ services:
       - ../app/api:/app/api
       - ../app/backend:/app/backend
       - ../app/models:/app/models
-      - ../app/mounted_data:/app/mounted_data
+      - ../app/mounted_data:/mnt/data
       # Note: .venv is built into the image, not mounted as a volume
       # This ensures dependencies always match pdm.lock from the build
     depends_on:
