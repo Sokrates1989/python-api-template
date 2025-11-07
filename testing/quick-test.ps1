@@ -74,16 +74,16 @@ if (Test-Path .env) {
 
 # Determine compose file
 if ($DB_MODE -eq "external") {
-    $COMPOSE_FILE = "docker-compose.yml"
+    $COMPOSE_FILE = "docker\docker-compose.yml"
     Write-Host "Using external $DB_TYPE database" -ForegroundColor Cyan
 } elseif ($DB_TYPE -eq "neo4j") {
-    $COMPOSE_FILE = "docker-compose.neo4j.yml"
+    $COMPOSE_FILE = "docker\docker-compose.neo4j.yml"
     Write-Host "Using local Neo4j database" -ForegroundColor Cyan
 } elseif ($DB_TYPE -eq "postgresql" -or $DB_TYPE -eq "mysql") {
-    $COMPOSE_FILE = "docker-compose.postgres.yml"
+    $COMPOSE_FILE = "docker\docker-compose.postgres.yml"
     Write-Host "Using local PostgreSQL database" -ForegroundColor Cyan
 } else {
-    $COMPOSE_FILE = "docker-compose.yml"
+    $COMPOSE_FILE = "docker\docker-compose.yml"
     Write-Host "Unknown database type, using default" -ForegroundColor Yellow
 }
 

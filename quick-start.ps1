@@ -47,15 +47,15 @@ if (Test-Path .env) {
     Write-Host ".env file already exists." -ForegroundColor Green
     Write-Host "Please check the values in .env if needed." -ForegroundColor Yellow
 } else {
-    if (Test-Path .env.template) {
-        Copy-Item .env.template .env
+    if (Test-Path config\.env.template) {
+        Copy-Item config\.env.template .env
         Write-Host ".env was created from .env.template." -ForegroundColor Green
         Write-Host "Please open the .env file and adjust the values:" -ForegroundColor Yellow
         Write-Host "   notepad .env" -ForegroundColor Cyan
         Write-Host ""
         Read-Host "Press Enter when you have adjusted the .env file"
     } else {
-        Write-Host "[ERROR] .env.template not found! Please ensure the template exists." -ForegroundColor Red
+        Write-Host "[ERROR] config\.env.template not found! Please ensure the template exists." -ForegroundColor Red
         exit 1
     }
 }
@@ -89,21 +89,21 @@ if (Test-Path .env) {
 
 # Determine Docker Compose file based on DB_TYPE and DB_MODE
 if ($DB_MODE -eq "external") {
-    $COMPOSE_FILE = "docker-compose.yml"
+    $COMPOSE_FILE = "docker\docker-compose.yml"
     Write-Host "Detected external database mode" -ForegroundColor Cyan
     Write-Host "   Database Type: $DB_TYPE" -ForegroundColor Gray
     Write-Host "   Will connect to external database (no local DB container)" -ForegroundColor Gray
 } elseif ($DB_TYPE -eq "neo4j") {
-    $COMPOSE_FILE = "docker-compose.neo4j.yml"
+    $COMPOSE_FILE = "docker\docker-compose.neo4j.yml"
     Write-Host "Detected local Neo4j database" -ForegroundColor Cyan
     Write-Host "   Will start Neo4j container" -ForegroundColor Gray
 } elseif ($DB_TYPE -eq "postgresql" -or $DB_TYPE -eq "mysql") {
-    $COMPOSE_FILE = "docker-compose.postgres.yml"
+    $COMPOSE_FILE = "docker\docker-compose.postgres.yml"
     Write-Host "Detected local $DB_TYPE database" -ForegroundColor Cyan
     Write-Host "   Will start PostgreSQL container" -ForegroundColor Gray
 } else {
-    $COMPOSE_FILE = "docker-compose.yml"
-    Write-Host "Unknown DB_TYPE: $DB_TYPE, using default docker-compose.yml" -ForegroundColor Yellow
+    $COMPOSE_FILE = "docker\docker-compose.yml"
+    Write-Host "Unknown DB_TYPE: $DB_TYPE, using default docker\docker-compose.yml" -ForegroundColor Yellow
 }
 
 Write-Host "   Using: $COMPOSE_FILE" -ForegroundColor Gray
@@ -116,11 +116,11 @@ if (-not (Test-Path .setup-complete)) {
     Write-Host ""
     
     # Test Python version configuration first
-    if (Test-Path test-python-version.ps1) {
+    if (Test-Path python-dependency-management\scripts\test-python-version.ps1) {
         Write-Host "Testing Python version configuration..." -ForegroundColor Yellow
         Write-Host "Running Python version tests..." -ForegroundColor Gray
         try {
-            & .\test-python-version.ps1
+            & .\python-dependency-management\scripts\test-python-version.ps1
             if ($LASTEXITCODE -eq 0) {
                 Write-Host "Python version configuration test passed" -ForegroundColor Green
             } else {
@@ -146,22 +146,22 @@ if (-not (Test-Path .setup-complete)) {
             Write-Host "Skipping version test..." -ForegroundColor Yellow
         }
     } else {
-        Write-Host "test-python-version.ps1 not found - skipping version test" -ForegroundColor Yellow
+        Write-Host "python-dependency-management\scripts\test-python-version.ps1 not found - skipping version test" -ForegroundColor Yellow
     }
     
     Write-Host ""
     
     # Run Dependency Management in initial-run mode
-    if (Test-Path manage-python-project-dependencies.ps1) {
+    if (Test-Path python-dependency-management\scripts\manage-python-project-dependencies.ps1) {
         Write-Host "Starting Dependency Management for initial setup..." -ForegroundColor Cyan
         try {
-            & .\manage-python-project-dependencies.ps1 -InitialRun
+            & .\python-dependency-management\scripts\manage-python-project-dependencies.ps1 -InitialRun
         } catch {
             Write-Host "Error running dependency management: $_" -ForegroundColor Red
             Write-Host "Dependencies will be installed when Docker builds the container" -ForegroundColor Yellow
         }
     } else {
-        Write-Host "manage-python-project-dependencies.ps1 not found - skipping" -ForegroundColor Yellow
+        Write-Host "python-dependency-management\scripts\manage-python-project-dependencies.ps1 not found - skipping" -ForegroundColor Yellow
         Write-Host "Dependencies will be installed when Docker builds the container" -ForegroundColor Yellow
     }
     
@@ -194,37 +194,33 @@ if (-not (Test-Path .setup-complete)) {
             docker compose -f $COMPOSE_FILE up --build
         }
         "2" {
-            if (Test-Path manage-python-project-dependencies.ps1) {
+            if (Test-Path python-dependency-management\scripts\manage-python-project-dependencies.ps1) {
                 Write-Host "Opening Dependency Management..." -ForegroundColor Cyan
-                & .\manage-python-project-dependencies.ps1
+                & .\python-dependency-management\scripts\manage-python-project-dependencies.ps1
             } else {
-                Write-Host "manage-python-project-dependencies.ps1 not found" -ForegroundColor Red
+                Write-Host "python-dependency-management\scripts\manage-python-project-dependencies.ps1 not found" -ForegroundColor Red
             }
             Write-Host ""
             Write-Host "To start the backend, run: docker compose -f $COMPOSE_FILE up --build" -ForegroundColor Yellow
         }
         "3" {
-            if (Test-Path manage-python-project-dependencies.ps1) {
+            if (Test-Path python-dependency-management\scripts\manage-python-project-dependencies.ps1) {
                 Write-Host "Opening Dependency Management first..." -ForegroundColor Cyan
-                & .\manage-python-project-dependencies.ps1
+                & .\python-dependency-management\scripts\manage-python-project-dependencies.ps1
             } else {
-                Write-Host "manage-python-project-dependencies.ps1 not found" -ForegroundColor Red
+                Write-Host "python-dependency-management\scripts\manage-python-project-dependencies.ps1 not found" -ForegroundColor Red
                 Write-Host "Skipping dependency management." -ForegroundColor Yellow
             }
             Write-Host ""
             Write-Host "Starting backend now..." -ForegroundColor Cyan
-            Write-Host "Note: Rebuilding to use updated dependencies (removing old volumes)..." -ForegroundColor Yellow
-            
-            # Remove volumes to ensure fresh .venv, then rebuild and start
-            docker compose -f $COMPOSE_FILE down -v
             docker compose -f $COMPOSE_FILE up --build
         }
         "4" {
-            if (Test-Path test-python-version.ps1) {
+            if (Test-Path python-dependency-management\scripts\test-python-version.ps1) {
                 Write-Host "Testing Python version configuration..." -ForegroundColor Yellow
-                & .\test-python-version.ps1
+                & .\python-dependency-management\scripts\test-python-version.ps1
             } else {
-                Write-Host "test-python-version.ps1 not found" -ForegroundColor Red
+                Write-Host "python-dependency-management\scripts\test-python-version.ps1 not found" -ForegroundColor Red
             }
         }
         default {
@@ -242,8 +238,8 @@ Write-Host "  .\quick-start.ps1" -ForegroundColor White
 Write-Host ""
 Write-Host "Start backend:           docker compose -f $COMPOSE_FILE up --build" -ForegroundColor Gray
 Write-Host "Stop backend:            Ctrl+C or docker compose -f $COMPOSE_FILE down" -ForegroundColor Gray
-Write-Host "Dependency Management:   .\manage-python-project-dependencies.ps1" -ForegroundColor Gray
-Write-Host "Python Version Test:     .\test-python-version.ps1" -ForegroundColor Gray
+Write-Host "Dependency Management:   .\python-dependency-management\scripts\manage-python-project-dependencies.ps1" -ForegroundColor Gray
+Write-Host "Python Version Test:     .\python-dependency-management\scripts\test-python-version.ps1" -ForegroundColor Gray
 Write-Host "Show logs:               docker compose -f $COMPOSE_FILE logs -f" -ForegroundColor Gray
 Write-Host "Rebuild containers:      docker compose -f $COMPOSE_FILE up --build" -ForegroundColor Gray
 Write-Host ""

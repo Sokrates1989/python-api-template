@@ -10,14 +10,14 @@
 services:
   app:
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile
       args:
         PYTHON_VERSION: ${PYTHON_VERSION}
     ports:
       - "${PORT}:8000"
     env_file:
-      - .env
+      - ../.env
     environment:
       DB_TYPE: ${DB_TYPE}
       NEO4J_URL: ${NEO4J_URL}
@@ -29,11 +29,11 @@ services:
     volumes:
       # Mount individual directories for live-reloading of code.
       # This ensures the pyproject.toml and pdm.lock from the build are not overwritten.
-      - ./app/main.py:/app/main.py
-      - ./app/api:/app/api
-      - ./app/backend:/app/backend
-      - ./app/models:/app/models
-      - ./app/mounted_data:/app/mounted_data
+      - ../app/main.py:/app/main.py
+      - ../app/api:/app/api
+      - ../app/backend:/app/backend
+      - ../app/models:/app/models
+      - ../app/mounted_data:/app/mounted_data
       # Note: .venv is built into the image, not mounted as a volume
       # This ensures dependencies always match pdm.lock from the build
     depends_on:

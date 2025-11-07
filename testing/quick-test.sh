@@ -32,22 +32,22 @@ if [ ! -f .env ]; then
     case $db_choice in
         1)
             echo "📝 Copying PostgreSQL configuration..."
-            cp .env.postgres.example .env
+            cp config/.env.postgres.example .env
             echo "✅ Using PostgreSQL"
             ;;
         2)
             echo "📝 Copying Neo4j configuration..."
-            cp .env.neo4j.example .env
+            cp config/.env.neo4j.example .env
             echo "✅ Using Neo4j"
             ;;
         3)
             echo "ℹ️  Please create .env file manually"
-            echo "   You can copy from .env.postgres.example or .env.neo4j.example"
+            echo "   You can copy from config/.env.postgres.example or config/.env.neo4j.example"
             exit 0
             ;;
         *)
             echo "❌ Invalid choice. Using PostgreSQL as default..."
-            cp .env.postgres.example .env
+            cp config/.env.postgres.example .env
             ;;
     esac
     echo ""
@@ -59,16 +59,16 @@ DB_MODE=$(grep "^DB_MODE=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo
 
 # Determine compose file
 if [ "$DB_MODE" = "external" ]; then
-    COMPOSE_FILE="docker-compose.yml"
+    COMPOSE_FILE="docker/docker-compose.yml"
     echo "🔌 Using external $DB_TYPE database"
 elif [ "$DB_TYPE" = "neo4j" ]; then
-    COMPOSE_FILE="docker-compose.neo4j.yml"
+    COMPOSE_FILE="docker/docker-compose.neo4j.yml"
     echo "🗄️  Using local Neo4j database"
 elif [ "$DB_TYPE" = "postgresql" ] || [ "$DB_TYPE" = "mysql" ]; then
-    COMPOSE_FILE="docker-compose.postgres.yml"
+    COMPOSE_FILE="docker/docker-compose.postgres.yml"
     echo "🗄️  Using local PostgreSQL database"
 else
-    COMPOSE_FILE="docker-compose.yml"
+    COMPOSE_FILE="docker/docker-compose.yml"
     echo "⚠️  Unknown database type, using default"
 fi
 

@@ -4,6 +4,9 @@
 
 $ErrorActionPreference = "Stop"
 
+# Change to project root (script is in python-dependency-management\scripts\)
+Set-Location (Join-Path $PSScriptRoot "..\..") 
+
 # Helper function for colored output
 function Write-ColorOutput {
     param(
@@ -71,16 +74,16 @@ function Show-Diagnostics {
         Write-ColorOutput "[ERROR] Dependency management Dockerfile missing" "Red"
     }
     
-    if (Test-Path docker-compose.yml) {
+    if (Test-Path docker\docker-compose.yml) {
         Write-ColorOutput "[OK] Main docker-compose.yml exists" "Green"
     } else {
-        Write-ColorOutput "[ERROR] Main docker-compose.yml missing" "Red"
+        Write-ColorOutput "[ERROR] Main docker\docker-compose.yml missing" "Red"
     }
     
-    if (Test-Path docker-compose-python-dependency-management.yml) {
+    if (Test-Path docker\docker-compose-python-dependency-management.yml) {
         Write-ColorOutput "[OK] Dependency management docker-compose.yml exists" "Green"
     } else {
-        Write-ColorOutput "[ERROR] Dependency management docker-compose.yml missing" "Red"
+        Write-ColorOutput "[ERROR] Dependency management docker\docker-compose-python-dependency-management.yml missing" "Red"
     }
 }
 
@@ -160,14 +163,14 @@ try {
 Write-Host ""
 Write-ColorOutput "Testing docker-compose builds..." "Cyan"
 try {
-    $null = & docker compose build --no-cache 2>&1
+    $null = & docker compose -f docker\docker-compose.yml build --no-cache 2>&1
     if ($LASTEXITCODE -eq 0) {
         Write-ColorOutput "[OK] Main docker-compose builds successfully" "Green"
     } else {
         throw "Build failed"
     }
 } catch {
-    Write-ColorOutput "[ERROR] Main docker-compose build failed" "Red"
+    Write-ColorOutput "[ERROR] Main docker\docker-compose.yml build failed" "Red"
     Write-ColorOutput "   Error: Docker compose build failed for main application" "Yellow"
     Write-ColorOutput "   Possible causes:" "Yellow"
     Write-ColorOutput "   - Docker not running" "Gray"
@@ -179,14 +182,14 @@ try {
 }
 
 try {
-    $null = & docker compose -f docker-compose-python-dependency-management.yml build --no-cache 2>&1
+    $null = & docker compose -f docker\docker-compose-python-dependency-management.yml build --no-cache 2>&1
     if ($LASTEXITCODE -eq 0) {
         Write-ColorOutput "[OK] Dependency management docker-compose builds successfully" "Green"
     } else {
         throw "Build failed"
     }
 } catch {
-    Write-ColorOutput "[ERROR] Dependency management docker-compose build failed" "Red"
+    Write-ColorOutput "[ERROR] Dependency management docker\docker-compose-python-dependency-management.yml build failed" "Red"
     Write-ColorOutput "   Error: Docker compose build failed for dependency management" "Yellow"
     Write-ColorOutput "   Possible causes:" "Yellow"
     Write-ColorOutput "   - Docker not running" "Gray"

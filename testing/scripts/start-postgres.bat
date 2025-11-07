@@ -10,12 +10,12 @@ cd /d "%~dp0..\.."
 REM Copy environment file
 if not exist .env (
     echo Copying PostgreSQL environment configuration...
-    copy .env.postgres.example .env
+    copy config\.env.postgres.example .env
     echo.
 )
 
 echo Starting Docker services...
-docker-compose -f docker-compose.postgres.yml up --build
+docker-compose -f docker\docker-compose.postgres.yml up --build
 
 echo.
 echo ========================================

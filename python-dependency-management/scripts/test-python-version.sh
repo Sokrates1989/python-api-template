@@ -2,6 +2,9 @@
 
 # Test script to verify Python version configuration
 
+# Change to project root (script is in python-dependency-management/scripts/)
+cd "$(dirname "$0")/../.."
+
 # Function to provide diagnostic information
 provide_diagnostics() {
     echo ""
@@ -46,16 +49,16 @@ provide_diagnostics() {
         echo "❌ Dependency management Dockerfile missing"
     fi
     
-    if [ -f docker-compose.yml ]; then
+    if [ -f docker/docker-compose.yml ]; then
         echo "✅ Main docker-compose.yml exists"
     else
-        echo "❌ Main docker-compose.yml missing"
+        echo "❌ Main docker/docker-compose.yml missing"
     fi
     
-    if [ -f docker-compose-python-dependency-management.yml ]; then
+    if [ -f docker/docker-compose-python-dependency-management.yml ]; then
         echo "✅ Dependency management docker-compose.yml exists"
     else
-        echo "❌ Dependency management docker-compose.yml missing"
+        echo "❌ Dependency management docker/docker-compose-python-dependency-management.yml missing"
     fi
 }
 
@@ -114,10 +117,10 @@ cd ..
 # Test docker-compose builds
 echo ""
 echo "🐳 Testing docker-compose builds..."
-if docker-compose build --no-cache > /dev/null 2>&1; then
+if docker-compose -f docker/docker-compose.yml build --no-cache > /dev/null 2>&1; then
     echo "✅ Main docker-compose builds successfully"
 else
-    echo "❌ Main docker-compose build failed"
+    echo "❌ Main docker/docker-compose.yml build failed"
     echo "   Error: Docker compose build failed for main application"
     echo "   Possible causes:"
     echo "   - Docker not running"
@@ -128,10 +131,10 @@ else
     return 1
 fi
 
-if docker-compose -f docker-compose-python-dependency-management.yml build --no-cache > /dev/null 2>&1; then
+if docker-compose -f docker/docker-compose-python-dependency-management.yml build --no-cache > /dev/null 2>&1; then
     echo "✅ Dependency management docker-compose builds successfully"
 else
-    echo "❌ Dependency management docker-compose build failed"
+    echo "❌ Dependency management docker/docker-compose-python-dependency-management.yml build failed"
     echo "   Error: Docker compose build failed for dependency management"
     echo "   Possible causes:"
     echo "   - Docker not running"

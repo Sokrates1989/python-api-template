@@ -11,12 +11,12 @@ echo ""
 # Copy environment file if it doesn't exist
 if [ ! -f .env ]; then
     echo "Copying PostgreSQL environment configuration..."
-    cp .env.postgres.example .env
+    cp config/.env.postgres.example .env
     echo ""
 fi
 
 echo "Starting Docker services..."
-docker compose -f docker-compose.postgres.yml up --build
+docker compose -f docker/docker-compose.postgres.yml up --build
 
 echo ""
 echo "========================================"

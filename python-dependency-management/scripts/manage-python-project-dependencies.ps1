@@ -67,7 +67,9 @@ Write-Host ""
 
 # Change to the python-dependency-management directory for config files
 $originalPath = Get-Location
-Set-Location python-dependency-management
+# First go to the script's directory, then to parent (python-dependency-management)
+Set-Location $PSScriptRoot
+Set-Location ..
 
 # Check if config.env exists, if not create it from example
 if (-not (Test-Path "config.env")) {
@@ -128,7 +130,7 @@ Write-ColorOutput "[python-dependency-management] Building dev environment Docke
 
 # Build the Docker image using the root docker-compose file
 Set-Location ..
-& docker compose -f docker-compose-python-dependency-management.yml build
+& docker compose -f docker\docker-compose-python-dependency-management.yml build
 
 if ($LASTEXITCODE -ne 0) {
     Write-ColorOutput "[ERROR] Docker build failed!" "Red"
@@ -138,7 +140,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-ColorOutput "[python-dependency-management] Running setup script to generate lock files..." "Yellow"
 
 # Run the setup script in a container (use bash to handle potential line ending issues)
-& docker compose -f docker-compose-python-dependency-management.yml run --rm dev /bin/bash ./python-dependency-management/dev-setup.sh
+& docker compose -f docker\docker-compose-python-dependency-management.yml run --rm dev /bin/bash ./python-dependency-management/dev-setup.sh
 
 if ($LASTEXITCODE -ne 0) {
     Write-ColorOutput "[ERROR] Setup script failed!" "Red"
@@ -154,7 +156,7 @@ if ($InitialRun) {
     Write-Host ""
     
     # Run pdm install in the container to generate proper lock files
-    & docker compose -f docker-compose-python-dependency-management.yml run --rm dev pdm install
+    & docker compose -f docker\docker-compose-python-dependency-management.yml run --rm dev pdm install
     
     if ($LASTEXITCODE -ne 0) {
         Write-ColorOutput "[ERROR] PDM install failed!" "Red"
@@ -233,5 +235,5 @@ if ($InitialRun) {
     Write-Host ""
 
     # Start interactive shell in a clean container
-    & docker compose -f docker-compose-python-dependency-management.yml run --rm dev
+    & docker compose -f docker\docker-compose-python-dependency-management.yml run --rm dev
 }

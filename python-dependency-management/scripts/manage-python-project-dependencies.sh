@@ -61,7 +61,9 @@ print_color $GREEN "✅ Docker ist installiert und läuft"
 print_color $BLUE ""
 
 # Change to the python-dependency-management directory for config files
-cd python-dependency-management
+# First go to script's directory, then to parent (python-dependency-management)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR/.."
 
 # Check if config.env exists, if not create it from example
 if [ ! -f "config.env" ]; then
@@ -118,32 +120,32 @@ print_color $YELLOW "[python-dependency-management] Building dev environment Doc
 
 # Build the Docker image using the root docker-compose file
 cd ..
-docker-compose -f docker-compose-python-dependency-management.yml build
+docker-compose -f docker/docker-compose-python-dependency-management.yml build
 
 print_color $YELLOW "[python-dependency-management] Running setup script to generate lock files..."
 
 # Run the setup script in a container
-docker-compose -f docker-compose-python-dependency-management.yml run --rm dev ./python-dependency-management/dev-setup.sh
+docker-compose -f docker/docker-compose-python-dependency-management.yml run --rm dev ./python-dependency-management/dev-setup.sh
 
 print_color $GREEN "[python-dependency-management] Setup complete!"
 
 if [ "$INITIAL_RUN_MODE" = true ]; then
-    print_color $BLUE "🚀 Initial run mode: Running pdm install to update lock files..."
-    print_color $YELLOW "📦 This will ensure your project dependencies are properly locked and ready for Docker builds."
-    print_color $YELLOW "⏳ This may take a moment on first run, but subsequent runs will be faster."
+    print_color $BLUE " Initial run mode: Running pdm install to update lock files..."
+    print_color $YELLOW " This will ensure your project dependencies are properly locked and ready for Docker builds."
+    print_color $YELLOW " This may take a moment on first run, but subsequent runs will be faster."
     
     # Run pdm install in the container to generate proper lock files
-    docker-compose -f docker-compose-python-dependency-management.yml run --rm dev pdm install
+    docker-compose -f docker/docker-compose-python-dependency-management.yml run --rm dev pdm install
     
-    print_color $GREEN "✅ PDM install completed successfully!"
-    print_color $BLUE "🎉 Your project is now ready for Docker builds!"
+    print_color $GREEN " PDM install completed successfully!"
+    print_color $BLUE " Your project is now ready for Docker builds!"
     print_color $YELLOW ""
-    print_color $YELLOW "💡 Next steps:"
+    print_color $YELLOW " Next steps:"
     print_color $YELLOW "  • Your lock files have been updated"
     print_color $YELLOW "  • Docker builds will now work correctly"
     print_color $YELLOW "  • To manage dependencies interactively, run: ./manage-python-project-dependencies.sh"
     print_color $YELLOW ""
-    print_color $YELLOW "📚 Common PDM commands for future reference:"
+    print_color $YELLOW " Common PDM commands for future reference:"
     print_color $YELLOW "  pdm add requests          # Add a package"
     print_color $YELLOW "  pdm add pytest --dev     # Add development dependency"
     print_color $YELLOW "  pdm remove requests       # Remove a package"
@@ -151,11 +153,11 @@ if [ "$INITIAL_RUN_MODE" = true ]; then
     print_color $YELLOW "  pdm update               # Update all dependencies"
     print_color $YELLOW ""
 else
-    print_color $BLUE "🚀 Dropping you into an interactive shell with Poetry and PDM ready to use..."
+    print_color $BLUE " Dropping you into an interactive shell with Poetry and PDM ready to use..."
 
-    print_color $BLUE "💡 Common PDM Commands & Use Cases:"
+    print_color $BLUE " Common PDM Commands & Use Cases:"
     print_color $YELLOW ""
-    print_color $YELLOW "📦 Basic Package Management:"
+    print_color $YELLOW " Basic Package Management:"
     print_color $YELLOW "  pdm add requests                    # Add a package"
     print_color $YELLOW "  pdm add \"requests>=2.28.0\"         # Add with version constraint"
     print_color $YELLOW "  pdm add pytest --dev               # Add development dependency"
@@ -163,37 +165,37 @@ else
     print_color $YELLOW "  pdm install                         # Install all dependencies"
     print_color $YELLOW "  pdm list                            # List installed packages"
     print_color $YELLOW ""
-    print_color $YELLOW "🔄 Dependency Management:"
+    print_color $YELLOW " Dependency Management:"
     print_color $YELLOW "  pdm update                          # Update all dependencies"
     print_color $YELLOW "  pdm update requests                 # Update specific package"
     print_color $YELLOW "  pdm lock                            # Update lock file"
     print_color $YELLOW "  pdm lock --check                    # Check if lock file is up-to-date"
     print_color $YELLOW "  pdm sync                            # Sync environment with lock file"
     print_color $YELLOW ""
-    print_color $YELLOW "🔧 Troubleshooting & Conflicts:"
+    print_color $YELLOW " Troubleshooting & Conflicts:"
     print_color $YELLOW "  pdm lock --update-reuse             # Update lock with conflict resolution"
     print_color $YELLOW "  pdm install --no-lock               # Install without updating lock file"
     print_color $YELLOW "  pdm cache clear                     # Clear package cache"
     print_color $YELLOW "  pdm info                            # Show project information"
     print_color $YELLOW "  pdm info requests                   # Show package details"
     print_color $YELLOW ""
-    print_color $YELLOW "🐍 Python Version Management:"
+    print_color $YELLOW " Python Version Management:"
     print_color $YELLOW "  pdm python list                     # List available Python versions"
     print_color $YELLOW "  pdm python install 3.12             # Install specific Python version"
     print_color $YELLOW "  pdm use 3.12                        # Switch to Python 3.12"
     print_color $YELLOW ""
-    print_color $YELLOW "🚀 Running Scripts:"
+    print_color $YELLOW " Running Scripts:"
     print_color $YELLOW "  pdm run python script.py            # Run script with project dependencies"
     print_color $YELLOW "  pdm run pytest                      # Run tests"
     print_color $YELLOW "  pdm run --list                      # List available scripts"
     print_color $YELLOW ""
-    print_color $YELLOW "🔍 Debugging Dependency Issues:"
+    print_color $YELLOW " Debugging Dependency Issues:"
     print_color $YELLOW "  pdm show --graph                    # Show dependency tree"
     print_color $YELLOW "  pdm show --reverse requests         # Show what depends on requests"
     print_color $YELLOW "  pdm export -f requirements          # Export to requirements.txt format"
     print_color $YELLOW "  pdm import requirements.txt         # Import from requirements.txt"
     print_color $YELLOW ""
-    print_color $YELLOW "⚡ Quick Fixes for Common Issues:"
+    print_color $YELLOW " Quick Fixes for Common Issues:"
     print_color $YELLOW "  # Dependency conflict resolution:"
     print_color $YELLOW "  pdm lock --update-reuse --resolution=highest"
     print_color $YELLOW ""
@@ -207,5 +209,5 @@ else
     print_color $YELLOW ""
 
     # Start interactive shell in a clean container
-    docker-compose -f docker-compose-python-dependency-management.yml run --rm dev
-fi 
+    docker-compose -f docker/docker-compose-python-dependency-management.yml run --rm dev
+fi

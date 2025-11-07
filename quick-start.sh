@@ -43,8 +43,8 @@ if [ -f .env ]; then
   echo "✅ .env Datei existiert bereits."
   echo "Bitte prüfe die Werte in .env bei Bedarf."
 else
-  if [ -f .env.template ]; then
-    cp .env.template .env
+  if [ -f config/.env.template ]; then
+    cp config/.env.template .env
     echo "✅ .env wurde aus .env.template erstellt."
     echo "📝 Bitte öffne die .env Datei und passe die Werte an:"
     echo "   nano .env"
@@ -55,7 +55,7 @@ else
     echo ""
     read -p "Drücke Enter, wenn du die .env Datei angepasst hast ..."
   else
-    echo "❌ .env.template nicht gefunden! Bitte stelle sicher, dass die Vorlage existiert."
+    echo "❌ config/.env.template nicht gefunden! Bitte stelle sicher, dass die Vorlage existiert."
     exit 1
   fi
 fi
@@ -69,21 +69,21 @@ DB_MODE=$(grep "^DB_MODE=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo
 
 # Docker Compose Datei basierend auf DB_TYPE und DB_MODE bestimmen
 if [ "$DB_MODE" = "external" ]; then
-    COMPOSE_FILE="docker-compose.yml"
+    COMPOSE_FILE="docker/docker-compose.yml"
     echo "🔌 Detected external database mode"
     echo "   Database Type: $DB_TYPE"
     echo "   Will connect to external database (no local DB container)"
 elif [ "$DB_TYPE" = "neo4j" ]; then
-    COMPOSE_FILE="docker-compose.neo4j.yml"
+    COMPOSE_FILE="docker/docker-compose.neo4j.yml"
     echo "🗄️  Detected local Neo4j database"
     echo "   Will start Neo4j container"
 elif [ "$DB_TYPE" = "postgresql" ] || [ "$DB_TYPE" = "mysql" ]; then
-    COMPOSE_FILE="docker-compose.postgres.yml"
+    COMPOSE_FILE="docker/docker-compose.postgres.yml"
     echo "🗄️  Detected local $DB_TYPE database"
     echo "   Will start PostgreSQL container"
 else
-    COMPOSE_FILE="docker-compose.yml"
-    echo "⚠️  Unknown DB_TYPE: $DB_TYPE, using default docker-compose.yml"
+    COMPOSE_FILE="docker/docker-compose.yml"
+    echo "⚠️  Unknown DB_TYPE: $DB_TYPE, using default docker/docker-compose.yml"
 fi
 
 echo "   Using: $COMPOSE_FILE"
@@ -97,9 +97,9 @@ if [ ! -f ".setup-complete" ]; then
     
     # Test Python version configuration first
     echo "🔍 Testing Python version configuration..."
-    if [ -f "test-python-version.sh" ]; then
+    if [ -f "python-dependency-management/scripts/test-python-version.sh" ]; then
         echo "Running Python version tests..."
-        if ./test-python-version.sh; then
+        if ./python-dependency-management/scripts/test-python-version.sh; then
             echo "✅ Python version configuration test passed"
         else
             echo ""
@@ -110,7 +110,7 @@ if [ ! -f ".setup-complete" ]; then
             echo "1. Check if .env file exists and contains PYTHON_VERSION=3.13"
             echo "2. Ensure Docker is running: docker --version"
             echo "3. Verify .env file format: cat .env"
-            echo "4. Try manual test: ./test-python-version.sh (forces fresh build with latest Python base)"
+            echo "4. Try manual test: ./python-dependency-management/scripts/test-python-version.sh (forces fresh build with latest Python base)"
             echo ""
             echo "The following steps may fail if Python version is not configured correctly."
             read -p "Continue anyway? (y/N): " continue_anyway
@@ -121,13 +121,13 @@ if [ ! -f ".setup-complete" ]; then
             echo "⚠️  Continuing with potentially broken configuration..."
         fi
     else
-        echo "⚠️  test-python-version.sh not found - skipping version test"
+        echo "⚠️  python-dependency-management/scripts/test-python-version.sh not found - skipping version test"
     fi
     echo ""
     echo "📦 Starte Dependency Management für initiales Setup..."
     
     # Führe das Dependency Management im initial-run Modus aus
-    ./manage-python-project-dependencies.sh initial-run
+    ./python-dependency-management/scripts/manage-python-project-dependencies.sh initial-run
     
     # Markiere Setup als abgeschlossen
     touch .setup-complete
@@ -159,24 +159,24 @@ else
         ;;
       2)
         echo "📦 Öffne Dependency Management..."
-        ./manage-python-project-dependencies.sh
+        ./python-dependency-management/scripts/manage-python-project-dependencies.sh
         echo ""
         echo "ℹ️  Dependency Management beendet."
         echo "💡 Um das Backend zu starten, führe aus: docker compose -f $COMPOSE_FILE up --build"
         ;;
       3)
         echo "📦 Öffne zuerst Dependency Management..."
-        ./manage-python-project-dependencies.sh
+        ./python-dependency-management/scripts/manage-python-project-dependencies.sh
         echo ""
         echo "🚀 Starte nun das Backend..."
         docker compose -f "$COMPOSE_FILE" up --build
         ;;
       4)
         echo "🔍 Testing Python version configuration..."
-        if [ -f "test-python-version.sh" ]; then
-            ./test-python-version.sh
+        if [ -f "python-dependency-management/scripts/test-python-version.sh" ]; then
+            ./python-dependency-management/scripts/test-python-version.sh
         else
-            echo "❌ test-python-version.sh not found"
+            echo "❌ python-dependency-management/scripts/test-python-version.sh not found"
         fi
         ;;
       *)
@@ -192,10 +192,10 @@ echo "================================"
 echo "• Guided usage -> Backend starten/ dependency management menu: "    
 echo "./quick-start.sh"
 echo ""
-echo "• Backend starten:           docker compose up --build"
+echo "• Backend starten:           docker compose -f docker/docker-compose.yml up --build"
 echo "• Backend stoppen:           Ctrl+C oder docker compose down"
-echo "• Dependency Management:     ./manage-python-project-dependencies.sh"
-echo "• Python Version Test:       ./test-python-version.sh"
+echo "• Dependency Management:     ./python-dependency-management/scripts/manage-python-project-dependencies.sh"
+echo "• Python Version Test:       ./python-dependency-management/scripts/test-python-version.sh"
 echo "• Logs anzeigen:             docker compose logs -f"
 echo "• Container neu bauen:       docker compose up --build"
 echo ""

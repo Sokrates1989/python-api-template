@@ -11,12 +11,12 @@ echo ""
 # Copy environment file if it doesn't exist
 if [ ! -f .env ]; then
     echo "Copying Neo4j environment configuration..."
-    cp .env.neo4j.example .env
+    cp config/.env.neo4j.example .env
     echo ""
 fi
 
 echo "Starting Docker services..."
-docker compose -f docker-compose.neo4j.yml up --build
+docker compose -f docker/docker-compose.neo4j.yml up --build
 
 echo ""
 echo "========================================"
