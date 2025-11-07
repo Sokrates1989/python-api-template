@@ -63,6 +63,30 @@ fi
 # Port aus .env lesen (Standard: 8000)
 PORT=$(grep "^PORT=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo "8000")
 
+# Database configuration aus .env lesen
+DB_TYPE=$(grep "^DB_TYPE=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo "neo4j")
+DB_MODE=$(grep "^DB_MODE=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo "local")
+
+# Docker Compose Datei basierend auf DB_TYPE und DB_MODE bestimmen
+if [ "$DB_MODE" = "external" ]; then
+    COMPOSE_FILE="docker-compose.yml"
+    echo "🔌 Detected external database mode"
+    echo "   Database Type: $DB_TYPE"
+    echo "   Will connect to external database (no local DB container)"
+elif [ "$DB_TYPE" = "neo4j" ]; then
+    COMPOSE_FILE="docker-compose.neo4j.yml"
+    echo "🗄️  Detected local Neo4j database"
+    echo "   Will start Neo4j container"
+elif [ "$DB_TYPE" = "postgresql" ] || [ "$DB_TYPE" = "mysql" ]; then
+    COMPOSE_FILE="docker-compose.postgres.yml"
+    echo "🗄️  Detected local $DB_TYPE database"
+    echo "   Will start PostgreSQL container"
+else
+    COMPOSE_FILE="docker-compose.yml"
+    echo "⚠️  Unknown DB_TYPE: $DB_TYPE, using default docker-compose.yml"
+fi
+
+echo "   Using: $COMPOSE_FILE"
 echo ""
 
 # Prüfen, ob dies der erste Setup-Lauf ist
@@ -113,7 +137,7 @@ if [ ! -f ".setup-complete" ]; then
     echo "🐳 Starte nun das Backend..."
     echo "Backend wird verfügbar sein auf: http://localhost:$PORT"
     echo ""
-    docker compose up --build
+    docker compose -f "$COMPOSE_FILE" up --build
 else
     echo "🐳 Starte Backend mit Docker Compose..."
     echo "Backend wird verfügbar sein auf: http://localhost:$PORT"
@@ -131,21 +155,21 @@ else
     case $choice in
       1)
         echo "🚀 Starte Backend direkt..."
-        docker compose up --build
+        docker compose -f "$COMPOSE_FILE" up --build
         ;;
       2)
         echo "📦 Öffne Dependency Management..."
         ./manage-python-project-dependencies.sh
         echo ""
         echo "ℹ️  Dependency Management beendet."
-        echo "💡 Um das Backend zu starten, führe aus: docker compose up --build"
+        echo "💡 Um das Backend zu starten, führe aus: docker compose -f $COMPOSE_FILE up --build"
         ;;
       3)
         echo "📦 Öffne zuerst Dependency Management..."
         ./manage-python-project-dependencies.sh
         echo ""
         echo "🚀 Starte nun das Backend..."
-        docker compose up --build
+        docker compose -f "$COMPOSE_FILE" up --build
         ;;
       4)
         echo "🔍 Testing Python version configuration..."

@@ -3,6 +3,9 @@
 .venv/
 venv/
 
+# Docker volumes (local directories)
+.docker/
+
 # IDE / Editor specific
 .vscode/
 .idea/

@@ -1,6 +1,6 @@
-# 🚀 FastAPI Redis API Test
+# 🚀 FastAPI Python API Template
 
-A production-ready FastAPI template with Redis cache, Docker-based development, and modern Python dependency management.
+A production-ready FastAPI template with multi-database support, Redis cache, Docker-based development, and modern Python dependency management.
 
 ## 📚 Table of Contents
 
@@ -23,10 +23,11 @@ A production-ready FastAPI template with Redis cache, Docker-based development, 
 This template is a clean and extensible FastAPI project with:
 
 - ✅ FastAPI framework with automatic documentation
+- ✅ **Multi-database support**: Neo4j, PostgreSQL, MySQL, SQLite
 - ✅ Redis integration as caching layer
 - ✅ Docker & Docker Compose for reproducible environments
 - ✅ Environment variable-based configuration
-- ✅ Optional integrations for Neo4j and AWS
+- ✅ Modular architecture with clean separation of concerns
 - ✅ Modern Python dependency management with PDM
 
 ## 📋 Prerequisites
@@ -40,40 +41,85 @@ This template is a clean and extensible FastAPI project with:
 
 ## 🚀 Quick Start
 
-### 1. Clone the project
-```bash
-git clone https://gitlab.com/speedie3/fastapi-redis-api-test
-cd fastapi-redis-api-test
+### Guided Setup (Recommended)
+
+**Windows PowerShell:**
+```powershell
+.\quick-start.ps1
 ```
 
-### 2. Run Quick Start
+**Linux/Mac:**
 ```bash
 ./quick-start.sh
 ```
 
-**On first run:**
-- ✅ Checks Docker installation
-- ✅ Creates `.env` from `.env.template` (if not present)
-- ✅ Automatically runs dependency management (`initial-run`)
-- ✅ Updates PDM lock files for Docker builds
-- ✅ Starts backend automatically with `docker compose up --build`
-- ⚡ **Note:** First start may take longer, subsequent runs are usually much faster
+The script will:
+- ✅ Check Docker installation
+- ✅ Create `.env` from template
+- ✅ Detect database type (PostgreSQL/Neo4j) and mode (local/external)
+- ✅ Start the correct containers automatically
 
-**On subsequent runs:**
-- 🎛️ Provides selection menu:
-  1. Start backend directly
-  2. Open dependency management first
-  3. Dependency management + start backend
+### Option 1: Quick Start with PostgreSQL (Manual)
 
-### 3. .env Configuration
-If the automatically created `.env` is not sufficient, you can:
-- 📝 Manually edit the `.env` file: `nano .env`
-- 🔐 Or copy configuration from the 1Password vault (link shown in script)
-- 📧 If permission is missing: Ask administrator for access to vault `FASTAPI-REDIS-API-TEST`
+**Windows:**
+```bash
+# Automatically sets up and starts PostgreSQL + Redis + API
+cd testing
+start-postgres.bat
+```
 
-### 4. Use the API
-- **Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
-- **API Endpoints:** Port from your `.env` (default: 8000)
+**Linux/Mac:**
+```bash
+# Copy environment configuration
+cp .env.postgres.example .env
+
+# Start services
+docker-compose -f docker-compose.postgres.yml up --build
+```
+
+**Access:**
+- **API**: http://localhost:8000/docs
+- **PostgreSQL**: localhost:5432 (user: postgres, password: postgres)
+
+### Option 2: Quick Start with Neo4j (Manual)
+
+**Windows:**
+```bash
+# Automatically sets up and starts Neo4j + Redis + API
+cd testing
+start-neo4j.bat
+```
+
+**Linux/Mac:**
+```bash
+# Copy environment configuration
+cp .env.neo4j.example .env
+
+# Start services
+docker-compose -f docker-compose.neo4j.yml up --build
+```
+
+**Access:**
+- **API**: http://localhost:8000/docs
+- **Neo4j Browser**: http://localhost:7474 (user: neo4j, password: password)
+
+### Test the API
+
+**Windows:**
+```bash
+test-api.bat
+```
+
+**Linux/Mac:**
+```bash
+curl http://localhost:8000/test/db-test
+curl http://localhost:8000/test/db-info
+curl http://localhost:8000/test/db-sample-query
+```
+
+### Detailed Setup
+
+For complete setup instructions, see **[docs/DOCKER_SETUP.md](docs/DOCKER_SETUP.md)**
 
 ## 🔧 Dependency Management
 
@@ -130,21 +176,34 @@ exit
 ## 📁 Project Structure
 
 ```
-fastapi-redis-api-test/
+python-api-template/
 ├── app/                          # Main application code
-│   ├── api/                      # API-specific modules (routes, settings)
-│   ├── backend/                  # Business logic
+│   ├── api/                      # API layer
+│   │   ├── routes/              # Route handlers
+│   │   └── settings.py          # Configuration
+│   ├── backend/                  # Backend layer
+│   │   └── database/            # Database handlers
+│   │       ├── base.py          # Abstract base class
+│   │       ├── factory.py       # Database factory
+│   │       ├── neo4j_handler.py # Neo4j implementation
+│   │       ├── sql_handler.py   # SQL implementation
+│   │       ├── init_db.py       # Initialization
+│   │       └── queries.py       # Query helpers
+│   ├── models/                   # Data models
+│   │   └── example_sql_models.py
 │   ├── mounted_data/             # Example data for volume mounts
 │   └── main.py                   # FastAPI application entrypoint
+├── docs/                         # Documentation
+│   ├── DATABASE.md              # Database guide
+│   ├── QUICK_START.md           # Quick start guide
+│   └── README-DE.md             # German README
 ├── python-dependency-management/ # Dockerized dependency management tools
-├── .env.template               # Environment variable template
-├── .gitignore                  # Git ignore file
+├── .env.template                # Environment variable template
 ├── docker-compose.yml           # Docker services configuration
-├── Dockerfile                   # Docker build file for the backend
-├── pdm.lock                      # PDM lock file
-├── pyproject.toml              # Project metadata and dependencies (PDM)
+├── Dockerfile                   # Docker build file
+├── pyproject.toml              # Project metadata and dependencies
 ├── quick-start.sh              # Smart onboarding script
-└── manage-python-project-dependencies.sh # Dependency management script
+└── manage-python-project-dependencies.sh # Dependency management
 ```
 
 ## ⚙️ Configuration
@@ -155,17 +214,28 @@ fastapi-redis-api-test/
 |----------|-------------|---------|
 | `PORT` | API Port | `8000` |
 | `REDIS_URL` | Redis connection | `redis://redis:6379` |
-| `NEO4J_URL` | Neo4j connection (optional) | - |
-| `DB_USER` | Database user | - |
-| `DB_PASSWORD` | Database password | - |
+| `DB_TYPE` | Database type | `neo4j` |
+| `NEO4J_URL` | Neo4j connection (if DB_TYPE=neo4j) | - |
+| `DB_USER` | Database user (Neo4j) | - |
+| `DB_PASSWORD` | Database password (Neo4j) | - |
+| `DATABASE_URL` | SQL database URL (if DB_TYPE=postgresql/mysql/sqlite) | - |
 
-### Example .env
+### Example .env (Neo4j)
 ```env
 PORT=8000
 REDIS_URL=redis://redis:6379
+DB_TYPE=neo4j
 NEO4J_URL=bolt://localhost:7687
 DB_USER=neo4j
-DB_PASSWORD=secret-password
+DB_PASSWORD=password
+```
+
+### Example .env (PostgreSQL)
+```env
+PORT=8000
+REDIS_URL=redis://redis:6379
+DB_TYPE=postgresql
+DATABASE_URL=postgresql://user:password@localhost:5432/mydb
 ```
 
 ## 🧪 API Tests
@@ -176,6 +246,7 @@ DB_PASSWORD=secret-password
 - `POST /cache/{key}` - Set cache value
 - `GET /health` - Health check
 - `GET /version` - Show version
+- `GET /test/db-test` - Test database connection
 
 ## 🐳 Docker Commands
 
@@ -248,11 +319,31 @@ docker buildx build --platform linux/amd64 --build-arg IMAGE_TAG=$IMAGE_TAG \
 
 ## 📚 Additional Information
 
-- **Secrets:** Stored in 1Password Vault `FASTAPI-REDIS-API-TEST`
+### Database Support
+
+This template supports multiple database backends:
+- **Neo4j**: Graph database for connected data
+- **PostgreSQL**: Powerful relational database
+- **MySQL**: Popular relational database
+- **SQLite**: Lightweight file-based database
+
+See `docs/DATABASE.md` for detailed database configuration and usage.
+
+### Documentation
+
+- **Docker Setup**: `docs/DOCKER_SETUP.md` - Complete Docker setup guide ⭐
+- **How to Add Endpoint**: `docs/HOW_TO_ADD_ENDPOINT.md` - Step-by-step guide ⭐
+- **Project Structure**: `docs/PROJECT_STRUCTURE.md` - Structure explanation
+- **Quick Start**: `docs/QUICK_START.md` - Get started quickly
+- **Database Guide**: `docs/DATABASE.md` - Database configuration and usage
+- **Architecture**: `docs/ARCHITECTURE.md` - Architecture overview
+- **German README**: `docs/README-DE.md` - Deutsche Dokumentation
+
+### Deployment
+
 - **Registry:** GitLab Container Registry
 - **Deployment:** Azure Container Apps compatible
 - **Setup Marker:** `.setup-complete` is automatically created/deleted
-- **Configuration:** 1Password link is automatically shown in `quick-start.sh`
 
 ---
 

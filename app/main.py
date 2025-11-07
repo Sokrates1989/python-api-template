@@ -4,8 +4,21 @@ import uvicorn
 import redis
 from api.settings import settings
 from api.routes import test, files
+from backend.database import initialize_database, close_database
 
 app = FastAPI()
+
+# Application lifecycle events
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database connection on startup."""
+    await initialize_database()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close database connection on shutdown."""
+    await close_database()
+
 app.include_router(test.router)
 app.include_router(files.router)
 

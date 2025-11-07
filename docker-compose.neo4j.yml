@@ -1,12 +1,3 @@
-# Basic Docker Compose - App + Redis only
-# Use this for:
-#   - External databases (DB_MODE=external)
-#   - Custom database setups
-# For local Docker databases, use:
-#   - docker-compose.postgres.yml (PostgreSQL + Redis + App)
-#   - docker-compose.neo4j.yml (Neo4j + Redis + App)
-# See docs/DOCKER_SETUP.md for detailed instructions
-
 services:
   app:
     build:
@@ -21,14 +12,12 @@ services:
     environment:
       DB_TYPE: ${DB_TYPE}
       NEO4J_URL: ${NEO4J_URL}
-      DATABASE_URL: ${DATABASE_URL}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       REDIS_URL: ${REDIS_URL}
       DEBUG: ${DEBUG}
     volumes:
       # Mount individual directories for live-reloading of code.
-      # This ensures the pyproject.toml and pdm.lock from the build are not overwritten.
       - ./app/main.py:/app/main.py
       - ./app/api:/app/api
       - ./app/backend:/app/backend
@@ -37,7 +26,29 @@ services:
       # Use a named volume for the .venv to ensure it's persistent and isolated from the host.
       - pdm-venv:/app/.venv
     depends_on:
-      - redis
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  neo4j:
+    image: neo4j:5-community
+    environment:
+      NEO4J_AUTH: ${DB_USER:-neo4j}/${DB_PASSWORD:-password}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    volumes:
+      # Map Neo4j data and logs to local directories (NOT named volumes)
+      - ./.docker/neo4j-data:/data
+      - ./.docker/neo4j-logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u ${DB_USER:-neo4j} -p ${DB_PASSWORD:-password} 'RETURN 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
