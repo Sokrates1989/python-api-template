@@ -43,6 +43,13 @@ This template is a clean and extensible FastAPI project with:
 
 ### Guided Setup (Recommended)
 
+On first run, the quick-start scripts will launch an **interactive setup wizard** that helps you configure:
+- Docker image name and version
+- Python version
+- Database type (PostgreSQL or Neo4j)
+- Database mode (local Docker or external)
+- API settings (port, debug mode)
+
 **Windows PowerShell:**
 ```powershell
 .\quick-start.ps1

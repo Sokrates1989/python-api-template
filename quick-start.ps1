@@ -42,22 +42,52 @@ try {
 Write-Host "Docker is installed and running" -ForegroundColor Green
 Write-Host ""
 
-# Create .env file
-if (Test-Path .env) {
-    Write-Host ".env file already exists." -ForegroundColor Green
-    Write-Host "Please check the values in .env if needed." -ForegroundColor Yellow
-} else {
+# Check if initial setup is needed
+if (-not (Test-Path .setup-complete)) {
+    Write-Host " First-time setup detected!" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "This appears to be your first time running this project." -ForegroundColor Yellow
+    Write-Host "Would you like to run the interactive setup wizard?" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "The setup wizard will help you configure:" -ForegroundColor Gray
+    Write-Host "  - Docker image name and version" -ForegroundColor Gray
+    Write-Host "  - Python version" -ForegroundColor Gray
+    Write-Host "  - Database type (PostgreSQL or Neo4j)" -ForegroundColor Gray
+    Write-Host "  - Database mode (local or external)" -ForegroundColor Gray
+    Write-Host "  - API configuration" -ForegroundColor Gray
+    Write-Host ""
+    
+    $runSetup = Read-Host "Run setup wizard now? (Y/n)"
+    if ($runSetup -ne "n" -and $runSetup -ne "N") {
+        Write-Host ""
+        Write-Host "Starting setup wizard..." -ForegroundColor Cyan
+        docker compose -f interactive-scripts/docker-compose.setup.yml run --rm setup
+        Write-Host ""
+    } else {
+        Write-Host ""
+        Write-Host "Skipping setup wizard. Creating basic .env from template..." -ForegroundColor Yellow
+        if (Test-Path config\.env.template) {
+            Copy-Item config\.env.template .env
+            Write-Host ".env file created from template." -ForegroundColor Green
+            Write-Host "  Please edit .env to configure your environment before continuing." -ForegroundColor Yellow
+        } else {
+            Write-Host "[ERROR] config\.env.template not found!" -ForegroundColor Red
+            exit 1
+        }
+    }
+    Write-Host ""
+} elseif (-not (Test-Path .env)) {
+    # Setup complete but .env missing - recreate from template
+    Write-Host " .env file missing. Creating from template..." -ForegroundColor Yellow
     if (Test-Path config\.env.template) {
         Copy-Item config\.env.template .env
-        Write-Host ".env was created from .env.template." -ForegroundColor Green
-        Write-Host "Please open the .env file and adjust the values:" -ForegroundColor Yellow
-        Write-Host "   notepad .env" -ForegroundColor Cyan
-        Write-Host ""
-        Read-Host "Press Enter when you have adjusted the .env file"
+        Write-Host ".env file created from template." -ForegroundColor Green
+        Write-Host "Please check the values in .env if needed." -ForegroundColor Yellow
     } else {
-        Write-Host "[ERROR] config\.env.template not found! Please ensure the template exists." -ForegroundColor Red
+        Write-Host "[ERROR] config\.env.template not found!" -ForegroundColor Red
         exit 1
     }
+    Write-Host ""
 }
 
 # Read PORT from .env (default: 8000)
@@ -185,8 +215,9 @@ if (-not (Test-Path .setup-complete)) {
     Write-Host "2) Open Dependency Management first" -ForegroundColor Gray
     Write-Host "3) Both - Dependency Management and then start backend" -ForegroundColor Gray
     Write-Host "4) Test Python Version Configuration" -ForegroundColor Gray
+    Write-Host "5) Build Production Docker Image" -ForegroundColor Gray
     Write-Host ""
-    $choice = Read-Host "Your choice (1-4)"
+    $choice = Read-Host "Your choice (1-5)"
 
     switch ($choice) {
         "1" {
@@ -223,24 +254,19 @@ if (-not (Test-Path .setup-complete)) {
                 Write-Host "python-dependency-management\scripts\test-python-version.ps1 not found" -ForegroundColor Red
             }
         }
+        "5" {
+            Write-Host "Building production Docker image..." -ForegroundColor Cyan
+            Write-Host ""
+            if (Test-Path build-image\docker-compose.build.yml) {
+                docker compose -f build-image\docker-compose.build.yml run --rm build-image
+            } else {
+                Write-Host "build-image\docker-compose.build.yml not found" -ForegroundColor Red
+                Write-Host "Please ensure the build-image directory exists" -ForegroundColor Yellow
+            }
+        }
         default {
             Write-Host "Invalid selection. Starting backend directly..." -ForegroundColor Yellow
             docker compose -f $COMPOSE_FILE up --build
         }
     }
 }
-
-Write-Host ""
-Write-Host "Useful commands for later:" -ForegroundColor Cyan
-Write-Host "================================" -ForegroundColor Cyan
-Write-Host "Guided usage -> Start backend / dependency management menu:" -ForegroundColor Gray
-Write-Host "  .\quick-start.ps1" -ForegroundColor White
-Write-Host ""
-Write-Host "Start backend:           docker compose -f $COMPOSE_FILE up --build" -ForegroundColor Gray
-Write-Host "Stop backend:            Ctrl+C or docker compose -f $COMPOSE_FILE down" -ForegroundColor Gray
-Write-Host "Dependency Management:   .\python-dependency-management\scripts\manage-python-project-dependencies.ps1" -ForegroundColor Gray
-Write-Host "Python Version Test:     .\python-dependency-management\scripts\test-python-version.ps1" -ForegroundColor Gray
-Write-Host "Show logs:               docker compose -f $COMPOSE_FILE logs -f" -ForegroundColor Gray
-Write-Host "Rebuild containers:      docker compose -f $COMPOSE_FILE up --build" -ForegroundColor Gray
-Write-Host ""
-Write-Host "More info in README.md" -ForegroundColor Cyan

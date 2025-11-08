@@ -38,26 +38,52 @@ fi
 echo "✅ Docker ist installiert und läuft"
 echo ""
 
-# 1. .env Datei erstellen
-if [ -f .env ]; then
-  echo "✅ .env Datei existiert bereits."
-  echo "Bitte prüfe die Werte in .env bei Bedarf."
-else
-  if [ -f config/.env.template ]; then
-    cp config/.env.template .env
-    echo "✅ .env wurde aus .env.template erstellt."
-    echo "📝 Bitte öffne die .env Datei und passe die Werte an:"
-    echo "   nano .env"
+# Check if initial setup is needed
+if [ ! -f .setup-complete ]; then
+    echo "🚀 Erstmalige Einrichtung erkannt!"
     echo ""
-    echo "🔐 Alternativ kannst du die .env auch für ein erfolgreiches Test-Setup kopieren von:"
-    echo "   https://engaigegmbh.1password.com/app#/owzedt7yssm3ztfznims4metkm/AllItems/owzedt7yssm3ztfznims4metkm4dkrqgkllfr5f7ohu62orikvii"
-    echo "   Falls diese Datei nicht freigegeben ist, bitte den Administrator um Freigabe zum Tresor: FASTAPI-REDIS-API-TEST"
+    echo "Dies scheint das erste Mal zu sein, dass du dieses Projekt ausführst."
+    echo "Möchtest du den interaktiven Setup-Assistenten ausführen?"
     echo ""
-    read -p "Drücke Enter, wenn du die .env Datei angepasst hast ..."
-  else
-    echo "❌ config/.env.template nicht gefunden! Bitte stelle sicher, dass die Vorlage existiert."
-    exit 1
-  fi
+    echo "Der Setup-Assistent hilft dir bei der Konfiguration von:"
+    echo "  • Docker Image-Name und Version"
+    echo "  • Python-Version"
+    echo "  • Datenbanktyp (PostgreSQL oder Neo4j)"
+    echo "  • Datenbankmodus (lokal oder extern)"
+    echo "  • API-Konfiguration"
+    echo ""
+    
+    read -p "Setup-Assistenten jetzt ausführen? (Y/n): " runSetup
+    if [[ ! "$runSetup" =~ ^[Nn]$ ]]; then
+        echo ""
+        echo "Starte Setup-Assistenten..."
+        docker compose -f interactive-scripts/docker-compose.setup.yml run --rm setup
+        echo ""
+    else
+        echo ""
+        echo "Setup-Assistent übersprungen. Erstelle einfache .env aus Vorlage..."
+        if [ -f config/.env.template ]; then
+            cp config/.env.template .env
+            echo "✅ .env wurde aus Vorlage erstellt."
+            echo "⚠️  Bitte bearbeite .env, um deine Umgebung zu konfigurieren, bevor du fortfährst."
+        else
+            echo "❌ config/.env.template nicht gefunden!"
+            exit 1
+        fi
+    fi
+    echo ""
+elif [ ! -f .env ]; then
+    # Setup complete but .env missing - recreate from template
+    echo "⚠️  .env Datei fehlt. Erstelle aus Vorlage..."
+    if [ -f config/.env.template ]; then
+        cp config/.env.template .env
+        echo "✅ .env wurde aus Vorlage erstellt."
+        echo "Bitte prüfe die Werte in .env bei Bedarf."
+    else
+        echo "❌ config/.env.template nicht gefunden!"
+        exit 1
+    fi
+    echo ""
 fi
 
 # Port aus .env lesen (Standard: 8000)
@@ -149,8 +175,9 @@ else
     echo "2) Zuerst Dependency Management öffnen"
     echo "3) Beides - Dependency Management und dann Backend starten"
     echo "4) Python Version Konfiguration testen"
+    echo "5) Production Docker Image bauen"
     echo ""
-    read -p "Deine Wahl (1-4): " choice
+    read -p "Deine Wahl (1-5): " choice
 
     case $choice in
       1)
@@ -179,24 +206,19 @@ else
             echo "❌ python-dependency-management/scripts/test-python-version.sh not found"
         fi
         ;;
+      5)
+        echo "🏗️  Building production Docker image..."
+        echo ""
+        if [ -f "build-image/docker-compose.build.yml" ]; then
+            docker compose -f build-image/docker-compose.build.yml run --rm build-image
+        else
+            echo "❌ build-image/docker-compose.build.yml not found"
+            echo "⚠️  Please ensure the build-image directory exists"
+        fi
+        ;;
       *)
         echo "❌ Ungültige Auswahl. Starte Backend direkt..."
         docker compose up --build
         ;;
     esac
 fi
-
-echo ""
-echo "📋 Nützliche Befehle für später:"
-echo "================================"
-echo "• Guided usage -> Backend starten/ dependency management menu: "    
-echo "./quick-start.sh"
-echo ""
-echo "• Backend starten:           docker compose -f docker/docker-compose.yml up --build"
-echo "• Backend stoppen:           Ctrl+C oder docker compose down"
-echo "• Dependency Management:     ./python-dependency-management/scripts/manage-python-project-dependencies.sh"
-echo "• Python Version Test:       ./python-dependency-management/scripts/test-python-version.sh"
-echo "• Logs anzeigen:             docker compose logs -f"
-echo "• Container neu bauen:       docker compose up --build"
-echo ""
-echo "📚 Weitere Infos im README.md" 

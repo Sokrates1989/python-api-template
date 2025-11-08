@@ -1,7 +1,12 @@
 # Environments
 .env
+.env.backup.*
+.ci.env
 .venv/
 venv/
+
+# Setup marker
+.setup-complete
 
 # Docker volumes (local directories)
 .docker/
@@ -9,9 +14,6 @@ venv/
 # IDE / Editor specific
 .vscode/
 .idea/
-
-# Setup marker
-.setup-complete
 
 # Python
 __pycache__/
