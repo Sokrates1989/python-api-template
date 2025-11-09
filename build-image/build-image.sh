@@ -55,9 +55,9 @@ else
 fi
 
 # Check and prompt for IMAGE_NAME if needed
-if [ -z "$IMAGE_NAME" ] || [ "$IMAGE_NAME" = "sokrates1989/python-api-template" ]; then
+if [ -z "$IMAGE_NAME" ]; then
     if [ "$INTERACTIVE" = true ]; then
-        echo "⚠️  IMAGE_NAME not configured or using default value"
+        echo "Current IMAGE_NAME: not set"
         echo ""
         read -p "Enter Docker image name (e.g., sokrates1989/python-api-template, ghcr.io/user/api): " NEW_IMAGE_NAME
         
@@ -81,6 +81,31 @@ if [ -z "$IMAGE_NAME" ] || [ "$IMAGE_NAME" = "sokrates1989/python-api-template" 
         echo "❌ IMAGE_NAME not set in .env and not in interactive mode"
         echo "Please add IMAGE_NAME to your .env file (e.g., IMAGE_NAME=sokrates1989/python-api-template)"
         exit 1
+    fi
+else
+    if [ "$INTERACTIVE" = true ]; then
+        echo "Current IMAGE_NAME: $IMAGE_NAME"
+        echo ""
+        read -p "Enter new IMAGE_NAME or press Enter to keep [$IMAGE_NAME]: " NEW_IMAGE_NAME
+        
+        if [ -n "$NEW_IMAGE_NAME" ]; then
+            IMAGE_NAME="$NEW_IMAGE_NAME"
+            
+            # Update .env file
+            if grep -q "^IMAGE_NAME=" .env; then
+                sed -i "s|^IMAGE_NAME=.*|IMAGE_NAME=$IMAGE_NAME|" .env
+            else
+                echo "IMAGE_NAME=$IMAGE_NAME" >> .env
+            fi
+            
+            echo "✅ Updated IMAGE_NAME to $IMAGE_NAME in .env"
+            echo ""
+        else
+            echo "✅ Keeping current IMAGE_NAME: $IMAGE_NAME"
+            echo ""
+        fi
+    else
+        echo "ℹ️  Using IMAGE_NAME from .env: $IMAGE_NAME"
     fi
 fi
 
@@ -151,7 +176,7 @@ echo "   Tag: $IMAGE_NAME:$IMAGE_VERSION"
 echo ""
 
 docker buildx build \
-    --build-arg PYTHON_VERSION="${PYTHON_VERSION}-slim" \
+    --build-arg PYTHON_VERSION="${PYTHON_VERSION}" \
     --build-arg IMAGE_TAG="$IMAGE_VERSION" \
     -t "$IMAGE_NAME:$IMAGE_VERSION" \
     -t "$IMAGE_NAME:latest" \

@@ -19,6 +19,9 @@ RUN pip install pdm && pdm install --prod
 # Copy application code
 COPY app/ ./app/
 
+# Add app directory to PYTHONPATH so imports work correctly
+ENV PYTHONPATH=/app/app:$PYTHONPATH
+
 # Expose the port that the FastAPI application will run on
 EXPOSE 8000
 
