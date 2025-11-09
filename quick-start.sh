@@ -163,7 +163,7 @@ if [ ! -f ".setup-complete" ]; then
     echo "🐳 Starte nun das Backend..."
     echo "Backend wird verfügbar sein auf: http://localhost:$PORT"
     echo ""
-    docker compose -f "$COMPOSE_FILE" up --build
+    docker compose --env-file .env -f "$COMPOSE_FILE" up --build
 else
     echo "🐳 Starte Backend mit Docker Compose..."
     echo "Backend wird verfügbar sein auf: http://localhost:$PORT"
@@ -183,7 +183,7 @@ else
     case $choice in
       1)
         echo "🚀 Starte Backend direkt..."
-        docker compose -f "$COMPOSE_FILE" up --build
+        docker compose --env-file .env -f "$COMPOSE_FILE" up --build
         ;;
       2)
         echo "📦 Öffne Dependency Management..."
@@ -197,7 +197,7 @@ else
         ./python-dependency-management/scripts/manage-python-project-dependencies.sh
         echo ""
         echo "🚀 Starte nun das Backend..."
-        docker compose -f "$COMPOSE_FILE" up --build
+        docker compose --env-file .env -f "$COMPOSE_FILE" up --build
         ;;
       4)
         echo "🔍 Testing Python version configuration..."
@@ -229,7 +229,7 @@ else
         ;;
       *)
         echo "❌ Ungültige Auswahl. Starte Backend direkt..."
-        docker compose up --build
+        docker compose --env-file .env up --build
         ;;
     esac
 fi

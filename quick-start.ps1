@@ -203,7 +203,7 @@ if (-not (Test-Path .setup-complete)) {
     Write-Host "Starting backend now..." -ForegroundColor Cyan
     Write-Host "Backend will be available at: http://localhost:$PORT" -ForegroundColor Cyan
     Write-Host ""
-    docker compose -f $COMPOSE_FILE up --build
+    docker compose --env-file .env -f $COMPOSE_FILE up --build
 } else {
     Write-Host "Starting backend with Docker Compose..." -ForegroundColor Cyan
     Write-Host "Backend will be available at: http://localhost:$PORT" -ForegroundColor Cyan
@@ -223,7 +223,7 @@ if (-not (Test-Path .setup-complete)) {
     switch ($choice) {
         "1" {
             Write-Host "Starting backend directly..." -ForegroundColor Cyan
-            docker compose -f $COMPOSE_FILE up --build
+            docker compose --env-file .env -f $COMPOSE_FILE up --build
         }
         "2" {
             if (Test-Path python-dependency-management\scripts\manage-python-project-dependencies.ps1) {
@@ -245,7 +245,7 @@ if (-not (Test-Path .setup-complete)) {
             }
             Write-Host ""
             Write-Host "Starting backend now..." -ForegroundColor Cyan
-            docker compose -f $COMPOSE_FILE up --build
+            docker compose --env-file .env -f $COMPOSE_FILE up --build
         }
         "4" {
             if (Test-Path python-dependency-management\scripts\test-python-version.ps1) {
@@ -277,7 +277,7 @@ if (-not (Test-Path .setup-complete)) {
         }
         default {
             Write-Host "Invalid selection. Starting backend directly..." -ForegroundColor Yellow
-            docker compose -f $COMPOSE_FILE up --build
+            docker compose --env-file .env -f $COMPOSE_FILE up --build
         }
     }
 }
