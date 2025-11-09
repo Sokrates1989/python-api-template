@@ -1,0 +1,169 @@
+name: 🚀 Build and Deploy to Linux Server
+
+on:
+  push:
+    branches: [ main, master, dev ]
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      image_version:
+        description: 'Image version/tag to build'
+        required: true
+        default: 'latest'
+
+env:
+  IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/api-name
+  
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.image_tag.outputs.tag }}
+    
+    steps:
+      - name: ⬇️ Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🧪 Load CI Environment Variables
+        run: |
+          if [ -f .ci.env ]; then
+            while IFS='=' read -r key value
+            do
+              # Skip comments and empty lines
+              [[ $key =~ ^#.*$ ]] && continue
+              [[ -z $key ]] && continue
+              # Remove inline comments
+              value=$(echo "$value" | sed 's/#.*//' | xargs)
+              echo "$key=$value" >> $GITHUB_ENV
+            done < .ci.env
+          else
+            echo "⚠️  .ci.env not found, using defaults"
+          fi
+      
+      - name: 🔍 Debug Environment Values
+        run: |
+          echo "IMAGE_NAME=$IMAGE_NAME"
+          echo "IMAGE_VERSION=$IMAGE_VERSION"
+          echo "PYTHON_VERSION=$PYTHON_VERSION"
+          echo "DOCKERFILE_PATH=$DOCKERFILE_PATH"
+          
+      - name: 🏷️ Determine Image Tag
+        id: image_tag
+        run: |
+          # Use manual input if provided
+          if [ -n "${{ github.event.inputs.image_version }}" ]; then
+            echo "tag=${{ github.event.inputs.image_version }}" >> $GITHUB_OUTPUT
+          # Use git tag if available
+          elif [[ $GITHUB_REF == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          # Use IMAGE_VERSION from .ci.env
+          elif [ -n "$IMAGE_VERSION" ]; then
+            echo "tag=$IMAGE_VERSION" >> $GITHUB_OUTPUT
+          # Fallback to commit SHA
+          else
+            echo "tag=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: 🐳 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🔐 Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: 🚀 Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE_PATH || 'Dockerfile' }}
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.image_tag.outputs.tag }}
+            ${{ env.IMAGE_NAME }}:latest
+          build-args: |
+            PYTHON_VERSION=${{ env.PYTHON_VERSION || '3.13' }}-slim
+            IMAGE_TAG=${{ steps.image_tag.outputs.tag }}
+          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
+
+      - name: ✅ Build Summary
+        run: |
+          echo "### 🎉 Docker Image Built Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ env.IMAGE_NAME }}:${{ steps.image_tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Also tagged as:** \`${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
+
+  deploy-to-server:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    steps:
+      - name: ⬇️ Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🧪 Load CI Environment Variables
+        run: |
+          if [ -f .ci.env ]; then
+            while IFS='=' read -r key value
+            do
+              [[ $key =~ ^#.*$ ]] && continue
+              [[ -z $key ]] && continue
+              value=$(echo "$value" | sed 's/#.*//' | xargs)
+              echo "$key=$value" >> $GITHUB_ENV
+            done < .ci.env
+          fi
+
+      - name: 🔐 Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          
+          # Add known hosts if provided
+          if [ -n "${{ secrets.SSH_KNOWN_HOSTS }}" ]; then
+            echo "${{ secrets.SSH_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          else
+            ssh-keyscan -H ${{ env.DEPLOY_SERVER }} >> ~/.ssh/known_hosts
+          fi
+
+      - name: 🚀 Deploy to Server
+        env:
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+        run: |
+          echo "Deploying to ${{ env.DEPLOY_SERVER }}..."
+          
+          # Copy docker-compose.prod.yml to server
+          scp docker-compose.prod.yml ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_SERVER }}:${{ env.DEPLOY_PATH }}/
+          
+          # Deploy on server
+          ssh ${{ env.DEPLOY_USER }}@${{ env.DEPLOY_SERVER }} << 'EOF'
+            cd ${{ env.DEPLOY_PATH }}
+            
+            # Set image tag
+            export IMAGE_NAME=${{ env.IMAGE_NAME }}
+            export IMAGE_TAG=${{ env.IMAGE_TAG }}
+            
+            # Pull latest image
+            docker pull ${IMAGE_NAME}:${IMAGE_TAG}
+            
+            # Stop and remove old containers
+            docker compose -f docker-compose.prod.yml down
+            
+            # Start new containers
+            docker compose -f docker-compose.prod.yml up -d
+            
+            # Show status
+            docker compose -f docker-compose.prod.yml ps
+          EOF
+
+      - name: ✅ Deployment Summary
+        run: |
+          echo "### 🎉 Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Server:** \`${{ env.DEPLOY_SERVER }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Path:** \`${{ env.DEPLOY_PATH }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY

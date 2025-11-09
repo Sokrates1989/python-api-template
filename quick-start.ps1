@@ -216,8 +216,9 @@ if (-not (Test-Path .setup-complete)) {
     Write-Host "3) Both - Dependency Management and then start backend" -ForegroundColor Gray
     Write-Host "4) Test Python Version Configuration" -ForegroundColor Gray
     Write-Host "5) Build Production Docker Image" -ForegroundColor Gray
+    Write-Host "6) Setup CI/CD Pipeline" -ForegroundColor Gray
     Write-Host ""
-    $choice = Read-Host "Your choice (1-5)"
+    $choice = Read-Host "Your choice (1-6)"
 
     switch ($choice) {
         "1" {
@@ -262,6 +263,16 @@ if (-not (Test-Path .setup-complete)) {
             } else {
                 Write-Host "build-image\docker-compose.build.yml not found" -ForegroundColor Red
                 Write-Host "Please ensure the build-image directory exists" -ForegroundColor Yellow
+            }
+        }
+        "6" {
+            Write-Host "Setting up CI/CD Pipeline..." -ForegroundColor Cyan
+            Write-Host ""
+            if (Test-Path ci-cd\docker-compose.cicd-setup.yml) {
+                docker compose -f ci-cd\docker-compose.cicd-setup.yml run --rm cicd-setup
+            } else {
+                Write-Host "ci-cd\docker-compose.cicd-setup.yml not found" -ForegroundColor Red
+                Write-Host "Please ensure the ci-cd directory exists" -ForegroundColor Yellow
             }
         }
         default {

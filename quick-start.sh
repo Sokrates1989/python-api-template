@@ -176,8 +176,9 @@ else
     echo "3) Beides - Dependency Management und dann Backend starten"
     echo "4) Python Version Konfiguration testen"
     echo "5) Production Docker Image bauen"
+    echo "6) CI/CD Pipeline einrichten"
     echo ""
-    read -p "Deine Wahl (1-5): " choice
+    read -p "Deine Wahl (1-6): " choice
 
     case $choice in
       1)
@@ -214,6 +215,16 @@ else
         else
             echo "❌ build-image/docker-compose.build.yml not found"
             echo "⚠️  Please ensure the build-image directory exists"
+        fi
+        ;;
+      6)
+        echo "🚀 CI/CD Pipeline einrichten..."
+        echo ""
+        if [ -f "ci-cd/docker-compose.cicd-setup.yml" ]; then
+            docker compose -f ci-cd/docker-compose.cicd-setup.yml run --rm cicd-setup
+        else
+            echo "❌ ci-cd/docker-compose.cicd-setup.yml not found"
+            echo "⚠️  Please ensure the ci-cd directory exists"
         fi
         ;;
       *)
