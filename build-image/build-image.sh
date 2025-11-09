@@ -55,11 +55,11 @@ else
 fi
 
 # Check and prompt for IMAGE_NAME if needed
-if [ -z "$IMAGE_NAME" ] || [ "$IMAGE_NAME" = "username/api-name" ]; then
+if [ -z "$IMAGE_NAME" ] || [ "$IMAGE_NAME" = "sokrates1989/python-api-template" ]; then
     if [ "$INTERACTIVE" = true ]; then
         echo "⚠️  IMAGE_NAME not configured or using default value"
         echo ""
-        read -p "Enter Docker image name (e.g., username/api-name, ghcr.io/user/api): " NEW_IMAGE_NAME
+        read -p "Enter Docker image name (e.g., sokrates1989/python-api-template, ghcr.io/user/api): " NEW_IMAGE_NAME
         
         if [ -z "$NEW_IMAGE_NAME" ]; then
             echo "❌ IMAGE_NAME cannot be empty"
@@ -79,7 +79,7 @@ if [ -z "$IMAGE_NAME" ] || [ "$IMAGE_NAME" = "username/api-name" ]; then
         echo ""
     else
         echo "❌ IMAGE_NAME not set in .env and not in interactive mode"
-        echo "Please add IMAGE_NAME to your .env file (e.g., IMAGE_NAME=username/api-name)"
+        echo "Please add IMAGE_NAME to your .env file (e.g., IMAGE_NAME=sokrates1989/python-api-template)"
         exit 1
     fi
 fi

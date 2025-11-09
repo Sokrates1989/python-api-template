@@ -146,8 +146,8 @@ if [ "$SKIP_CI_ENV" != "true" ]; then
     echo ""
     echo "This should be your Docker registry image name."
     echo "Examples:"
-    echo "  - Docker Hub: username/api-name"
-    echo "  - GitHub Container Registry: ghcr.io/username/api-name"
+    echo "  - Docker Hub: sokrates1989/python-api-template"
+    echo "  - GitHub Container Registry: ghcr.io/sokrates1989/python-api-template"
     echo "  - GitLab Container Registry: registry.gitlab.com/username/project/api-name"
     echo ""
     read -p "Enter Docker image name [$IMAGE_NAME]: " new_image_name

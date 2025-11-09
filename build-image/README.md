@@ -35,7 +35,7 @@ docker compose -f build-image/docker-compose.build.yml run --rm build-image
 Edit your `.env` file and set:
 
 ```env
-# Docker image name (e.g., username/api-name or ghcr.io/username/api-name)
+# Docker image name (e.g., sokrates1989/python-api-template or ghcr.io/sokrates1989/python-api-template)
 IMAGE_NAME=your-username/your-api-name
 
 # Docker image version (will be prompted during build if you want to update)
@@ -87,7 +87,7 @@ docker compose -f build-image/docker-compose.build.yml run --rm build-image
    ```bash
    echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
    ```
-3. Set `IMAGE_NAME=ghcr.io/username/api-name` in `.env`
+3. Set `IMAGE_NAME=ghcr.io/sokrates1989/python-api-template` in `.env`
 4. Build and push
 
 ### GitLab Container Registry

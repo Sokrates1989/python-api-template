@@ -198,7 +198,7 @@ docker compose -f build-image/docker-compose.build.yml up
 echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
 
 # Update .env
-IMAGE_NAME=ghcr.io/username/api-name
+IMAGE_NAME=ghcr.io/sokrates1989/python-api-template
 ```
 
 ### GitLab Container Registry
