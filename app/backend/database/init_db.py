@@ -15,16 +15,20 @@ async def initialize_database():
     print(f"🔧 Initializing {settings.DB_TYPE} database...")
     
     if settings.DB_TYPE == "neo4j":
+        # Get password from file or environment
+        password = settings.get_db_password()
         handler = DatabaseFactory.create_handler(
             db_type="neo4j",
             url=settings.NEO4J_URL,
             user=settings.DB_USER,
-            password=settings.DB_PASSWORD
+            password=password
         )
     else:  # SQL databases
+        # Get database URL (builds from components if needed)
+        database_url = settings.get_database_url()
         handler = DatabaseFactory.create_handler(
             db_type=settings.DB_TYPE,
-            database_url=settings.DATABASE_URL,
+            database_url=database_url,
             echo=settings.DEBUG
         )
     

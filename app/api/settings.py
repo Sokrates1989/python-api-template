@@ -1,6 +1,7 @@
 # Configuration using pydantic-settings
 from pydantic_settings import BaseSettings
 from typing import Literal
+from pathlib import Path
 
 
 class Settings(BaseSettings):
@@ -12,22 +13,54 @@ class Settings(BaseSettings):
     
     # Security Settings
     ADMIN_API_KEY: str = ""  # API key for admin endpoints like /packages
+    ADMIN_API_KEY_FILE: str = ""  # Path to file containing API key
     
     # Database Type Configuration
     DB_TYPE: Literal["neo4j", "postgresql", "mysql", "sqlite"] = "neo4j"
+    DB_MODE: Literal["local", "external"] = "local"
     
     # Neo4j Configuration
     NEO4J_URL: str = ""
     DB_USER: str = ""
     DB_PASSWORD: str = ""
+    DB_PASSWORD_FILE: str = ""  # Path to file containing DB password
     
     # SQL Database Configuration
-    DATABASE_URL: str = ""
+    DATABASE_URL: str = ""  # Full connection string (for external databases)
+    DB_HOST: str = "localhost"
     DB_NAME: str = ""
     DB_PORT: int = 5432
 
     class Config:
         env_file = ".env"
+    
+    def get_admin_api_key(self) -> str:
+        """Get admin API key from file or environment variable"""
+        if self.ADMIN_API_KEY_FILE and Path(self.ADMIN_API_KEY_FILE).exists():
+            return Path(self.ADMIN_API_KEY_FILE).read_text().strip()
+        return self.ADMIN_API_KEY
+    
+    def get_db_password(self) -> str:
+        """Get database password from file or environment variable"""
+        if self.DB_PASSWORD_FILE and Path(self.DB_PASSWORD_FILE).exists():
+            return Path(self.DB_PASSWORD_FILE).read_text().strip()
+        return self.DB_PASSWORD
+    
+    def get_database_url(self) -> str:
+        """Build database URL for SQL databases"""
+        if self.DATABASE_URL:
+            # Use provided URL (for external databases)
+            return self.DATABASE_URL
+        
+        # Build URL from components (for local databases)
+        password = self.get_db_password()
+        if self.DB_TYPE == "postgresql":
+            return f"postgresql://{self.DB_USER}:{password}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        elif self.DB_TYPE == "mysql":
+            return f"mysql://{self.DB_USER}:{password}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        elif self.DB_TYPE == "sqlite":
+            return f"sqlite:///{self.DB_NAME}"
+        return ""
 
 
 settings = Settings()

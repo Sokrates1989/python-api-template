@@ -22,11 +22,14 @@ async def verify_api_key(api_key: str = Security(api_key_header)) -> str:
     Raises:
         HTTPException: If the API key is missing or invalid
     """
+    # Get admin API key from file or environment
+    admin_key = settings.get_admin_api_key()
+    
     # Check if ADMIN_API_KEY is configured
-    if not settings.ADMIN_API_KEY:
+    if not admin_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Admin API key not configured. Please set ADMIN_API_KEY in environment variables."
+            detail="Admin API key not configured. Please set ADMIN_API_KEY or ADMIN_API_KEY_FILE."
         )
     
     # Check if API key was provided
@@ -37,7 +40,7 @@ async def verify_api_key(api_key: str = Security(api_key_header)) -> str:
         )
     
     # Verify the API key
-    if api_key != settings.ADMIN_API_KEY:
+    if api_key != admin_key:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid API key"
