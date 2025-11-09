@@ -16,13 +16,13 @@ COPY pyproject.toml pdm.lock ./
 # Install PDM and project dependencies (creates a fresh .venv)
 RUN pip install pdm && pdm install --prod
 
-# Create app directory for volume mounting
-RUN mkdir -p /app
+# Copy application code
+COPY app/ ./app/
 
 # Expose the port that the FastAPI application will run on
 EXPOSE 8000
 
 # Use 'pdm run' to execute uvicorn from within the project's virtual environment.
 ENTRYPOINT ["pdm", "run"]
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
