@@ -96,6 +96,12 @@ class SQLHandler(BaseDatabaseHandler):
                     "database_url": self._mask_password(self.database_url)
                 }
         except Exception as e:
+            # Print full traceback for debugging
+            import traceback
+            print(f"🔍 Debug - Full error traceback:")
+            traceback.print_exc()
+            print(f"🔍 Debug - Error type: {type(e).__name__}")
+            print(f"🔍 Debug - Error args: {e.args}")
             return {
                 "status": "error",
                 "message": f"SQL database connection failed: {str(e)}",
