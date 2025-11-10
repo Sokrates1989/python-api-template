@@ -26,6 +26,20 @@ async def initialize_database():
     else:  # SQL databases
         # Get database URL (builds from components if needed)
         database_url = settings.get_database_url()
+        
+        # Debug logging
+        print(f"🔍 Debug - DB_HOST: {settings.DB_HOST}")
+        print(f"🔍 Debug - DB_USER: {settings.DB_USER}")
+        print(f"🔍 Debug - DB_NAME: {settings.DB_NAME}")
+        print(f"🔍 Debug - DB_PORT: {settings.DB_PORT}")
+        print(f"🔍 Debug - DB_PASSWORD_FILE: {settings.DB_PASSWORD_FILE}")
+        print(f"🔍 Debug - DATABASE_URL (from env): {settings.DATABASE_URL}")
+        
+        # Mask password in URL for logging
+        import re
+        masked_url = re.sub(r'://([^:]+):([^@]+)@', r'://\1:***@', database_url) if database_url else '<EMPTY>'
+        print(f"🔍 Debug - Constructed database_url: {masked_url}")
+        
         handler = DatabaseFactory.create_handler(
             db_type=settings.DB_TYPE,
             database_url=database_url,
