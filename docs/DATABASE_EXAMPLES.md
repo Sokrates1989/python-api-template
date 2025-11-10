@@ -60,17 +60,23 @@ curl -X DELETE http://localhost:8081/examples/{id}
 ### Endpoint: `/example-nodes/`
 
 **Files:**
-- Model: `app/models/example_node.py` (Python class)
-- Service: `app/backend/services/example_node_service.py`
+- Model: `app/models/example_node.py` (Pydantic model - simple!)
+- Service: `app/backend/services/example_node_service.py` (Direct Cypher queries)
 - Routes: `app/api/routes/example_nodes.py`
 
+**Neo4j Advantages:**
+- ✅ **Schema-free** - No migrations needed!
+- ✅ **Simple Pydantic models** - Just for API validation
+- ✅ **Direct Cypher queries** - No ORM complexity
+- ✅ **Flexible** - Add properties anytime, no schema changes
+- ✅ **Graph-native** - Perfect for relationships
+
 **Features:**
-- ✅ Graph database nodes
-- ✅ Cypher query language
 - ✅ UUID node identifiers
 - ✅ Automatic timestamps
 - ✅ Full CRUD operations
 - ✅ Name filtering support
+- ✅ Pagination
 
 **Example Usage:**
 
@@ -154,13 +160,26 @@ elif settings.DB_TYPE == "neo4j":
    docker compose exec app pdm run alembic revision --autogenerate -m "Add your_model table"
    ```
 
-### For Neo4j
+### For Neo4j (Schema-Free!)
 
 1. Copy `app/models/example_node.py` to `app/models/your_node.py`
-2. Modify the node label and properties
-3. Create a service in `app/backend/services/`
-4. Create routes in `app/api/routes/`
-5. No migrations needed - Neo4j is schema-free!
+   - Simple Pydantic model for API validation
+   - No complex class definitions needed!
+2. Copy `app/backend/services/example_node_service.py`
+   - Write Cypher queries directly
+   - No ORM, no complexity
+3. Create routes in `app/api/routes/`
+4. **No migrations needed** - Neo4j is schema-free!
+5. **No schema definitions** - Just write Cypher and go!
+
+**Example Cypher Query:**
+```python
+# Create a node - that's it!
+query = """
+CREATE (n:YourNode {id: $id, name: $name})
+RETURN n
+"""
+```
 
 ## API Documentation
 

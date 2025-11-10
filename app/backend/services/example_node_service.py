@@ -1,19 +1,25 @@
 """
 Service layer for ExampleNode CRUD operations with Neo4j.
 
+Neo4j-Native Approach:
+- Direct Cypher queries (no ORM complexity!)
+- Schema-free (no migrations needed!)
+- Simple and flexible
+- Follows Neo4j best practices
+
 This service demonstrates:
-1. Creating nodes in Neo4j
-2. Reading nodes with filtering and pagination
-3. Updating node properties
-4. Deleting nodes
-5. Proper error handling
+1. Creating nodes with MERGE/CREATE
+2. Reading nodes with MATCH
+3. Updating properties with SET
+4. Deleting nodes with DELETE
+5. Pagination and filtering
 
 To create your own Neo4j services:
 1. Copy this file and rename it
-2. Modify the node model and Cypher queries
-3. Import in your routes
+2. Write Cypher queries for your use case
+3. No migrations, no schema definitions needed!
 """
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from datetime import datetime
 from models.example_node import ExampleNode
 from backend.database import get_database_handler
@@ -23,12 +29,8 @@ class ExampleNodeService:
     """
     Service for managing ExampleNode instances in Neo4j.
     
-    Provides CRUD operations:
-    - create(): Create a new node
-    - get_by_id(): Retrieve a single node by ID
-    - get_all(): List nodes with pagination
-    - update(): Update node properties
-    - delete(): Remove a node
+    Uses direct Cypher queries - the Neo4j-native way!
+    Simple, flexible, and schema-free.
     """
     
     def __init__(self):
@@ -39,11 +41,11 @@ class ExampleNodeService:
         if handler.db_type != "neo4j":
             raise RuntimeError("ExampleNodeService requires Neo4j database")
         
-        self.handler = handler
+        self.driver = handler.driver
     
     def create(self, name: str, description: Optional[str] = None) -> ExampleNode:
         """
-        Create a new ExampleNode in Neo4j.
+        Create a new ExampleNode in Neo4j using direct Cypher.
         
         Args:
             name: Node name (required)
@@ -51,32 +53,30 @@ class ExampleNodeService:
             
         Returns:
             Created ExampleNode instance
-            
-        Raises:
-            Exception: If creation fails
         """
-        # Create node instance
+        # Create node with Pydantic (generates ID and timestamp)
         node = ExampleNode(name=name, description=description)
         
-        # Cypher query to create node
-        query = f"""
-        CREATE (n:{ExampleNode.LABEL} $props)
+        # Simple Cypher CREATE query
+        query = """
+        CREATE (n:ExampleNode $props)
         RETURN n
         """
         
-        # Execute query
-        with self.handler.driver.session() as session:
-            result = session.run(query, props=node.to_neo4j_properties())
+        # Execute and return
+        with self.driver.session() as session:
+            result = session.run(query, props=node.model_dump())
             record = result.single()
             
             if not record:
                 raise Exception("Failed to create node")
             
-            return ExampleNode.from_neo4j_node(record["n"])
+            # Return Pydantic model from Neo4j properties
+            return ExampleNode(**dict(record["n"]))
     
     def get_by_id(self, node_id: str) -> Optional[ExampleNode]:
         """
-        Retrieve an ExampleNode by ID.
+        Retrieve an ExampleNode by ID using simple MATCH.
         
         Args:
             node_id: UUID of the node
@@ -84,19 +84,19 @@ class ExampleNodeService:
         Returns:
             ExampleNode if found, None otherwise
         """
-        query = f"""
-        MATCH (n:{ExampleNode.LABEL} {{id: $id}})
+        query = """
+        MATCH (n:ExampleNode {id: $id})
         RETURN n
         """
         
-        with self.handler.driver.session() as session:
+        with self.driver.session() as session:
             result = session.run(query, id=node_id)
             record = result.single()
             
             if not record:
                 return None
             
-            return ExampleNode.from_neo4j_node(record["n"])
+            return ExampleNode(**dict(record["n"]))
     
     def get_all(
         self,
@@ -117,8 +117,8 @@ class ExampleNodeService:
         """
         # Build query with optional filter
         if name_filter:
-            query = f"""
-            MATCH (n:{ExampleNode.LABEL})
+            query = """
+            MATCH (n:ExampleNode)
             WHERE toLower(n.name) CONTAINS toLower($name_filter)
             RETURN n
             ORDER BY n.created_at DESC
@@ -127,8 +127,8 @@ class ExampleNodeService:
             """
             params = {"skip": skip, "limit": limit, "name_filter": name_filter}
         else:
-            query = f"""
-            MATCH (n:{ExampleNode.LABEL})
+            query = """
+            MATCH (n:ExampleNode)
             RETURN n
             ORDER BY n.created_at DESC
             SKIP $skip
@@ -136,9 +136,9 @@ class ExampleNodeService:
             """
             params = {"skip": skip, "limit": limit}
         
-        with self.handler.driver.session() as session:
+        with self.driver.session() as session:
             result = session.run(query, **params)
-            return [ExampleNode.from_neo4j_node(record["n"]) for record in result]
+            return [ExampleNode(**dict(record["n"])) for record in result]
     
     def count(self, name_filter: Optional[str] = None) -> int:
         """
@@ -151,20 +151,20 @@ class ExampleNodeService:
             Total count of nodes
         """
         if name_filter:
-            query = f"""
-            MATCH (n:{ExampleNode.LABEL})
+            query = """
+            MATCH (n:ExampleNode)
             WHERE toLower(n.name) CONTAINS toLower($name_filter)
             RETURN count(n) as count
             """
             params = {"name_filter": name_filter}
         else:
-            query = f"""
-            MATCH (n:{ExampleNode.LABEL})
+            query = """
+            MATCH (n:ExampleNode)
             RETURN count(n) as count
             """
             params = {}
         
-        with self.handler.driver.session() as session:
+        with self.driver.session() as session:
             result = session.run(query, **params)
             record = result.single()
             return record["count"] if record else 0
@@ -176,7 +176,7 @@ class ExampleNodeService:
         description: Optional[str] = None
     ) -> Optional[ExampleNode]:
         """
-        Update an ExampleNode's properties.
+        Update an ExampleNode's properties using SET.
         
         Args:
             node_id: UUID of the node to update
@@ -195,25 +195,25 @@ class ExampleNodeService:
         if description is not None:
             updates["description"] = description
         
-        # Cypher query to update node
-        query = f"""
-        MATCH (n:{ExampleNode.LABEL} {{id: $id}})
+        # Simple Cypher UPDATE query
+        query = """
+        MATCH (n:ExampleNode {id: $id})
         SET n += $updates
         RETURN n
         """
         
-        with self.handler.driver.session() as session:
+        with self.driver.session() as session:
             result = session.run(query, id=node_id, updates=updates)
             record = result.single()
             
             if not record:
                 return None
             
-            return ExampleNode.from_neo4j_node(record["n"])
+            return ExampleNode(**dict(record["n"]))
     
     def delete(self, node_id: str) -> bool:
         """
-        Delete an ExampleNode.
+        Delete an ExampleNode using simple DELETE.
         
         Args:
             node_id: UUID of the node to delete
@@ -221,13 +221,13 @@ class ExampleNodeService:
         Returns:
             True if deleted, False if not found
         """
-        query = f"""
-        MATCH (n:{ExampleNode.LABEL} {{id: $id}})
+        query = """
+        MATCH (n:ExampleNode {id: $id})
         DELETE n
         RETURN count(n) as deleted
         """
         
-        with self.handler.driver.session() as session:
+        with self.driver.session() as session:
             result = session.run(query, id=node_id)
             record = result.single()
             return record["deleted"] > 0 if record else False
@@ -239,13 +239,13 @@ class ExampleNodeService:
         Returns:
             Number of nodes deleted
         """
-        query = f"""
-        MATCH (n:{ExampleNode.LABEL})
+        query = """
+        MATCH (n:ExampleNode)
         DELETE n
         RETURN count(n) as deleted
         """
         
-        with self.handler.driver.session() as session:
+        with self.driver.session() as session:
             result = session.run(query)
             record = result.single()
             return record["deleted"] if record else 0
