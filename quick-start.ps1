@@ -212,7 +212,7 @@ if (-not (Test-Path .setup-complete)) {
     # Selection menu for subsequent starts
     Write-Host "Choose an option:" -ForegroundColor Yellow
     Write-Host "1) Start backend directly (docker compose up)" -ForegroundColor Gray
-    Write-Host "2) Open Dependency Management first" -ForegroundColor Gray
+    Write-Host "2) Open Dependency Management only" -ForegroundColor Gray
     Write-Host "3) Both - Dependency Management and then start backend" -ForegroundColor Gray
     Write-Host "4) Test Python Version Configuration" -ForegroundColor Gray
     Write-Host "5) Build Production Docker Image" -ForegroundColor Gray

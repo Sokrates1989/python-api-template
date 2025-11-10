@@ -172,7 +172,7 @@ else
     # Auswahlmenü für nachfolgende Starts
     echo "Wähle eine Option:"
     echo "1) Backend direkt starten (docker compose up)"
-    echo "2) Zuerst Dependency Management öffnen"
+    echo "2) Nur Dependency Management öffnen"
     echo "3) Beides - Dependency Management und dann Backend starten"
     echo "4) Python Version Konfiguration testen"
     echo "5) Production Docker Image bauen"
