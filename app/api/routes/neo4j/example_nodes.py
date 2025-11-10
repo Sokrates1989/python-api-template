@@ -17,7 +17,7 @@ To create your own Neo4j routes:
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import Optional, List
-from backend.services.example_node_service import ExampleNodeService
+from backend.services.neo4j.example_node_service import ExampleNodeService
 
 
 router = APIRouter(

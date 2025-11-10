@@ -37,12 +37,12 @@ app.include_router(packages.router)
 # Conditionally include database-specific routers
 if settings.DB_TYPE in ["postgresql", "postgres", "mysql", "sqlite"]:
     # SQL-specific routes - uses SQLAlchemy models
-    from api.routes import examples
+    from api.routes.sql import examples
     app.include_router(examples.router)
     print(f"✅ Registered SQL-specific routes (/examples/) for {settings.DB_TYPE}")
 elif settings.DB_TYPE == "neo4j":
     # Neo4j-specific routes - uses graph database nodes
-    from api.routes import example_nodes
+    from api.routes.neo4j import example_nodes
     app.include_router(example_nodes.router)
     print(f"✅ Registered Neo4j-specific routes (/example-nodes/) for {settings.DB_TYPE}")
 else:

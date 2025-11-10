@@ -13,7 +13,7 @@ Use this as a template for your own services.
 from typing import List, Optional, Dict, Any
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from models.example import Example
+from models.sql.example import Example, Base
 from backend.database import get_database_handler
 from backend.database.sql_handler import SQLHandler
 

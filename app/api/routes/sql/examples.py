@@ -15,7 +15,7 @@ STRUCTURE:
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import Optional
-from backend.services.example_service import ExampleService
+from backend.services.sql.example_service import ExampleService
 
 router = APIRouter(tags=["examples"], prefix="/examples")
 

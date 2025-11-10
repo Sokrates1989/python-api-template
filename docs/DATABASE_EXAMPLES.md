@@ -16,9 +16,9 @@ The template conditionally registers different example routes based on your `DB_
 ### Endpoint: `/examples/`
 
 **Files:**
-- Model: `app/models/example.py` (SQLAlchemy)
-- Service: `app/backend/services/example_service.py`
-- Routes: `app/api/routes/examples.py`
+- Model: `app/models/sql/example.py` (SQLAlchemy)
+- Service: `app/backend/services/sql/example_service.py`
+- Routes: `app/api/routes/sql/examples.py`
 
 **Features:**
 - ✅ SQLAlchemy ORM models
@@ -60,9 +60,9 @@ curl -X DELETE http://localhost:8081/examples/{id}
 ### Endpoint: `/example-nodes/`
 
 **Files:**
-- Model: `app/models/example_node.py` (Pydantic model - simple!)
-- Service: `app/backend/services/example_node_service.py` (Direct Cypher queries)
-- Routes: `app/api/routes/example_nodes.py`
+- Model: `app/models/neo4j/example_node.py` (Pydantic model - simple!)
+- Service: `app/backend/services/neo4j/example_node_service.py` (Direct Cypher queries)
+- Routes: `app/api/routes/neo4j/example_nodes.py`
 
 **Neo4j Advantages:**
 - ✅ **Schema-free** - No migrations needed!
@@ -151,10 +151,10 @@ elif settings.DB_TYPE == "neo4j":
 
 ### For SQL Databases
 
-1. Copy `app/models/example.py` to `app/models/your_model.py`
+1. Copy `app/models/sql/example.py` to `app/models/sql/your_model.py`
 2. Modify the table name and columns
-3. Create a service in `app/backend/services/`
-4. Create routes in `app/api/routes/`
+3. Copy `app/backend/services/sql/example_service.py` to `app/backend/services/sql/your_service.py`
+4. Copy `app/api/routes/sql/examples.py` to `app/api/routes/sql/your_routes.py`
 5. Create an Alembic migration:
    ```bash
    docker compose exec app pdm run alembic revision --autogenerate -m "Add your_model table"
@@ -162,13 +162,13 @@ elif settings.DB_TYPE == "neo4j":
 
 ### For Neo4j (Schema-Free!)
 
-1. Copy `app/models/example_node.py` to `app/models/your_node.py`
+1. Copy `app/models/neo4j/example_node.py` to `app/models/neo4j/your_node.py`
    - Simple Pydantic model for API validation
    - No complex class definitions needed!
-2. Copy `app/backend/services/example_node_service.py`
+2. Copy `app/backend/services/neo4j/example_node_service.py` to `app/backend/services/neo4j/your_service.py`
    - Write Cypher queries directly
    - No ORM, no complexity
-3. Create routes in `app/api/routes/`
+3. Copy `app/api/routes/neo4j/example_nodes.py` to `app/api/routes/neo4j/your_routes.py`
 4. **No migrations needed** - Neo4j is schema-free!
 5. **No schema definitions** - Just write Cypher and go!
 
