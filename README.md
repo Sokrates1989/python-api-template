@@ -343,7 +343,9 @@ See `docs/DATABASE.md` for detailed database configuration and usage.
 
 ### Documentation
 
-- **Database Migrations**: `docs/DATABASE_MIGRATIONS.md` - Production-ready schema management ⭐ **NEW**
+- **Migration Guide**: `docs/MIGRATION_GUIDE.md` - Real-world schema changes (add tables, columns, relationships) ⭐ **NEW**
+- **Database Examples**: `docs/DATABASE_EXAMPLES.md` - SQL vs Neo4j CRUD examples ⭐ **NEW**
+- **Database Migrations**: `docs/DATABASE_MIGRATIONS.md` - Production-ready schema management ⭐
 - **CRUD Example**: `docs/CRUD_EXAMPLE.md` - Complete CRUD operations guide ⭐
 - **Quick CRUD Reference**: `docs/QUICK_CRUD_REFERENCE.md` - Quick reference cheat sheet ⭐
 - **Docker Setup**: `docs/DOCKER_SETUP.md` - Complete Docker setup guide ⭐

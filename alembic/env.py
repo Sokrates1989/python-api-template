@@ -8,8 +8,8 @@ import os
 # Add the app directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'app'))
 
-# Import your models' Base
-from models.example import Base
+# Import your models' Base (from SQL models directory)
+from models.sql.example import Base
 
 # this is the Alembic Config object
 config = context.config

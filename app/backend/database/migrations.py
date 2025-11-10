@@ -13,8 +13,10 @@ def run_migrations():
     
     This function:
     1. Locates the alembic.ini file
-    2. Runs all pending migrations
-    3. Only works with SQL databases (PostgreSQL, MySQL, SQLite)
+    2. Checks current migration version
+    3. Runs all pending migrations
+    4. Reports final version
+    5. Only works with SQL databases (PostgreSQL, MySQL, SQLite)
     """
     # Only run migrations for SQL databases
     if settings.DB_TYPE not in ["postgresql", "postgres", "mysql", "sqlite"]:
@@ -37,23 +39,95 @@ def run_migrations():
         return
     
     try:
-        print("🔄 Running database migrations...")
-        
         # Create Alembic configuration
         alembic_cfg = Config(str(alembic_ini_path))
         
         # Set the script location (alembic directory)
         alembic_cfg.set_main_option("script_location", str(project_root / "alembic"))
         
+        # Get current version before migration
+        print("🔄 Checking migration status...")
+        current_version = _get_current_version(alembic_cfg)
+        
+        if current_version:
+            print(f"📍 Current database version: {current_version[:12]}...")
+        else:
+            print("📍 Database not initialized (no migrations applied yet)")
+        
+        # Check if there are pending migrations
+        pending = _get_pending_migrations(alembic_cfg, current_version)
+        
+        if pending:
+            print(f"🔄 Running {len(pending)} pending migration(s)...")
+            for migration in pending:
+                print(f"   ⏩ {migration}")
+        else:
+            print("✅ Database is up to date - no migrations needed")
+            return
+        
         # Run migrations to the latest version
         command.upgrade(alembic_cfg, "head")
         
-        print("✅ Database migrations completed successfully")
+        # Get final version after migration
+        final_version = _get_current_version(alembic_cfg)
+        
+        print(f"✅ Migrations completed successfully!")
+        print(f"📍 New database version: {final_version[:12]}...")
         
     except Exception as e:
         print(f"❌ Error running migrations: {e}")
         print("   The application will continue, but database schema may be outdated.")
         print("   Please run migrations manually: alembic upgrade head")
+
+
+def _get_current_version(alembic_cfg):
+    """Get the current database migration version."""
+    try:
+        from alembic.runtime.migration import MigrationContext
+        from sqlalchemy import create_engine
+        
+        # Get database URL
+        if settings.DB_TYPE in ["postgresql", "postgres"]:
+            db_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+        else:
+            db_url = settings.DATABASE_URL
+        
+        engine = create_engine(db_url)
+        with engine.connect() as connection:
+            context = MigrationContext.configure(connection)
+            current_rev = context.get_current_revision()
+            return current_rev
+    except Exception:
+        return None
+
+
+def _get_pending_migrations(alembic_cfg, current_version):
+    """Get list of pending migrations."""
+    try:
+        from alembic.script import ScriptDirectory
+        
+        script = ScriptDirectory.from_config(alembic_cfg)
+        
+        # Get all revisions from current to head
+        if current_version:
+            # Get revisions between current and head
+            revisions = []
+            for rev in script.iterate_revisions(current_version, "head"):
+                if rev.revision != current_version:
+                    # Format: revision_id - description
+                    desc = rev.doc.split('\n')[0] if rev.doc else "No description"
+                    revisions.append(f"{rev.revision[:12]} - {desc}")
+            return list(reversed(revisions))  # Show in chronological order
+        else:
+            # No current version - all migrations are pending
+            revisions = []
+            for rev in script.walk_revisions():
+                desc = rev.doc.split('\n')[0] if rev.doc else "No description"
+                revisions.append(f"{rev.revision[:12]} - {desc}")
+            return list(reversed(revisions))
+    except Exception as e:
+        print(f"   Warning: Could not determine pending migrations: {e}")
+        return []
 
 
 def create_migration(message: str):
