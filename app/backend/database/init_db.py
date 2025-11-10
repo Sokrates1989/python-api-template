@@ -53,7 +53,7 @@ async def initialize_database():
     DatabaseFactory.set_instance(handler)
     
     # Test the connection with retry logic
-    max_retries = 5
+    max_retries = 8
     retry_delay = 1  # Start with 1 second
     
     for attempt in range(1, max_retries + 1):
