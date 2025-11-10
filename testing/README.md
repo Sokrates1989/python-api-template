@@ -9,6 +9,8 @@ testing/
 ├── README.md                  # This file - main entry point
 ├── quick-test.ps1            # Interactive test (Windows) - MAIN ENTRY
 ├── quick-test.sh             # Interactive test (Linux/Mac) - MAIN ENTRY
+├── test-crud-example.ps1     # Test CRUD endpoints (Windows) - NEW
+├── test-crud-example.sh      # Test CRUD endpoints (Linux/Mac) - NEW
 ├── scripts/                   # Individual test scripts
 │   ├── start-postgres.bat    # Start PostgreSQL (Windows)
 │   ├── start-postgres.sh     # Start PostgreSQL (Linux/Mac)
@@ -76,6 +78,17 @@ test-api.bat
 # Linux/Mac
 cd testing/scripts
 ./test-api.sh
+```
+
+**Test CRUD Example:**
+```bash
+# Windows
+cd testing
+.\test-crud-example.ps1
+
+# Linux/Mac
+cd testing
+./test-crud-example.sh
 ```
 
 ## 📚 Documentation

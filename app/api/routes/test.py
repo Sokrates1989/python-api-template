@@ -10,15 +10,19 @@ from backend.services.database_service import DatabaseService
 
 router = APIRouter(tags=["test"], prefix="/test")
 
-# Initialize service
-db_service = DatabaseService()
+
+# Helper function to get service instance (lazy initialization)
+def get_service() -> DatabaseService:
+    """Get DatabaseService instance. Initialized on first call."""
+    return DatabaseService()
 
 
 @router.get("/db-test")
 async def test_database():
     """Test database connection."""
     try:
-        return await db_service.test_connection()
+        service = get_service()
+        return await service.test_connection()
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -27,7 +31,8 @@ async def test_database():
 async def get_database_info():
     """Get information about the current database."""
     try:
-        return await db_service.get_database_info()
+        service = get_service()
+        return await service.get_database_info()
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -36,6 +41,7 @@ async def get_database_info():
 async def execute_sample_query():
     """Execute a sample query on the database."""
     try:
-        return await db_service.execute_sample_query()
+        service = get_service()
+        return await service.execute_sample_query()
     except Exception as e:
         return {"status": "error", "message": str(e)}

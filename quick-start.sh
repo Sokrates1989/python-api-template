@@ -161,7 +161,30 @@ if [ ! -f ".setup-complete" ]; then
     echo ""
     echo "🎉 Erstes Setup abgeschlossen!"
     echo "🐳 Starte nun das Backend..."
-    echo "Backend wird verfügbar sein auf: http://localhost:$PORT"
+    echo ""
+    echo "========================================"
+    echo "  API will be accessible at:"
+    echo "  http://localhost:$PORT/docs"
+    echo "========================================"
+    echo ""
+    echo "Press ENTER to open the API documentation in your browser..."
+    echo "(The API may take a few seconds to start. Please refresh the page if needed.)"
+    read -r
+    
+    # Open browser in incognito/private mode
+    echo "Opening browser..."
+    if command -v xdg-open &> /dev/null; then
+        # Linux
+        xdg-open "http://localhost:$PORT/docs" &
+    elif command -v open &> /dev/null; then
+        # macOS - try to open in incognito mode
+        open -na "Google Chrome" --args --incognito "http://localhost:$PORT/docs" 2>/dev/null || \
+        open -na "Safari" --args --private "http://localhost:$PORT/docs" 2>/dev/null || \
+        open "http://localhost:$PORT/docs"
+    else
+        echo "Could not detect browser command. Please open manually: http://localhost:$PORT/docs"
+    fi
+    
     echo ""
     docker compose --env-file .env -f "$COMPOSE_FILE" up --build
 else
@@ -183,6 +206,29 @@ else
     case $choice in
       1)
         echo "🚀 Starte Backend direkt..."
+        echo ""
+        echo "========================================"
+        echo "  API will be accessible at:"
+        echo "  http://localhost:$PORT/docs"
+        echo "========================================"
+        echo ""
+        echo "Press ENTER to open the API documentation in your browser..."
+        echo "(The API may take a few seconds to start. Please refresh the page if needed.)"
+        read -r
+        
+        # Open browser in incognito/private mode
+        echo "Opening browser..."
+        if command -v xdg-open &> /dev/null; then
+            xdg-open "http://localhost:$PORT/docs" &
+        elif command -v open &> /dev/null; then
+            open -na "Google Chrome" --args --incognito "http://localhost:$PORT/docs" 2>/dev/null || \
+            open -na "Safari" --args --private "http://localhost:$PORT/docs" 2>/dev/null || \
+            open "http://localhost:$PORT/docs"
+        else
+            echo "Could not detect browser command. Please open manually: http://localhost:$PORT/docs"
+        fi
+        
+        echo ""
         docker compose --env-file .env -f "$COMPOSE_FILE" up --build
         ;;
       2)
@@ -197,6 +243,29 @@ else
         ./python-dependency-management/scripts/manage-python-project-dependencies.sh
         echo ""
         echo "🚀 Starte nun das Backend..."
+        echo ""
+        echo "========================================"
+        echo "  API will be accessible at:"
+        echo "  http://localhost:$PORT/docs"
+        echo "========================================"
+        echo ""
+        echo "Press ENTER to open the API documentation in your browser..."
+        echo "(The API may take a few seconds to start. Please refresh the page if needed.)"
+        read -r
+        
+        # Open browser in incognito/private mode
+        echo "Opening browser..."
+        if command -v xdg-open &> /dev/null; then
+            xdg-open "http://localhost:$PORT/docs" &
+        elif command -v open &> /dev/null; then
+            open -na "Google Chrome" --args --incognito "http://localhost:$PORT/docs" 2>/dev/null || \
+            open -na "Safari" --args --private "http://localhost:$PORT/docs" 2>/dev/null || \
+            open "http://localhost:$PORT/docs"
+        else
+            echo "Could not detect browser command. Please open manually: http://localhost:$PORT/docs"
+        fi
+        
+        echo ""
         docker compose --env-file .env -f "$COMPOSE_FILE" up --build
         ;;
       4)

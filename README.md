@@ -254,6 +254,11 @@ DATABASE_URL=postgresql://user:password@localhost:5432/mydb
 - `GET /health` - Health check
 - `GET /version` - Show version
 - `GET /test/db-test` - Test database connection
+- `POST /examples/` - Create example (CRUD demo)
+- `GET /examples/` - List examples (CRUD demo)
+- `GET /examples/{id}` - Get example (CRUD demo)
+- `PUT /examples/{id}` - Update example (CRUD demo)
+- `DELETE /examples/{id}` - Delete example (CRUD demo)
 
 ## 🐳 Docker Commands
 
@@ -338,6 +343,9 @@ See `docs/DATABASE.md` for detailed database configuration and usage.
 
 ### Documentation
 
+- **Database Migrations**: `docs/DATABASE_MIGRATIONS.md` - Production-ready schema management ⭐ **NEW**
+- **CRUD Example**: `docs/CRUD_EXAMPLE.md` - Complete CRUD operations guide ⭐
+- **Quick CRUD Reference**: `docs/QUICK_CRUD_REFERENCE.md` - Quick reference cheat sheet ⭐
 - **Docker Setup**: `docs/DOCKER_SETUP.md` - Complete Docker setup guide ⭐
 - **How to Add Endpoint**: `docs/HOW_TO_ADD_ENDPOINT.md` - Step-by-step guide ⭐
 - **Database Credentials**: `docs/DATABASE_CREDENTIALS.md` - Security & credential management ⭐

@@ -3,16 +3,26 @@ from fastapi import FastAPI, Request, HTTPException
 import uvicorn
 import redis
 from api.settings import settings
-from api.routes import test, files, packages
+from api.routes import test, files, packages, examples
 from backend.database import initialize_database, close_database
+from backend.database.migrations import run_migrations
 
 app = FastAPI()
 
 # Application lifecycle events
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database connection on startup."""
-    await initialize_database()
+    """Initialize database connection and run migrations on startup."""
+    try:
+        await initialize_database()
+        # Run database migrations automatically
+        print("🔄 About to run migrations...")
+        run_migrations()
+        print("🔄 Migrations completed (or skipped)")
+    except Exception as e:
+        print(f"❌ Error during startup: {e}")
+        import traceback
+        traceback.print_exc()
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -22,6 +32,7 @@ async def shutdown_event():
 app.include_router(test.router)
 app.include_router(files.router)
 app.include_router(packages.router)
+app.include_router(examples.router)
 
 
 print(f"🔧 Connecting to Redis at: {settings.REDIS_URL}")

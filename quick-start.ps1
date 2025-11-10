@@ -201,7 +201,28 @@ if (-not (Test-Path .setup-complete)) {
     Write-Host ""
     Write-Host "First setup complete!" -ForegroundColor Green
     Write-Host "Starting backend now..." -ForegroundColor Cyan
-    Write-Host "Backend will be available at: http://localhost:$PORT" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Green
+    Write-Host "  API will be accessible at:" -ForegroundColor Cyan
+    Write-Host "  http://localhost:$PORT/docs" -ForegroundColor Yellow
+    Write-Host "========================================" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Press ENTER to open the API documentation in your browser..." -ForegroundColor Yellow
+    Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
+    $null = Read-Host
+    
+    # Open browser in incognito/private mode
+    Write-Host "Opening browser..." -ForegroundColor Cyan
+    Start-Process "msedge" "--inprivate http://localhost:$PORT/docs" -ErrorAction SilentlyContinue
+    if ($LASTEXITCODE -ne 0) {
+        # Fallback to Chrome if Edge not available
+        Start-Process "chrome" "--incognito http://localhost:$PORT/docs" -ErrorAction SilentlyContinue
+        if ($LASTEXITCODE -ne 0) {
+            # Fallback to default browser
+            Start-Process "http://localhost:$PORT/docs"
+        }
+    }
+    
     Write-Host ""
     docker compose --env-file .env -f $COMPOSE_FILE up --build
 } else {
@@ -223,6 +244,27 @@ if (-not (Test-Path .setup-complete)) {
     switch ($choice) {
         "1" {
             Write-Host "Starting backend directly..." -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host "========================================" -ForegroundColor Green
+            Write-Host "  API will be accessible at:" -ForegroundColor Cyan
+            Write-Host "  http://localhost:$PORT/docs" -ForegroundColor Yellow
+            Write-Host "========================================" -ForegroundColor Green
+            Write-Host ""
+            Write-Host "Press ENTER to open the API documentation in your browser..." -ForegroundColor Yellow
+            Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
+            $null = Read-Host
+            
+            # Open browser in incognito/private mode
+            Write-Host "Opening browser..." -ForegroundColor Cyan
+            Start-Process "msedge" "--inprivate http://localhost:$PORT/docs" -ErrorAction SilentlyContinue
+            if ($LASTEXITCODE -ne 0) {
+                Start-Process "chrome" "--incognito http://localhost:$PORT/docs" -ErrorAction SilentlyContinue
+                if ($LASTEXITCODE -ne 0) {
+                    Start-Process "http://localhost:$PORT/docs"
+                }
+            }
+            
+            Write-Host ""
             docker compose --env-file .env -f $COMPOSE_FILE up --build
         }
         "2" {
@@ -245,6 +287,27 @@ if (-not (Test-Path .setup-complete)) {
             }
             Write-Host ""
             Write-Host "Starting backend now..." -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host "========================================" -ForegroundColor Green
+            Write-Host "  API will be accessible at:" -ForegroundColor Cyan
+            Write-Host "  http://localhost:$PORT/docs" -ForegroundColor Yellow
+            Write-Host "========================================" -ForegroundColor Green
+            Write-Host ""
+            Write-Host "Press ENTER to open the API documentation in your browser..." -ForegroundColor Yellow
+            Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
+            $null = Read-Host
+            
+            # Open browser in incognito/private mode
+            Write-Host "Opening browser..." -ForegroundColor Cyan
+            Start-Process "msedge" "--inprivate http://localhost:$PORT/docs" -ErrorAction SilentlyContinue
+            if ($LASTEXITCODE -ne 0) {
+                Start-Process "chrome" "--incognito http://localhost:$PORT/docs" -ErrorAction SilentlyContinue
+                if ($LASTEXITCODE -ne 0) {
+                    Start-Process "http://localhost:$PORT/docs"
+                }
+            }
+            
+            Write-Host ""
             docker compose --env-file .env -f $COMPOSE_FILE up --build
         }
         "4" {
