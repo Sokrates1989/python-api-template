@@ -11,6 +11,13 @@ venv/
 # Docker volumes (local directories)
 .docker/
 
+# Database backups (sensitive data)
+backups/*.sql
+backups/*.sql.gz
+backups/*.db
+backups/*.db.gz
+backups/*.backup
+
 # IDE / Editor specific
 .vscode/
 .idea/

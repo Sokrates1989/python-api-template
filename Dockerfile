@@ -10,6 +10,12 @@ ENV IMAGE_TAG=$IMAGE_TAG
 # Set the working directory in the container
 WORKDIR /app
 
+# Install database client tools for backup/restore
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    mysql-client \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy only dependency files first for better build caching
 COPY pyproject.toml pdm.lock ./
 

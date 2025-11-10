@@ -343,6 +343,7 @@ See `docs/DATABASE.md` for detailed database configuration and usage.
 
 ### Documentation
 
+- **Database Backup & Restore**: `docs/DATABASE_BACKUP.md` - Complete backup/restore via API ⭐ **NEW**
 - **Migration Guide**: `docs/MIGRATION_GUIDE.md` - Real-world schema changes (add tables, columns, relationships) ⭐ **NEW**
 - **Database Examples**: `docs/DATABASE_EXAMPLES.md` - SQL vs Neo4j CRUD examples ⭐ **NEW**
 - **Database Migrations**: `docs/DATABASE_MIGRATIONS.md` - Production-ready schema management ⭐
