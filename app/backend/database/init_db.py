@@ -8,10 +8,13 @@ from .factory import DatabaseFactory
 async def initialize_database():
     """
     Initialize database handler based on configuration.
+    Retries connection with exponential backoff to handle DNS propagation delays.
     
     Returns:
         dict: Result of connection test with status and message
     """
+    import asyncio
+    
     print(f"🔧 Initializing {settings.DB_TYPE} database...")
     
     if settings.DB_TYPE == "neo4j":
@@ -49,12 +52,28 @@ async def initialize_database():
     
     DatabaseFactory.set_instance(handler)
     
-    # Test the connection
-    result = await handler.test_connection()
-    if result["status"] == "success":
-        print(f"✅ {result['message']}")
-    else:
-        print(f"❌ {result['message']}")
+    # Test the connection with retry logic
+    max_retries = 5
+    retry_delay = 1  # Start with 1 second
+    
+    for attempt in range(1, max_retries + 1):
+        result = await handler.test_connection()
+        
+        if result["status"] == "success":
+            if attempt > 1:
+                print(f"✅ {result['message']} (succeeded on attempt {attempt})")
+            else:
+                print(f"✅ {result['message']}")
+            return result
+        
+        # Connection failed
+        if attempt < max_retries:
+            print(f"⚠️  Connection attempt {attempt}/{max_retries} failed, retrying in {retry_delay}s...")
+            await asyncio.sleep(retry_delay)
+            retry_delay *= 2  # Exponential backoff
+        else:
+            print(f"❌ {result['message']} (failed after {max_retries} attempts)")
+            return result
     
     return result
 
