@@ -128,30 +128,61 @@ esac
 sed -i "s|^DB_MODE=.*|DB_MODE=$DB_MODE|" .env
 echo ""
 
-# Database credentials (only for PostgreSQL local mode)
-if [ "$DB_TYPE" = "postgresql" ] && [ "$DB_MODE" = "local" ]; then
-    echo "PostgreSQL Configuration:"
-    echo ""
-    
-    read -p "Database name [apidb]: " DB_NAME
-    DB_NAME="${DB_NAME:-apidb}"
-    
-    read -p "Database user [apiuser]: " DB_USER
-    DB_USER="${DB_USER:-apiuser}"
-    
-    read -p "Database password [changeme]: " DB_PASSWORD
-    DB_PASSWORD="${DB_PASSWORD:-changeme}"
-    
-    read -p "Database port [5432]: " DB_PORT
-    DB_PORT="${DB_PORT:-5432}"
-    
-    sed -i "s|^DB_NAME=.*|DB_NAME=$DB_NAME|" .env
-    sed -i "s|^DB_USER=.*|DB_USER=$DB_USER|" .env
-    sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=$DB_PASSWORD|" .env
-    sed -i "s|^DB_PORT=.*|DB_PORT=$DB_PORT|" .env
-    
-    echo "✅ PostgreSQL configured"
-    echo ""
+# Database credentials (for local mode)
+if [ "$DB_MODE" = "local" ]; then
+    if [ "$DB_TYPE" = "postgresql" ]; then
+        echo "PostgreSQL Configuration:"
+        echo ""
+        
+        read -p "Database name [apidb]: " DB_NAME
+        DB_NAME="${DB_NAME:-apidb}"
+        
+        read -p "Database user [apiuser]: " DB_USER
+        DB_USER="${DB_USER:-apiuser}"
+        
+        read -p "Database password [changeme]: " DB_PASSWORD
+        DB_PASSWORD="${DB_PASSWORD:-changeme}"
+        
+        read -p "Database port [5432]: " DB_PORT
+        DB_PORT="${DB_PORT:-5432}"
+        
+        sed -i "s|^DB_NAME=.*|DB_NAME=$DB_NAME|" .env
+        sed -i "s|^DB_USER=.*|DB_USER=$DB_USER|" .env
+        sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=$DB_PASSWORD|" .env
+        sed -i "s|^DB_PORT=.*|DB_PORT=$DB_PORT|" .env
+        
+        echo "✅ PostgreSQL configured"
+        echo ""
+    elif [ "$DB_TYPE" = "neo4j" ]; then
+        echo "Neo4j Configuration:"
+        echo ""
+        echo "ℹ️  Note: Neo4j requires username to be 'neo4j'"
+        echo ""
+        
+        # Neo4j username must be 'neo4j'
+        DB_USER="neo4j"
+        
+        read -p "Database password [neo4jpassword]: " DB_PASSWORD
+        DB_PASSWORD="${DB_PASSWORD:-neo4jpassword}"
+        
+        read -p "Bolt port [7687]: " DB_PORT
+        DB_PORT="${DB_PORT:-7687}"
+        
+        read -p "HTTP port [7474]: " NEO4J_HTTP_PORT
+        NEO4J_HTTP_PORT="${NEO4J_HTTP_PORT:-7474}"
+        
+        # Update all Neo4j-related settings
+        sed -i "s|^DB_USER=.*|DB_USER=$DB_USER|" .env
+        sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=$DB_PASSWORD|" .env
+        sed -i "s|^DB_PORT=.*|DB_PORT=$DB_PORT|" .env
+        sed -i "s|^NEO4J_HTTP_PORT=.*|NEO4J_HTTP_PORT=$NEO4J_HTTP_PORT|" .env
+        
+        # Also update NEO4J_URL to use the configured password
+        sed -i "s|^NEO4J_URL=.*|NEO4J_URL=bolt://neo4j:$DB_PORT|" .env
+        
+        echo "✅ Neo4j configured (username: neo4j, password: $DB_PASSWORD)"
+        echo ""
+    fi
 fi
 
 # External database configuration

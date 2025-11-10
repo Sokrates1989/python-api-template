@@ -18,6 +18,7 @@ class Neo4jHandler(BaseDatabaseHandler):
             user: Database username
             password: Database password
         """
+        self.db_type = "neo4j"
         self.driver = GraphDatabase.driver(url, auth=(user, password))
     
     def close(self):

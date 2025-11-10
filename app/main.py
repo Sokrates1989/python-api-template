@@ -3,7 +3,7 @@ from fastapi import FastAPI, Request, HTTPException
 import uvicorn
 import redis
 from api.settings import settings
-from api.routes import test, files, packages, examples
+from api.routes import test, files, packages
 from backend.database import initialize_database, close_database
 from backend.database.migrations import run_migrations
 
@@ -29,10 +29,24 @@ async def shutdown_event():
     """Close database connection on shutdown."""
     await close_database()
 
+# Include core routers (work with any database)
 app.include_router(test.router)
 app.include_router(files.router)
 app.include_router(packages.router)
-app.include_router(examples.router)
+
+# Conditionally include database-specific routers
+if settings.DB_TYPE in ["postgresql", "postgres", "mysql", "sqlite"]:
+    # SQL-specific routes - uses SQLAlchemy models
+    from api.routes import examples
+    app.include_router(examples.router)
+    print(f"✅ Registered SQL-specific routes (/examples/) for {settings.DB_TYPE}")
+elif settings.DB_TYPE == "neo4j":
+    # Neo4j-specific routes - uses graph database nodes
+    from api.routes import example_nodes
+    app.include_router(example_nodes.router)
+    print(f"✅ Registered Neo4j-specific routes (/example-nodes/) for {settings.DB_TYPE}")
+else:
+    print(f"ℹ️  No database-specific example routes registered - DB_TYPE={settings.DB_TYPE}")
 
 
 print(f"🔧 Connecting to Redis at: {settings.REDIS_URL}")
