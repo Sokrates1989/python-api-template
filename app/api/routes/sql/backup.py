@@ -8,13 +8,13 @@ import tempfile
 import shutil
 
 from backend.services.sql.backup_service import BackupService
-from api.security import verify_admin_key
+from api.security import verify_admin_key, verify_restore_key, verify_delete_key
 
 
 router = APIRouter(
     prefix="/backup",
-    tags=["Database Backup"],
-    dependencies=[Depends(verify_admin_key)]  # Require admin authentication
+    tags=["Database Backup"]
+    # Note: Security is applied per-endpoint based on operation sensitivity
 )
 
 
@@ -46,6 +46,8 @@ class RestoreResponse(BaseModel):
     """Response model for restore operation."""
     success: bool
     message: str
+    safety_backup_created: bool = False
+    safety_backup_filename: str | None = None
 
 
 class DeleteResponse(BaseModel):
@@ -59,11 +61,11 @@ backup_service = BackupService()
 
 
 @router.post("/create", response_model=BackupResponse)
-async def create_database_backup(compress: bool = True):
+async def create_database_backup(compress: bool = True, _: str = Depends(verify_admin_key)):
     """
     Create a database backup.
     
-    **Requires admin authentication.**
+    **Security:** Requires `X-Admin-Key` header
     
     Args:
         compress: Whether to compress the backup with gzip (default: True)
@@ -96,11 +98,11 @@ async def create_database_backup(compress: bool = True):
 
 
 @router.get("/download/{filename}")
-async def download_backup(filename: str):
+async def download_backup(filename: str, _: str = Depends(verify_admin_key)):
     """
     Download a backup file.
     
-    **Requires admin authentication.**
+    **Security:** Requires `X-Admin-Key` header
     
     Args:
         filename: Name of the backup file to download
@@ -135,33 +137,38 @@ async def download_backup(filename: str):
 
 
 @router.post("/restore/{filename}", response_model=RestoreResponse)
-async def restore_from_backup(filename: str):
+async def restore_from_backup(filename: str, create_safety_backup: bool = True, _: str = Depends(verify_restore_key)):
     """
     Restore database from an existing backup file.
     
     **⚠️ WARNING: This will overwrite the current database!**
     
-    **Requires admin authentication.**
+    **Security:** Requires `X-Restore-Key` header
+    
+    Creates a safety backup before restoring and drops existing data.
     
     Args:
         filename: Name of the backup file to restore from
+        create_safety_backup: Create a safety backup before restoring (default: True)
         
     Returns:
-        Restore operation result
+        Restore operation result including safety backup info
         
     Example:
         ```
-        POST /backup/restore/backup_postgresql_20241110_120000.sql.gz
-        Headers: X-Admin-Key: your-admin-key
+        POST /backup/restore/backup_postgresql_20241110_120000.sql.gz?create_safety_backup=true
+        Headers: X-Restore-Key: your-restore-key
         ```
     """
     try:
         filepath = backup_service.get_backup_path(filename)
-        backup_service.restore_backup(filepath)
+        restore_info = backup_service.restore_backup(filepath, create_safety_backup=create_safety_backup)
         
         return RestoreResponse(
             success=True,
-            message=f"Database restored successfully from: {filename}"
+            message=f"Database restored successfully from: {filename}",
+            safety_backup_created=restore_info["safety_backup_created"],
+            safety_backup_filename=restore_info["safety_backup_filename"]
         )
         
     except FileNotFoundError:
@@ -173,24 +180,27 @@ async def restore_from_backup(filename: str):
 
 
 @router.post("/restore-upload", response_model=RestoreResponse)
-async def restore_from_uploaded_backup(file: UploadFile = File(...)):
+async def restore_from_uploaded_backup(file: UploadFile = File(...), create_safety_backup: bool = True, _: str = Depends(verify_restore_key)):
     """
     Restore database from an uploaded backup file.
     
     **⚠️ WARNING: This will overwrite the current database!**
     
-    **Requires admin authentication.**
+    **Security:** Requires `X-Restore-Key` header
+    
+    Creates a safety backup before restoring and drops existing data.
     
     Args:
         file: Backup file to upload and restore from
+        create_safety_backup: Create a safety backup before restoring (default: True)
         
     Returns:
-        Restore operation result
+        Restore operation result including safety backup info
         
     Example:
         ```
-        POST /backup/restore-upload
-        Headers: X-Admin-Key: your-admin-key
+        POST /backup/restore-upload?create_safety_backup=true
+        Headers: X-Restore-Key: your-restore-key
         Body: multipart/form-data with file
         ```
     """
@@ -203,11 +213,13 @@ async def restore_from_uploaded_backup(file: UploadFile = File(...)):
             shutil.copyfileobj(file.file, temp)
         
         # Restore from temporary file
-        backup_service.restore_backup(temp_file)
+        restore_info = backup_service.restore_backup(temp_file, create_safety_backup=create_safety_backup)
         
         return RestoreResponse(
             success=True,
-            message=f"Database restored successfully from uploaded file: {file.filename}"
+            message=f"Database restored successfully from uploaded file: {file.filename}",
+            safety_backup_created=restore_info["safety_backup_created"],
+            safety_backup_filename=restore_info["safety_backup_filename"]
         )
         
     except Exception as e:
@@ -220,11 +232,11 @@ async def restore_from_uploaded_backup(file: UploadFile = File(...)):
 
 
 @router.get("/list", response_model=BackupListResponse)
-async def list_backups():
+async def list_backups(_: str = Depends(verify_admin_key)):
     """
     List all available backup files.
     
-    **Requires admin authentication.**
+    **Security:** Requires `X-Admin-Key` header
     
     Returns:
         List of backup files with metadata
@@ -248,11 +260,13 @@ async def list_backups():
 
 
 @router.delete("/delete/{filename}", response_model=DeleteResponse)
-async def delete_backup(filename: str):
+async def delete_backup(filename: str, _: str = Depends(verify_delete_key)):
     """
     Delete a backup file.
     
-    **Requires admin authentication.**
+    **⚠️ WARNING: This permanently deletes the backup file!**
+    
+    **Security:** Requires `X-Delete-Key` header
     
     Args:
         filename: Name of the backup file to delete
@@ -263,7 +277,7 @@ async def delete_backup(filename: str):
     Example:
         ```
         DELETE /backup/delete/backup_postgresql_20241110_120000.sql.gz
-        Headers: X-Admin-Key: your-admin-key
+        Headers: X-Delete-Key: your-delete-key
         ```
     """
     try:

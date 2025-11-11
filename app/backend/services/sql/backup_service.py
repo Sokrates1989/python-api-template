@@ -90,15 +90,18 @@ class BackupService:
             raise Exception(f"PostgreSQL backup failed: {e.stderr}")
     
     def _backup_mysql(self, timestamp: str, compress: bool) -> tuple[str, Path]:
-        """Create MySQL backup using mysqldump."""
+        """Create MySQL backup using mariadb-dump (MySQL-compatible)."""
         filename = f"backup_mysql_{timestamp}.sql"
         if compress:
             filename += ".gz"
         
         filepath = self.backup_dir / filename
         
+        # Try mariadb-dump first (newer), fall back to mysqldump
+        dump_cmd = 'mariadb-dump' if shutil.which('mariadb-dump') else 'mysqldump'
+        
         cmd = [
-            'mysqldump',
+            dump_cmd,
             '-h', settings.DB_HOST,
             '-P', str(settings.DB_PORT),
             '-u', settings.DB_USER,
@@ -155,12 +158,18 @@ class BackupService:
         except Exception as e:
             raise Exception(f"SQLite backup failed: {str(e)}")
     
-    def restore_backup(self, backup_file: Path) -> None:
+    def restore_backup(self, backup_file: Path, create_safety_backup: bool = True) -> dict:
         """
         Restore database from backup file.
         
+        Creates a safety backup before restoring and drops existing data.
+        
         Args:
             backup_file: Path to backup file
+            create_safety_backup: If True, creates a backup before restoring (default: True)
+            
+        Returns:
+            dict: Information about the restore operation including safety backup filename
             
         Raises:
             Exception: If restore fails
@@ -169,10 +178,41 @@ class BackupService:
             raise FileNotFoundError(f"Backup file not found: {backup_file}")
         
         db_type = settings.DB_TYPE.lower()
+        safety_backup_filename = None
+        
+        # Create safety backup before restoring
+        if create_safety_backup:
+            try:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                safety_backup_filename = f"safety_backup_{db_type}_{timestamp}.sql.gz"
+                safety_backup_path = self.backup_dir / safety_backup_filename
+                
+                # Create compressed backup
+                if db_type in ["postgresql", "postgres"]:
+                    self._backup_postgresql(timestamp, compress=True)
+                elif db_type == "mysql":
+                    self._backup_mysql(timestamp, compress=True)
+                elif db_type == "sqlite":
+                    self._backup_sqlite(timestamp, compress=True)
+                
+                # Rename to safety backup
+                latest_backup = max(self.backup_dir.glob(f"backup_{db_type}_*.sql.gz"), 
+                                  key=lambda p: p.stat().st_mtime)
+                latest_backup.rename(safety_backup_path)
+                
+            except Exception as e:
+                raise Exception(f"Failed to create safety backup: {str(e)}")
         
         # Check if file is compressed
         is_compressed = backup_file.suffix == '.gz'
         
+        # Drop existing database data before restore
+        try:
+            self._drop_database()
+        except Exception as e:
+            raise Exception(f"Failed to drop existing database: {str(e)}")
+        
+        # Restore from backup
         if db_type in ["postgresql", "postgres"]:
             self._restore_postgresql(backup_file, is_compressed)
         elif db_type == "mysql":
@@ -181,6 +221,11 @@ class BackupService:
             self._restore_sqlite(backup_file, is_compressed)
         else:
             raise ValueError(f"Restore not supported for database type: {db_type}")
+        
+        return {
+            "safety_backup_created": create_safety_backup,
+            "safety_backup_filename": safety_backup_filename
+        }
     
     def _restore_postgresql(self, backup_file: Path, is_compressed: bool) -> None:
         """Restore PostgreSQL database using psql."""
@@ -218,9 +263,12 @@ class BackupService:
             raise Exception(f"PostgreSQL restore failed: {e.stderr}")
     
     def _restore_mysql(self, backup_file: Path, is_compressed: bool) -> None:
-        """Restore MySQL database using mysql."""
+        """Restore MySQL database using mariadb (MySQL-compatible)."""
+        # Try mariadb first (newer), fall back to mysql
+        mysql_cmd = 'mariadb' if shutil.which('mariadb') else 'mysql'
+        
         cmd = [
-            'mysql',
+            mysql_cmd,
             '-h', settings.DB_HOST,
             '-P', str(settings.DB_PORT),
             '-u', settings.DB_USER,
@@ -272,6 +320,129 @@ class BackupService:
                     shutil.copy2(backup_current, db_file)
             raise Exception(f"SQLite restore failed: {str(e)}")
     
+    def _drop_database(self) -> None:
+        """
+        Drop all tables/data from the database before restore.
+        
+        This ensures a clean restore without conflicts from existing data.
+        """
+        db_type = settings.DB_TYPE.lower()
+        
+        if db_type in ["postgresql", "postgres"]:
+            self._drop_postgresql_tables()
+        elif db_type == "mysql":
+            self._drop_mysql_tables()
+        elif db_type == "sqlite":
+            self._drop_sqlite_tables()
+    
+    def _drop_postgresql_tables(self) -> None:
+        """Drop all tables in PostgreSQL database."""
+        env = os.environ.copy()
+        env['PGPASSWORD'] = settings.DB_PASSWORD
+        
+        # Drop all tables using CASCADE
+        drop_sql = """
+        DO $$ DECLARE
+            r RECORD;
+        BEGIN
+            FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE';
+            END LOOP;
+        END $$;
+        """
+        
+        cmd = [
+            'psql',
+            '-h', settings.DB_HOST,
+            '-p', str(settings.DB_PORT),
+            '-U', settings.DB_USER,
+            '-d', settings.DB_NAME,
+        ]
+        
+        try:
+            subprocess.run(
+                cmd,
+                env=env,
+                input=drop_sql,
+                capture_output=True,
+                check=True,
+                text=True
+            )
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to drop PostgreSQL tables: {e.stderr}")
+    
+    def _drop_mysql_tables(self) -> None:
+        """Drop all tables in MySQL database."""
+        env = os.environ.copy()
+        env['MYSQL_PWD'] = settings.DB_PASSWORD
+        
+        # Get list of tables and drop them
+        drop_sql = f"""
+        SET FOREIGN_KEY_CHECKS = 0;
+        SET @tables = NULL;
+        SELECT GROUP_CONCAT(table_name) INTO @tables
+        FROM information_schema.tables
+        WHERE table_schema = '{settings.DB_NAME}';
+        SET @tables = CONCAT('DROP TABLE IF EXISTS ', @tables);
+        PREPARE stmt FROM @tables;
+        EXECUTE stmt;
+        DEALLOCATE PREPARE stmt;
+        SET FOREIGN_KEY_CHECKS = 1;
+        """
+        
+        # Try mariadb first, fallback to mysql
+        cmd = None
+        for mysql_cmd in ['mariadb', 'mysql']:
+            if shutil.which(mysql_cmd):
+                cmd = [
+                    mysql_cmd,
+                    '-h', settings.DB_HOST,
+                    '-P', str(settings.DB_PORT),
+                    '-u', settings.DB_USER,
+                    settings.DB_NAME,
+                ]
+                break
+        
+        if not cmd:
+            raise Exception("Neither mariadb nor mysql command found")
+        
+        try:
+            subprocess.run(
+                cmd,
+                env=env,
+                input=drop_sql,
+                capture_output=True,
+                check=True,
+                text=True
+            )
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to drop MySQL tables: {e.stderr}")
+    
+    def _drop_sqlite_tables(self) -> None:
+        """Drop all tables in SQLite database."""
+        import sqlite3
+        
+        db_file = Path(settings.DB_NAME)
+        if not db_file.exists():
+            return  # Nothing to drop
+        
+        try:
+            conn = sqlite3.connect(db_file)
+            cursor = conn.cursor()
+            
+            # Get all table names
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tables = cursor.fetchall()
+            
+            # Drop each table
+            for table in tables:
+                cursor.execute(f"DROP TABLE IF EXISTS {table[0]};")
+            
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            raise Exception(f"Failed to drop SQLite tables: {str(e)}")
+    
     def list_backups(self) -> list[dict]:
         """
         List all available backups.
@@ -281,7 +452,8 @@ class BackupService:
         """
         backups = []
         
-        for backup_file in self.backup_dir.glob("backup_*"):
+        # Include both regular backups and safety backups
+        for backup_file in self.backup_dir.glob("*backup_*"):
             stat = backup_file.stat()
             backups.append({
                 "filename": backup_file.name,

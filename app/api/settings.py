@@ -11,9 +11,13 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379"
     DEBUG: bool = False
     
-    # Security Settings
-    ADMIN_API_KEY: str = ""  # API key for admin endpoints like /packages
-    ADMIN_API_KEY_FILE: str = ""  # Path to file containing API key
+    # Security Settings - Tiered API Keys
+    ADMIN_API_KEY: str = ""  # Level 1: Read-only admin operations
+    ADMIN_API_KEY_FILE: str = ""  # Path to file containing admin API key
+    BACKUP_RESTORE_API_KEY: str = ""  # Level 2: Restore operations (destructive)
+    BACKUP_RESTORE_API_KEY_FILE: str = ""  # Path to file containing restore API key
+    BACKUP_DELETE_API_KEY: str = ""  # Level 3: Delete operations (destructive)
+    BACKUP_DELETE_API_KEY_FILE: str = ""  # Path to file containing delete API key
     
     # Database Type Configuration
     DB_TYPE: Literal["neo4j", "postgresql", "mysql", "sqlite"] = "neo4j"
@@ -39,6 +43,18 @@ class Settings(BaseSettings):
         if self.ADMIN_API_KEY_FILE and Path(self.ADMIN_API_KEY_FILE).exists():
             return Path(self.ADMIN_API_KEY_FILE).read_text().strip()
         return self.ADMIN_API_KEY
+    
+    def get_restore_api_key(self) -> str:
+        """Get restore API key from file or environment variable"""
+        if self.BACKUP_RESTORE_API_KEY_FILE and Path(self.BACKUP_RESTORE_API_KEY_FILE).exists():
+            return Path(self.BACKUP_RESTORE_API_KEY_FILE).read_text().strip()
+        return self.BACKUP_RESTORE_API_KEY
+    
+    def get_delete_api_key(self) -> str:
+        """Get delete API key from file or environment variable"""
+        if self.BACKUP_DELETE_API_KEY_FILE and Path(self.BACKUP_DELETE_API_KEY_FILE).exists():
+            return Path(self.BACKUP_DELETE_API_KEY_FILE).read_text().strip()
+        return self.BACKUP_DELETE_API_KEY
     
     def get_db_password(self) -> str:
         """Get database password from file or environment variable"""

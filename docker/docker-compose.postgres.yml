@@ -24,6 +24,8 @@ services:
       # Mount alembic for live-reloading of migrations
       - ../alembic:/app/alembic
       - ../alembic.ini:/app/alembic.ini
+      # Mount backups directory to host for persistence and easy access
+      - ../backups:/app/backups
       # Note: .venv is built into the image, not mounted as a volume
       # This ensures dependencies always match pdm.lock from the build
     depends_on:

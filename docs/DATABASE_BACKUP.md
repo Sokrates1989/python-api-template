@@ -8,10 +8,13 @@ This template includes a complete backup and restore system with API endpoints f
 ✅ **Download backups** as files  
 ✅ **Restore from existing backups**  
 ✅ **Upload and restore** from external backup files  
-✅ **List all backups** with metadata  
+✅ **List all backups** with metadata (including safety backups)  
 ✅ **Delete old backups**  
 ✅ **Automatic compression** with gzip  
-✅ **Admin authentication** required  
+✅ **Tiered security** with separate API keys for admin, restore, and delete operations  
+✅ **Safety backups** - Automatically creates backup before restore  
+✅ **Clean restore** - Drops existing data before restoring  
+✅ **Volume mounted** - Backups accessible on host system  
 ✅ **Supports all databases** - PostgreSQL, MySQL, SQLite, Neo4j  
 
 ---
@@ -46,15 +49,58 @@ curl -X GET "http://localhost:8081/backup/download/backup_postgresql_20241110_12
 ### 3. Restore from Backup
 
 ```bash
-curl -X POST "http://localhost:8081/backup/restore/backup_postgresql_20241110_120000.sql.gz" \
-  -H "X-Admin-Key: your-admin-key"
+curl -X POST "http://localhost:8081/backup/restore/backup_postgresql_20241110_120000.sql.gz?create_safety_backup=true" \
+  -H "X-Restore-Key: your-restore-key"
 ```
 
 ---
 
-## API Endpoints
+## Security - Tiered API Keys
 
-All endpoints require admin authentication via `X-Admin-Key` header.
+The backup system uses **three levels of API keys** for different operations:
+
+### Level 1: Admin Key (`X-Admin-Key`)
+**Read-only operations** - Low risk
+- Create backups
+- Download backups
+- List backups
+
+### Level 2: Restore Key (`X-Restore-Key`)
+**Destructive operations** - Medium risk
+- Restore from backup (overwrites database)
+- Upload and restore
+
+⚠️ **WARNING:** Restore operations will:
+1. Create a safety backup of current data (unless disabled)
+2. Drop all existing tables and data
+3. Restore from the backup file
+
+### Level 3: Delete Key (`X-Delete-Key`)
+**Permanent deletion** - High risk
+- Delete backup files
+
+⚠️ **WARNING:** Deletion is permanent and cannot be undone!
+
+### Configuration
+
+Set these in your `.env` file:
+
+```env
+# Level 1: Admin read operations
+ADMIN_API_KEY=change-this-to-a-secure-random-key
+
+# Level 2: Restore operations (overwrites database!)
+BACKUP_RESTORE_API_KEY=change-this-restore-key-to-something-secure
+
+# Level 3: Delete operations (permanent deletion!)
+BACKUP_DELETE_API_KEY=change-this-delete-key-to-something-secure
+```
+
+**Best Practice:** Use different keys for each level to limit damage from key compromise.
+
+---
+
+## API Endpoints
 
 ### POST `/backup/create`
 
@@ -110,21 +156,36 @@ Restore database from an existing backup file.
 
 **⚠️ WARNING: This will overwrite the current database!**
 
+**Authentication:** Requires `X-Restore-Key` header
+
+**What happens during restore:**
+1. **Safety backup** - Creates a backup of current data (unless `create_safety_backup=false`)
+2. **Drop tables** - Removes all existing tables and data
+3. **Restore** - Loads data from the backup file
+
 **Parameters:**
 - `filename` (path): Name of the backup file to restore from
+- `create_safety_backup` (query, optional): Create safety backup before restore (default: true)
 
 **Response:**
 ```json
 {
   "success": true,
-  "message": "Database restored successfully from: backup_postgresql_20241110_120000.sql.gz"
+  "message": "Database restored successfully from: backup_postgresql_20241110_120000.sql.gz",
+  "safety_backup_created": true,
+  "safety_backup_filename": "safety_backup_postgresql_20251111_143022.sql.gz"
 }
 ```
 
-**Example:**
+**Examples:**
 ```bash
-curl -X POST "http://localhost:8081/backup/restore/backup_postgresql_20241110_120000.sql.gz" \
-  -H "X-Admin-Key: your-admin-key"
+# Restore with safety backup (recommended)
+curl -X POST "http://localhost:8081/backup/restore/backup_postgresql_20241110_120000.sql.gz?create_safety_backup=true" \
+  -H "X-Restore-Key: your-restore-key"
+
+# Restore without safety backup (not recommended)
+curl -X POST "http://localhost:8081/backup/restore/backup_postgresql_20241110_120000.sql.gz?create_safety_backup=false" \
+  -H "X-Restore-Key: your-restore-key"
 ```
 
 ---
@@ -135,21 +196,37 @@ Upload and restore from a backup file.
 
 **⚠️ WARNING: This will overwrite the current database!**
 
+**Authentication:** Requires `X-Restore-Key` header
+
+**What happens during restore:**
+1. **Safety backup** - Creates a backup of current data (unless `create_safety_backup=false`)
+2. **Drop tables** - Removes all existing tables and data
+3. **Restore** - Loads data from the uploaded backup file
+
 **Parameters:**
 - `file` (form-data): Backup file to upload
+- `create_safety_backup` (query, optional): Create safety backup before restore (default: true)
 
 **Response:**
 ```json
 {
   "success": true,
-  "message": "Database restored successfully from uploaded file: my_backup.sql.gz"
+  "message": "Database restored successfully from uploaded file: my_backup.sql.gz",
+  "safety_backup_created": true,
+  "safety_backup_filename": "safety_backup_postgresql_20251111_143022.sql.gz"
 }
 ```
 
-**Example:**
+**Examples:**
 ```bash
-curl -X POST "http://localhost:8081/backup/restore-upload" \
-  -H "X-Admin-Key: your-admin-key" \
+# Upload and restore with safety backup (recommended)
+curl -X POST "http://localhost:8081/backup/restore-upload?create_safety_backup=true" \
+  -H "X-Restore-Key: your-restore-key" \
+  -F "file=@/path/to/backup.sql.gz"
+
+# Upload and restore without safety backup (not recommended)
+curl -X POST "http://localhost:8081/backup/restore-upload?create_safety_backup=false" \
+  -H "X-Restore-Key: your-restore-key" \
   -F "file=@/path/to/backup.sql.gz"
 ```
 
@@ -194,6 +271,10 @@ curl -X GET "http://localhost:8081/backup/list" \
 
 Delete a backup file.
 
+**⚠️ WARNING: This permanently deletes the backup file!**
+
+**Authentication:** Requires `X-Delete-Key` header
+
 **Parameters:**
 - `filename` (path): Name of the backup file to delete
 
@@ -208,8 +289,43 @@ Delete a backup file.
 **Example:**
 ```bash
 curl -X DELETE "http://localhost:8081/backup/delete/backup_postgresql_20241110_120000.sql.gz" \
-  -H "X-Admin-Key: your-admin-key"
+  -H "X-Delete-Key: your-delete-key"
 ```
+
+---
+
+## Backup Storage
+
+### Location
+
+Backups are stored in the `backups/` directory at the project root.
+
+**Volume Mount:** The backups directory is mounted as a Docker volume, making backups accessible on the host system at:
+```
+d:\Development\Code\python\python-api-template\backups\
+```
+
+### File Types
+
+- **Regular backups:** `backup_<db_type>_<timestamp>.sql[.gz]`
+- **Safety backups:** `safety_backup_<db_type>_<timestamp>.sql.gz`
+
+Safety backups are automatically created before restore operations to protect against data loss.
+
+### Persistence
+
+✅ **Backups persist** across container restarts  
+✅ **Accessible on host** for external backup solutions  
+✅ **Can be copied** to external storage  
+✅ **Version controlled** (excluded via `.gitignore`)  
+
+### Best Practices
+
+1. **Regular backups** - Schedule automated backups via cron or CI/CD
+2. **External storage** - Copy important backups to cloud storage (S3, Azure Blob, etc.)
+3. **Test restores** - Periodically test restore process to ensure backups are valid
+4. **Retention policy** - Delete old backups to save space
+5. **Monitor size** - Large databases may require significant storage
 
 ---
 
