@@ -1,12 +1,13 @@
 """Database migration utilities using Alembic."""
 import os
 import sys
+import logging
 from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from alembic.runtime.migration import MigrationContext
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from api.settings import settings
 
 
@@ -67,54 +68,51 @@ def run_migrations():
         print(f"🔄 Running {len(pending)} pending migration(s)...")
         print("")
         
-        # Run migrations one by one with status reporting
-        success_count = 0
-        failed_migrations = []
+        # Suppress Alembic's verbose logging completely
+        logging.getLogger('alembic').setLevel(logging.ERROR)
+        logging.getLogger('sqlalchemy').setLevel(logging.ERROR)
         
+        # Print each migration that will be applied
         for migration_info in pending:
-            migration_id = migration_info['revision']
-            migration_desc = migration_info['description']
-            
-            try:
-                print(f"   ⏩ Applying: {migration_id[:12]} - {migration_desc}")
-                
-                # Run this specific migration
-                command.upgrade(alembic_cfg, migration_id)
-                
-                # Verify it was applied
-                current = _get_current_version(alembic_cfg)
-                if current == migration_id:
-                    print(f"   ✅ SUCCESS: {migration_id[:12]} - {migration_desc}")
-                    success_count += 1
-                else:
-                    print(f"   ⚠️  WARNING: {migration_id[:12]} - Applied but version mismatch")
-                    success_count += 1
-                    
-            except Exception as e:
-                print(f"   ❌ FAILED: {migration_id[:12]} - {migration_desc}")
-                print(f"      Error: {str(e)}")
-                failed_migrations.append({
-                    'id': migration_id,
-                    'description': migration_desc,
-                    'error': str(e)
-                })
-                # Don't continue if a migration fails
-                break
+            print(f"   ⏩ Applying: {migration_info['revision'][:12]} - {migration_info['description']}")
         
         print("")
+        sys.stdout.flush()  # Force output before Alembic runs
         
-        # Final summary
-        if failed_migrations:
-            print(f"❌ Migration failed! {success_count}/{len(pending)} migrations applied")
-            print(f"📍 Failed migrations:")
-            for failed in failed_migrations:
-                print(f"   - {failed['id'][:12]}: {failed['description']}")
-                print(f"     Error: {failed['error']}")
-            raise Exception(f"Migration failed at {failed_migrations[0]['id'][:12]}")
-        else:
+        try:
+            # Configure Alembic to use minimal logging
+            alembic_cfg.set_main_option("sqlalchemy.echo", "false")
+            
+            # Run all migrations to head
+            command.upgrade(alembic_cfg, "head")
+            
+            print("")
+            sys.stdout.flush()  # Force output after Alembic runs
+            
+            # Show success for each migration that was applied
+            for migration_info in pending:
+                print(f"   ✅ SUCCESS: {migration_info['revision'][:12]} - {migration_info['description']}")
+                sys.stdout.flush()
+            
+            print("")
+            sys.stdout.flush()
+            
+            # Final summary
             final_version = _get_current_version(alembic_cfg)
-            print(f"✅ All migrations completed successfully! ({success_count}/{len(pending)})")
+            print(f"✅ All migrations completed successfully! ({len(pending)}/{len(pending)})")
             print(f"📍 Database version: {final_version[:12]}...")
+            sys.stdout.flush()
+                
+        except Exception as e:
+            print("")
+            print(f"❌ Migration failed! Check the error above")
+            print(f"   Error: {str(e)}")
+            raise Exception(f"Migration failed: {str(e)}")
+                
+        finally:
+            # Restore normal logging
+            logging.getLogger('alembic').setLevel(logging.INFO)
+            logging.getLogger('sqlalchemy').setLevel(logging.WARNING)
         
     except Exception as e:
         print(f"❌ Error running migrations: {e}")
