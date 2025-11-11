@@ -49,16 +49,16 @@ provide_diagnostics() {
         echo "❌ Dependency management Dockerfile missing"
     fi
     
-    if [ -f docker/docker-compose.yml ]; then
+    if [ -f local-deployment/docker-compose.yml ]; then
         echo "✅ Main docker-compose.yml exists"
     else
-        echo "❌ Main docker/docker-compose.yml missing"
+        echo "❌ Main local-deployment/docker-compose.yml missing"
     fi
     
-    if [ -f docker/docker-compose-python-dependency-management.yml ]; then
+    if [ -f local-deployment/docker-compose-python-dependency-management.yml ]; then
         echo "✅ Dependency management docker-compose.yml exists"
     else
-        echo "❌ Dependency management docker/docker-compose-python-dependency-management.yml missing"
+        echo "❌ Dependency management local-deployment/docker-compose-python-dependency-management.yml missing"
     fi
 }
 
@@ -117,10 +117,10 @@ cd ..
 # Test docker-compose builds
 echo ""
 echo "🐳 Testing docker-compose builds..."
-if docker-compose -f docker/docker-compose.yml build --no-cache > /dev/null 2>&1; then
+if docker-compose -f local-deployment/docker-compose.yml build --no-cache > /dev/null 2>&1; then
     echo "✅ Main docker-compose builds successfully"
 else
-    echo "❌ Main docker/docker-compose.yml build failed"
+    echo "❌ Main local-deployment/docker-compose.yml build failed"
     echo "   Error: Docker compose build failed for main application"
     echo "   Possible causes:"
     echo "   - Docker not running"
@@ -131,10 +131,10 @@ else
     return 1
 fi
 
-if docker-compose -f docker/docker-compose-python-dependency-management.yml build --no-cache > /dev/null 2>&1; then
+if docker-compose -f local-deployment/docker-compose-python-dependency-management.yml build --no-cache > /dev/null 2>&1; then
     echo "✅ Dependency management docker-compose builds successfully"
 else
-    echo "❌ Dependency management docker/docker-compose-python-dependency-management.yml build failed"
+    echo "❌ Dependency management local-deployment/docker-compose-python-dependency-management.yml build failed"
     echo "   Error: Docker compose build failed for dependency management"
     echo "   Possible causes:"
     echo "   - Docker not running"

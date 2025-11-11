@@ -120,12 +120,12 @@ print_color $YELLOW "[python-dependency-management] Building dev environment Doc
 
 # Build the Docker image using the root docker-compose file
 cd ..
-docker compose --env-file .env -f docker/docker-compose-python-dependency-management.yml build
+docker compose --env-file .env -f local-deployment/docker-compose-python-dependency-management.yml build
 
 print_color $YELLOW "[python-dependency-management] Running setup script to generate lock files..."
 
 # Run the setup script in a container
-docker compose --env-file .env -f docker/docker-compose-python-dependency-management.yml run --rm dev ./python-dependency-management/dev-setup.sh
+docker compose --env-file .env -f local-deployment/docker-compose-python-dependency-management.yml run --rm dev ./python-dependency-management/dev-setup.sh
 
 print_color $GREEN "[python-dependency-management] Setup complete!"
 
@@ -135,7 +135,7 @@ if [ "$INITIAL_RUN_MODE" = true ]; then
     print_color $YELLOW " This may take a moment on first run, but subsequent runs will be faster."
     
     # Run pdm install in the container to generate proper lock files
-    docker compose --env-file .env -f docker/docker-compose-python-dependency-management.yml run --rm dev pdm install
+    docker compose --env-file .env -f local-deployment/docker-compose-python-dependency-management.yml run --rm dev pdm install
     
     print_color $GREEN " PDM install completed successfully!"
     print_color $BLUE " Your project is now ready for Docker builds!"
@@ -209,5 +209,5 @@ else
     print_color $YELLOW ""
 
     # Start interactive shell in a clean container
-    docker compose --env-file .env -f docker/docker-compose-python-dependency-management.yml run --rm dev
+    docker compose --env-file .env -f local-deployment/docker-compose-python-dependency-management.yml run --rm dev
 fi

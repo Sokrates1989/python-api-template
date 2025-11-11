@@ -217,10 +217,10 @@ To switch from PostgreSQL to Neo4j (or vice versa):
 2. Restart with the appropriate docker-compose file:
    ```bash
    # PostgreSQL
-   docker compose -f docker/docker-compose.postgres.yml up
+   docker compose -f local-deployment/docker-compose.postgres.yml up
    
    # Neo4j
-   docker compose -f docker/docker-compose.neo4j.yml up
+   docker compose -f local-deployment/docker-compose.neo4j.yml up
    ```
 
 3. The correct example routes will be automatically registered!

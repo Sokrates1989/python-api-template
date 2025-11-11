@@ -111,7 +111,7 @@ PYTHON_VERSION=3.13
 docker run -p 8000:8000 --env-file .env your-username/your-api-name:0.0.1
 
 # Or use development docker-compose
-docker compose -f docker/docker-compose.yml up
+docker compose -f local-deployment/docker-compose.yml up
 ```
 
 ### Testing with Docker Swarm

@@ -10,4 +10,4 @@ services:
       # Mount project directory
       - ..:/workspace
     working_dir: /workspace
-    command: sh -c "chmod +x interactive-scripts/setup.sh && interactive-scripts/setup.sh"
+    command: sh -c "chmod +x setup/setup.sh && setup/setup.sh"

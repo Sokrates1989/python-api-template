@@ -57,17 +57,17 @@ if [ ! -f .setup-complete ]; then
     if [[ ! "$runSetup" =~ ^[Nn]$ ]]; then
         echo ""
         echo "Starte Setup-Assistenten..."
-        docker compose -f interactive-scripts/docker-compose.setup.yml run --rm setup
+        docker compose -f setup/docker-compose.setup.yml run --rm setup
         echo ""
     else
         echo ""
         echo "Setup-Assistent übersprungen. Erstelle einfache .env aus Vorlage..."
-        if [ -f config/.env.template ]; then
-            cp config/.env.template .env
+        if [ -f setup/.env.template ]; then
+            cp setup/.env.template .env
             echo "✅ .env wurde aus Vorlage erstellt."
             echo "⚠️  Bitte bearbeite .env, um deine Umgebung zu konfigurieren, bevor du fortfährst."
         else
-            echo "❌ config/.env.template nicht gefunden!"
+            echo "❌ setup/.env.template nicht gefunden!"
             exit 1
         fi
     fi
@@ -75,12 +75,12 @@ if [ ! -f .setup-complete ]; then
 elif [ ! -f .env ]; then
     # Setup complete but .env missing - recreate from template
     echo "⚠️  .env Datei fehlt. Erstelle aus Vorlage..."
-    if [ -f config/.env.template ]; then
-        cp config/.env.template .env
+    if [ -f setup/.env.template ]; then
+        cp setup/.env.template .env
         echo "✅ .env wurde aus Vorlage erstellt."
         echo "Bitte prüfe die Werte in .env bei Bedarf."
     else
-        echo "❌ config/.env.template nicht gefunden!"
+        echo "❌ setup/.env.template nicht gefunden!"
         exit 1
     fi
     echo ""
@@ -95,21 +95,21 @@ DB_MODE=$(grep "^DB_MODE=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo
 
 # Docker Compose Datei basierend auf DB_TYPE und DB_MODE bestimmen
 if [ "$DB_MODE" = "external" ]; then
-    COMPOSE_FILE="docker/docker-compose.yml"
+    COMPOSE_FILE="local-deployment/docker-compose.yml"
     echo "🔌 Detected external database mode"
     echo "   Database Type: $DB_TYPE"
     echo "   Will connect to external database (no local DB container)"
 elif [ "$DB_TYPE" = "neo4j" ]; then
-    COMPOSE_FILE="docker/docker-compose.neo4j.yml"
+    COMPOSE_FILE="local-deployment/docker-compose.neo4j.yml"
     echo "🗄️  Detected local Neo4j database"
     echo "   Will start Neo4j container"
 elif [ "$DB_TYPE" = "postgresql" ] || [ "$DB_TYPE" = "mysql" ]; then
-    COMPOSE_FILE="docker/docker-compose.postgres.yml"
+    COMPOSE_FILE="local-deployment/docker-compose.postgres.yml"
     echo "🗄️  Detected local $DB_TYPE database"
     echo "   Will start PostgreSQL container"
 else
-    COMPOSE_FILE="docker/docker-compose.yml"
-    echo "⚠️  Unknown DB_TYPE: $DB_TYPE, using default docker/docker-compose.yml"
+    COMPOSE_FILE="local-deployment/docker-compose.yml"
+    echo "⚠️  Unknown DB_TYPE: $DB_TYPE, using default local-deployment/docker-compose.yml"
 fi
 
 echo "   Using: $COMPOSE_FILE"

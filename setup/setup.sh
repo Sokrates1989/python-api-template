@@ -29,7 +29,7 @@ if [ -f .env ]; then
 fi
 
 # Start with template
-cp config/.env.template .env
+cp setup/.env.template .env
 
 echo "Let's configure your API project!"
 echo ""

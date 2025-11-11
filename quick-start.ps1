@@ -61,17 +61,17 @@ if (-not (Test-Path .setup-complete)) {
     if ($runSetup -ne "n" -and $runSetup -ne "N") {
         Write-Host ""
         Write-Host "Starting setup wizard..." -ForegroundColor Cyan
-        docker compose -f interactive-scripts/docker-compose.setup.yml run --rm setup
+        docker compose -f setup/docker-compose.setup.yml run --rm setup
         Write-Host ""
     } else {
         Write-Host ""
         Write-Host "Skipping setup wizard. Creating basic .env from template..." -ForegroundColor Yellow
-        if (Test-Path config\.env.template) {
-            Copy-Item config\.env.template .env
+        if (Test-Path setup\.env.template) {
+            Copy-Item setup\.env.template .env
             Write-Host ".env file created from template." -ForegroundColor Green
             Write-Host "  Please edit .env to configure your environment before continuing." -ForegroundColor Yellow
         } else {
-            Write-Host "[ERROR] config\.env.template not found!" -ForegroundColor Red
+            Write-Host "[ERROR] setup\.env.template not found!" -ForegroundColor Red
             exit 1
         }
     }
@@ -79,12 +79,12 @@ if (-not (Test-Path .setup-complete)) {
 } elseif (-not (Test-Path .env)) {
     # Setup complete but .env missing - recreate from template
     Write-Host " .env file missing. Creating from template..." -ForegroundColor Yellow
-    if (Test-Path config\.env.template) {
-        Copy-Item config\.env.template .env
+    if (Test-Path setup\.env.template) {
+        Copy-Item setup\.env.template .env
         Write-Host ".env file created from template." -ForegroundColor Green
         Write-Host "Please check the values in .env if needed." -ForegroundColor Yellow
     } else {
-        Write-Host "[ERROR] config\.env.template not found!" -ForegroundColor Red
+        Write-Host "[ERROR] setup\.env.template not found!" -ForegroundColor Red
         exit 1
     }
     Write-Host ""
@@ -119,21 +119,21 @@ if (Test-Path .env) {
 
 # Determine Docker Compose file based on DB_TYPE and DB_MODE
 if ($DB_MODE -eq "external") {
-    $COMPOSE_FILE = "docker\docker-compose.yml"
+    $COMPOSE_FILE = "local-deployment\docker-compose.yml"
     Write-Host "Detected external database mode" -ForegroundColor Cyan
     Write-Host "   Database Type: $DB_TYPE" -ForegroundColor Gray
     Write-Host "   Will connect to external database (no local DB container)" -ForegroundColor Gray
 } elseif ($DB_TYPE -eq "neo4j") {
-    $COMPOSE_FILE = "docker\docker-compose.neo4j.yml"
+    $COMPOSE_FILE = "local-deployment\docker-compose.neo4j.yml"
     Write-Host "Detected local Neo4j database" -ForegroundColor Cyan
     Write-Host "   Will start Neo4j container" -ForegroundColor Gray
 } elseif ($DB_TYPE -eq "postgresql" -or $DB_TYPE -eq "mysql") {
-    $COMPOSE_FILE = "docker\docker-compose.postgres.yml"
+    $COMPOSE_FILE = "local-deployment\docker-compose.postgres.yml"
     Write-Host "Detected local $DB_TYPE database" -ForegroundColor Cyan
     Write-Host "   Will start PostgreSQL container" -ForegroundColor Gray
 } else {
-    $COMPOSE_FILE = "docker\docker-compose.yml"
-    Write-Host "Unknown DB_TYPE: $DB_TYPE, using default docker\docker-compose.yml" -ForegroundColor Yellow
+    $COMPOSE_FILE = "local-deployment\docker-compose.yml"
+    Write-Host "Unknown DB_TYPE: $DB_TYPE, using default local-deployment\docker-compose.yml" -ForegroundColor Yellow
 }
 
 Write-Host "   Using: $COMPOSE_FILE" -ForegroundColor Gray

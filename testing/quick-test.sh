@@ -59,16 +59,16 @@ DB_MODE=$(grep "^DB_MODE=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "' || echo
 
 # Determine compose file
 if [ "$DB_MODE" = "external" ]; then
-    COMPOSE_FILE="docker/docker-compose.yml"
+    COMPOSE_FILE="local-deployment/docker-compose.yml"
     echo "🔌 Using external $DB_TYPE database"
 elif [ "$DB_TYPE" = "neo4j" ]; then
-    COMPOSE_FILE="docker/docker-compose.neo4j.yml"
+    COMPOSE_FILE="local-deployment/docker-compose.neo4j.yml"
     echo "🗄️  Using local Neo4j database"
 elif [ "$DB_TYPE" = "postgresql" ] || [ "$DB_TYPE" = "mysql" ]; then
-    COMPOSE_FILE="docker/docker-compose.postgres.yml"
+    COMPOSE_FILE="local-deployment/docker-compose.postgres.yml"
     echo "🗄️  Using local PostgreSQL database"
 else
-    COMPOSE_FILE="docker/docker-compose.yml"
+    COMPOSE_FILE="local-deployment/docker-compose.yml"
     echo "⚠️  Unknown database type, using default"
 fi
 

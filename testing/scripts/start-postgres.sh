@@ -16,7 +16,7 @@ if [ ! -f .env ]; then
 fi
 
 echo "Starting Docker services..."
-docker compose -f docker/docker-compose.postgres.yml up --build
+docker compose -f local-deployment/docker-compose.postgres.yml up --build
 
 echo ""
 echo "========================================"
