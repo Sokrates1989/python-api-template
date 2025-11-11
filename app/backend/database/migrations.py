@@ -4,6 +4,9 @@ import sys
 from pathlib import Path
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
+from alembic.runtime.migration import MigrationContext
+from sqlalchemy import create_engine
 from api.settings import settings
 
 
@@ -57,22 +60,61 @@ def run_migrations():
         # Check if there are pending migrations
         pending = _get_pending_migrations(alembic_cfg, current_version)
         
-        if pending:
-            print(f"🔄 Running {len(pending)} pending migration(s)...")
-            for migration in pending:
-                print(f"   ⏩ {migration}")
-        else:
+        if not pending:
             print("✅ Database is up to date - no migrations needed")
             return
         
-        # Run migrations to the latest version
-        command.upgrade(alembic_cfg, "head")
+        print(f"🔄 Running {len(pending)} pending migration(s)...")
+        print("")
         
-        # Get final version after migration
-        final_version = _get_current_version(alembic_cfg)
+        # Run migrations one by one with status reporting
+        success_count = 0
+        failed_migrations = []
         
-        print(f"✅ Migrations completed successfully!")
-        print(f"📍 New database version: {final_version[:12]}...")
+        for migration_info in pending:
+            migration_id = migration_info['revision']
+            migration_desc = migration_info['description']
+            
+            try:
+                print(f"   ⏩ Applying: {migration_id[:12]} - {migration_desc}")
+                
+                # Run this specific migration
+                command.upgrade(alembic_cfg, migration_id)
+                
+                # Verify it was applied
+                current = _get_current_version(alembic_cfg)
+                if current == migration_id:
+                    print(f"   ✅ SUCCESS: {migration_id[:12]} - {migration_desc}")
+                    success_count += 1
+                else:
+                    print(f"   ⚠️  WARNING: {migration_id[:12]} - Applied but version mismatch")
+                    success_count += 1
+                    
+            except Exception as e:
+                print(f"   ❌ FAILED: {migration_id[:12]} - {migration_desc}")
+                print(f"      Error: {str(e)}")
+                failed_migrations.append({
+                    'id': migration_id,
+                    'description': migration_desc,
+                    'error': str(e)
+                })
+                # Don't continue if a migration fails
+                break
+        
+        print("")
+        
+        # Final summary
+        if failed_migrations:
+            print(f"❌ Migration failed! {success_count}/{len(pending)} migrations applied")
+            print(f"📍 Failed migrations:")
+            for failed in failed_migrations:
+                print(f"   - {failed['id'][:12]}: {failed['description']}")
+                print(f"     Error: {failed['error']}")
+            raise Exception(f"Migration failed at {failed_migrations[0]['id'][:12]}")
+        else:
+            final_version = _get_current_version(alembic_cfg)
+            print(f"✅ All migrations completed successfully! ({success_count}/{len(pending)})")
+            print(f"📍 Database version: {final_version[:12]}...")
         
     except Exception as e:
         print(f"❌ Error running migrations: {e}")
@@ -86,11 +128,12 @@ def _get_current_version(alembic_cfg):
         from alembic.runtime.migration import MigrationContext
         from sqlalchemy import create_engine
         
-        # Get database URL
+        # Get database URL using the settings method that constructs from components if needed
+        db_url = settings.get_database_url()
+        
+        # Convert asyncpg to sync driver for Alembic
         if settings.DB_TYPE in ["postgresql", "postgres"]:
-            db_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
-        else:
-            db_url = settings.DATABASE_URL
+            db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
         
         engine = create_engine(db_url)
         with engine.connect() as connection:
@@ -102,10 +145,8 @@ def _get_current_version(alembic_cfg):
 
 
 def _get_pending_migrations(alembic_cfg, current_version):
-    """Get list of pending migrations."""
+    """Get list of pending migrations with detailed info."""
     try:
-        from alembic.script import ScriptDirectory
-        
         script = ScriptDirectory.from_config(alembic_cfg)
         
         # Get all revisions from current to head
@@ -114,16 +155,21 @@ def _get_pending_migrations(alembic_cfg, current_version):
             revisions = []
             for rev in script.iterate_revisions(current_version, "head"):
                 if rev.revision != current_version:
-                    # Format: revision_id - description
                     desc = rev.doc.split('\n')[0] if rev.doc else "No description"
-                    revisions.append(f"{rev.revision[:12]} - {desc}")
+                    revisions.append({
+                        'revision': rev.revision,
+                        'description': desc
+                    })
             return list(reversed(revisions))  # Show in chronological order
         else:
             # No current version - all migrations are pending
             revisions = []
             for rev in script.walk_revisions():
                 desc = rev.doc.split('\n')[0] if rev.doc else "No description"
-                revisions.append(f"{rev.revision[:12]} - {desc}")
+                revisions.append({
+                    'revision': rev.revision,
+                    'description': desc
+                })
             return list(reversed(revisions))
     except Exception as e:
         print(f"   Warning: Could not determine pending migrations: {e}")

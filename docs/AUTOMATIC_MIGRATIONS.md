@@ -39,19 +39,19 @@ async def startup_event():
 🔄 Checking migration status...
 📍 Current database version: 001_initial_...
 🔄 Running 2 pending migration(s)...
-   ⏩ 002_add_categ - Add categories table
-   ⏩ 003_add_prio - Add priority column to examples
-INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
-INFO  [alembic.runtime.migration] Will assume transactional DDL.
-INFO  [alembic.runtime.migration] Running upgrade 001 -> 002, Add categories table
-INFO  [alembic.runtime.migration] Running upgrade 002 -> 003, Add priority column
-✅ Migrations completed successfully!
-📍 New database version: 003_add_prio...
+
+   ⏩ Applying: 002_add_categ - Add categories table
+   ✅ SUCCESS: 002_add_categ - Add categories table
+   ⏩ Applying: 003_add_prio - Add priority column to examples
+   ✅ SUCCESS: 003_add_prio - Add priority column to examples
+
+✅ All migrations completed successfully! (2/2)
+📍 Database version: 003_add_prio...
 ```
 
 **What happened:**
 - Started at version `001`
-- Applied `002` and `003`
+- Applied `002` and `003` with per-migration success confirmation
 - Now at version `003`
 
 #### Scenario B: Up to Date
@@ -73,21 +73,21 @@ INFO  [alembic.runtime.migration] Running upgrade 002 -> 003, Add priority colum
 🔄 Checking migration status...
 📍 Database not initialized (no migrations applied yet)
 🔄 Running 3 pending migration(s)...
-   ⏩ 001_initial_ - Initial examples table
-   ⏩ 002_add_categ - Add categories table
-   ⏩ 003_add_prio - Add priority column to examples
-INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
-INFO  [alembic.runtime.migration] Will assume transactional DDL.
-INFO  [alembic.runtime.migration] Running upgrade  -> 001, Initial examples table
-INFO  [alembic.runtime.migration] Running upgrade 001 -> 002, Add categories table
-INFO  [alembic.runtime.migration] Running upgrade 002 -> 003, Add priority column
-✅ Migrations completed successfully!
-📍 New database version: 003_add_prio...
+
+   ⏩ Applying: 001_initial_ - Initial examples table
+   ✅ SUCCESS: 001_initial_ - Initial examples table
+   ⏩ Applying: 002_add_categ - Add categories table
+   ✅ SUCCESS: 002_add_categ - Add categories table
+   ⏩ Applying: 003_add_prio - Add priority column to examples
+   ✅ SUCCESS: 003_add_prio - Add priority column to examples
+
+✅ All migrations completed successfully! (3/3)
+📍 Database version: 003_add_prio...
 ```
 
 **What happened:**
 - No migrations applied yet
-- Applied all 3 migrations in order
+- Applied all 3 migrations in order with per-migration success confirmation
 - Database fully initialized
 
 #### Scenario D: Neo4j Database
@@ -107,16 +107,27 @@ INFO  [alembic.runtime.migration] Running upgrade 002 -> 003, Add priority colum
 🔄 Checking migration status...
 📍 Current database version: 001_initial_...
 🔄 Running 2 pending migration(s)...
-   ⏩ 002_add_categ - Add categories table
-   ⏩ 003_add_prio - Add priority column to examples
-❌ Error running migrations: column "priority" already exists
+
+   ⏩ Applying: 002_add_categ - Add categories table
+   ✅ SUCCESS: 002_add_categ - Add categories table
+   ⏩ Applying: 003_add_prio - Add priority column to examples
+   ❌ FAILED: 003_add_prio - Add priority column to examples
+      Error: column "priority" already exists
+
+❌ Migration failed! 1/2 migrations applied
+📍 Failed migrations:
+   - 003_add_prio: Add priority column to examples
+     Error: column "priority" already exists
+❌ Error running migrations: Migration failed at 003_add_prio
    The application will continue, but database schema may be outdated.
    Please run migrations manually: alembic upgrade head
 ```
 
 **What happened:**
-- Migration failed (e.g., schema conflict)
+- Migration `002` succeeded
+- Migration `003` failed with detailed error message
 - Application continues running (doesn't crash)
+- Clear indication of which migration failed and why
 - Manual intervention needed
 
 ---
@@ -301,6 +312,34 @@ docker compose exec app pdm run alembic stamp head
 
 **This is normal!** Neo4j doesn't need migrations.
 
+### "relation 'examples' does not exist" (Docker Swarm)
+
+**Cause:** In Docker Swarm deployments, migrations may fail silently if `DATABASE_URL` is not set and the system needs to construct it from components (`DB_HOST`, `DB_USER`, `DB_PASSWORD_FILE`, etc.).
+
+**Symptoms:**
+- Logs show "✅ Migrations completed successfully" but no per-migration status
+- API returns 500 errors with "relation does not exist"
+- Tables are not created in the database
+
+**Fix:** This has been fixed in the codebase. The migration system now properly constructs `DATABASE_URL` from individual components when needed. 
+
+To apply the fix:
+1. Rebuild the Docker image with the updated code
+2. Redeploy to your swarm
+3. Verify logs show detailed per-migration status (e.g., "✅ SUCCESS: 001 - Initial examples table")
+
+**Verification:**
+```bash
+# Check service logs - you should see detailed migration status
+docker service logs your-stack_api --tail 50
+
+# Should show:
+#    ⏩ Applying: 001 - Initial examples table
+#    ✅ SUCCESS: 001 - Initial examples table
+#    ⏩ Applying: 002 - Add categories table
+#    ✅ SUCCESS: 002 - Add categories table
+```
+
 ---
 
 ## Best Practices
@@ -381,13 +420,15 @@ pg_dump -U user -d database > backup_$(date +%Y%m%d_%H%M%S).sql
 
 ✅ **Migrations run automatically** on every application startup  
 ✅ **Only pending migrations** are executed  
-✅ **Detailed logging** shows what's happening  
+✅ **Detailed per-migration status** - shows success/failure for each migration  
+✅ **Never fails silently** - clear error messages if migrations fail  
 ✅ **Safe and transactional** - rolls back on error  
 ✅ **Works with SQL databases** - PostgreSQL, MySQL, SQLite  
 ✅ **Skips Neo4j** - schema-free, no migrations needed  
 ✅ **Production-ready** - used in real applications  
+✅ **Docker Swarm compatible** - works with secrets and component-based configuration  
 
-**Key Benefit:** You never have to remember to run migrations manually!
+**Key Benefit:** You never have to remember to run migrations manually, and you always know if they succeeded!
 
 For more information:
 - [How Migrations Work](HOW_MIGRATIONS_WORK.md) - Deep dive into Alembic

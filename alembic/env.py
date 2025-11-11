@@ -24,6 +24,7 @@ target_metadata = Base.metadata
 def get_url():
     """Get database URL from environment variables."""
     from dotenv import load_dotenv
+    from pathlib import Path
     load_dotenv()
     
     db_type = os.getenv("DB_TYPE", "postgresql")
@@ -31,6 +32,30 @@ def get_url():
     if db_type in ["postgresql", "postgres"]:
         # Use asyncpg URL but convert to sync for Alembic
         database_url = os.getenv("DATABASE_URL", "")
+        
+        # If DATABASE_URL is not set, construct it from components
+        if not database_url:
+            db_host = os.getenv("DB_HOST", "localhost")
+            db_port = os.getenv("DB_PORT", "5432")
+            db_name = os.getenv("DB_NAME", "")
+            db_user = os.getenv("DB_USER", "")
+            
+            # Get password from file or environment variable
+            db_password_file = os.getenv("DB_PASSWORD_FILE", "")
+            if db_password_file and Path(db_password_file).exists():
+                db_password = Path(db_password_file).read_text().strip()
+            else:
+                db_password = os.getenv("DB_PASSWORD", "")
+            
+            if not all([db_host, db_name, db_user, db_password]):
+                raise ValueError(
+                    f"Missing database configuration. Either set DATABASE_URL or provide "
+                    f"DB_HOST, DB_NAME, DB_USER, and DB_PASSWORD/DB_PASSWORD_FILE. "
+                    f"Current values: DB_HOST={db_host}, DB_NAME={db_name}, DB_USER={db_user}"
+                )
+            
+            database_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+        
         # Convert asyncpg to psycopg2 for Alembic (sync driver)
         if "asyncpg" in database_url:
             database_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
