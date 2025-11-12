@@ -53,7 +53,7 @@ class BackupService:
         
         # Build pg_dump command
         env = os.environ.copy()
-        env['PGPASSWORD'] = settings.DB_PASSWORD
+        env['PGPASSWORD'] = settings.get_db_password()
         
         cmd = [
             'pg_dump',
@@ -105,7 +105,7 @@ class BackupService:
             '-h', settings.DB_HOST,
             '-P', str(settings.DB_PORT),
             '-u', settings.DB_USER,
-            f'-p{settings.DB_PASSWORD}',
+            f'-p{settings.get_db_password()}',
             settings.DB_NAME,
             '--single-transaction',  # Consistent backup
             '--skip-lock-tables',    # Don't lock tables
@@ -230,7 +230,7 @@ class BackupService:
     def _restore_postgresql(self, backup_file: Path, is_compressed: bool) -> None:
         """Restore PostgreSQL database using psql."""
         env = os.environ.copy()
-        env['PGPASSWORD'] = settings.DB_PASSWORD
+        env['PGPASSWORD'] = settings.get_db_password()
         
         cmd = [
             'psql',
@@ -272,7 +272,7 @@ class BackupService:
             '-h', settings.DB_HOST,
             '-P', str(settings.DB_PORT),
             '-u', settings.DB_USER,
-            f'-p{settings.DB_PASSWORD}',
+            f'-p{settings.get_db_password()}',
             settings.DB_NAME,
         ]
         
@@ -338,7 +338,7 @@ class BackupService:
     def _drop_postgresql_tables(self) -> None:
         """Drop all tables in PostgreSQL database."""
         env = os.environ.copy()
-        env['PGPASSWORD'] = settings.DB_PASSWORD
+        env['PGPASSWORD'] = settings.get_db_password()
         
         # Drop all tables using CASCADE
         drop_sql = """
@@ -374,7 +374,7 @@ class BackupService:
     def _drop_mysql_tables(self) -> None:
         """Drop all tables in MySQL database."""
         env = os.environ.copy()
-        env['MYSQL_PWD'] = settings.DB_PASSWORD
+        env['MYSQL_PWD'] = settings.get_db_password()
         
         # Get list of tables and drop them
         drop_sql = f"""

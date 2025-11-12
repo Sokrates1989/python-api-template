@@ -44,7 +44,7 @@ class Neo4jBackupService:
             # Connect to Neo4j
             driver = GraphDatabase.driver(
                 f"bolt://{settings.DB_HOST}:{settings.DB_PORT}",
-                auth=(settings.DB_USER, settings.DB_PASSWORD)
+                auth=(settings.DB_USER, settings.get_db_password())
             )
             
             cypher_statements = []
@@ -161,7 +161,7 @@ class Neo4jBackupService:
         try:
             driver = GraphDatabase.driver(
                 f"bolt://{settings.DB_HOST}:{settings.DB_PORT}",
-                auth=(settings.DB_USER, settings.DB_PASSWORD)
+                auth=(settings.DB_USER, settings.get_db_password())
             )
             
             with driver.session() as session:
@@ -228,7 +228,7 @@ class Neo4jBackupService:
             # Connect to Neo4j
             driver = GraphDatabase.driver(
                 f"bolt://{settings.DB_HOST}:{settings.DB_PORT}",
-                auth=(settings.DB_USER, settings.DB_PASSWORD)
+                auth=(settings.DB_USER, settings.get_db_password())
             )
             
             with driver.session() as session:
@@ -337,7 +337,7 @@ class Neo4jBackupService:
         try:
             driver = GraphDatabase.driver(
                 f"bolt://{settings.DB_HOST}:{settings.DB_PORT}",
-                auth=(settings.DB_USER, settings.DB_PASSWORD)
+                auth=(settings.DB_USER, settings.get_db_password())
             )
             
             with driver.session() as session:

@@ -116,7 +116,7 @@ async def create_example_node(node: ExampleNodeCreate):
         return {
             "status": "success",
             "message": "ExampleNode created successfully",
-            "data": created_node.to_dict()
+            "data": created_node.model_dump()
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create node: {str(e)}")
@@ -150,7 +150,7 @@ async def list_example_nodes(
                 "total": total,
                 "offset": offset,
                 "limit": limit,
-                "items": [node.to_dict() for node in nodes]
+                "items": [node.model_dump() for node in nodes]
             }
         }
     except Exception as e:
@@ -175,7 +175,7 @@ async def get_example_node(node_id: str):
         
         return {
             "status": "success",
-            "data": node.to_dict()
+            "data": node.model_dump()
         }
     except HTTPException:
         raise
@@ -216,7 +216,7 @@ async def update_example_node(node_id: str, node_update: ExampleNodeUpdate):
         return {
             "status": "success",
             "message": "ExampleNode updated successfully",
-            "data": updated_node.to_dict()
+            "data": updated_node.model_dump()
         }
     except HTTPException:
         raise
