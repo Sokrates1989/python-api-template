@@ -62,6 +62,12 @@ class Settings(BaseSettings):
             return Path(self.DB_PASSWORD_FILE).read_text().strip()
         return self.DB_PASSWORD
     
+    def get_neo4j_uri(self) -> str:
+        """Resolve Neo4j Bolt URI, preferring explicit NEO4J_URL when set."""
+        if self.NEO4J_URL:
+            return self.NEO4J_URL
+        return f"bolt://{self.DB_HOST}:{self.DB_PORT}"
+    
     def get_database_url(self) -> str:
         """Build database URL for SQL databases"""
         if self.DATABASE_URL:

@@ -43,7 +43,7 @@ class Neo4jBackupService:
         try:
             # Connect to Neo4j
             driver = GraphDatabase.driver(
-                f"bolt://{settings.DB_HOST}:{settings.DB_PORT}",
+                settings.get_neo4j_uri(),
                 auth=(settings.DB_USER, settings.get_db_password())
             )
             
@@ -160,7 +160,7 @@ class Neo4jBackupService:
         
         try:
             driver = GraphDatabase.driver(
-                f"bolt://{settings.DB_HOST}:{settings.DB_PORT}",
+                settings.get_neo4j_uri(),
                 auth=(settings.DB_USER, settings.get_db_password())
             )
             
@@ -227,7 +227,7 @@ class Neo4jBackupService:
             
             # Connect to Neo4j
             driver = GraphDatabase.driver(
-                f"bolt://{settings.DB_HOST}:{settings.DB_PORT}",
+                settings.get_neo4j_uri(),
                 auth=(settings.DB_USER, settings.get_db_password())
             )
             
@@ -336,7 +336,7 @@ class Neo4jBackupService:
         """
         try:
             driver = GraphDatabase.driver(
-                f"bolt://{settings.DB_HOST}:{settings.DB_PORT}",
+                settings.get_neo4j_uri(),
                 auth=(settings.DB_USER, settings.get_db_password())
             )
             

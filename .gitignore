@@ -17,6 +17,7 @@ backups/*.sql.gz
 backups/*.db
 backups/*.db.gz
 backups/*.backup
+backups/*.cypher.gz
 
 # IDE / Editor specific
 .vscode/

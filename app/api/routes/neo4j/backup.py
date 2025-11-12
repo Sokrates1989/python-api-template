@@ -8,13 +8,12 @@ import tempfile
 import shutil
 
 from backend.services.neo4j.backup_service import Neo4jBackupService
-from api.security import verify_admin_key
+from api.security import verify_admin_key, verify_restore_key, verify_delete_key
 
 
 router = APIRouter(
     prefix="/backup",
-    tags=["Neo4j Backup"],
-    dependencies=[Depends(verify_admin_key)]  # Require admin authentication
+    tags=["Neo4j Backup"]
 )
 
 
@@ -69,7 +68,7 @@ backup_service = Neo4jBackupService()
 
 
 @router.post("/create", response_model=BackupResponse)
-async def create_database_backup(compress: bool = True, use_apoc: bool = False):
+async def create_database_backup(compress: bool = True, use_apoc: bool = False, _: str = Depends(verify_admin_key)):
     """
     Create a Neo4j database backup.
     
@@ -118,7 +117,7 @@ async def create_database_backup(compress: bool = True, use_apoc: bool = False):
 
 
 @router.get("/download/{filename}")
-async def download_backup(filename: str):
+async def download_backup(filename: str, _: str = Depends(verify_admin_key)):
     """
     Download a Neo4j backup file.
     
@@ -157,7 +156,7 @@ async def download_backup(filename: str):
 
 
 @router.post("/restore/{filename}", response_model=RestoreResponse)
-async def restore_from_backup(filename: str):
+async def restore_from_backup(filename: str, _: str = Depends(verify_restore_key)):
     """
     Restore Neo4j database from an existing backup file.
     
@@ -195,7 +194,7 @@ async def restore_from_backup(filename: str):
 
 
 @router.post("/restore-upload", response_model=RestoreResponse)
-async def restore_from_uploaded_backup(file: UploadFile = File(...)):
+async def restore_from_uploaded_backup(file: UploadFile = File(...), _: str = Depends(verify_restore_key)):
     """
     Restore Neo4j database from an uploaded backup file.
     
@@ -243,7 +242,7 @@ async def restore_from_uploaded_backup(file: UploadFile = File(...)):
 
 
 @router.get("/list", response_model=BackupListResponse)
-async def list_backups():
+async def list_backups(_: str = Depends(verify_admin_key)):
     """
     List all available Neo4j backup files.
     
@@ -271,7 +270,7 @@ async def list_backups():
 
 
 @router.delete("/delete/{filename}", response_model=DeleteResponse)
-async def delete_backup(filename: str):
+async def delete_backup(filename: str, _: str = Depends(verify_delete_key)):
     """
     Delete a Neo4j backup file.
     
@@ -306,7 +305,7 @@ async def delete_backup(filename: str):
 
 
 @router.get("/stats", response_model=DatabaseStats)
-async def get_database_stats():
+async def get_database_stats(_: str = Depends(verify_admin_key)):
     """
     Get current Neo4j database statistics.
     
