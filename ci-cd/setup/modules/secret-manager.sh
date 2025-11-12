@@ -62,13 +62,10 @@ create_docker_secrets() {
     echo "   ✅ YES - This is safe to use from your local environment" >&2
     echo "" >&2
     
-    local docker_user=$(prompt_text "Enter your Docker username (for reference)" "")
-    
-    echo "" >&2
     echo "📝 Action Required:" >&2
     echo "   1. Go to your repository secrets page" >&2
     echo "   2. Create a new secret named: DOCKER_USERNAME" >&2
-    echo "   3. Set the value to: $docker_user" >&2
+    echo "   3. Set the value to your Docker Hub/registry username" >&2
     echo "" >&2
     
     wait_for_enter "Press Enter when you've created DOCKER_USERNAME..."
@@ -101,28 +98,6 @@ create_docker_secrets() {
     
     wait_for_enter "Press Enter when you've created DOCKER_PASSWORD..."
     success_message "DOCKER_PASSWORD configured"
-
-    # Repository variable for image name
-    section_header "Repository Variable: IMAGE_NAME"
-    echo "This variable tells the pipeline which Docker image to build and push." >&2
-    echo "" >&2
-    local suggested_image_name="${IMAGE_NAME:-your-docker-namespace/your-image}"
-    echo "📍 Where to find it:" >&2
-    echo "   - Check your local .env (IMAGE_NAME=$suggested_image_name)" >&2
-    echo "   - Confirm the repository in Docker Hub / GHCR matches" >&2
-    echo "" >&2
-    echo "📝 Action Required:" >&2
-    if [ "$platform" = "github" ]; then
-        echo "   1. Open: Settings → Secrets and variables → Actions → Variables" >&2
-        echo "      (URL: https://github.com/<owner>/<repo>/settings/variables/actions )" >&2
-    else
-        echo "   1. Open your CI/CD variables management page" >&2
-    fi
-    echo "   2. Create a variable named: IMAGE_NAME" >&2
-    echo "   3. Set the value to your full image reference (e.g. $suggested_image_name)" >&2
-    echo "" >&2
-    wait_for_enter "Press Enter when you've created the IMAGE_NAME variable..."
-    success_message "IMAGE_NAME repository variable configured"
 }
 
 # Create Linux deployment secrets
@@ -131,6 +106,8 @@ create_linux_secrets() {
     local deploy_config="$2"
     
     IFS='|' read -r _ _ <<< "$deploy_config"  # compatibility with previous return value
+    
+    local configured_ssh_user=""
     
     # SSH private key
     section_header "Secret: SSH_PRIVATE_KEY"
@@ -171,14 +148,19 @@ create_linux_secrets() {
     echo "This is the server user account used for deployment." >&2
     echo "Ensure this user can run docker commands (e.g. part of the docker group)." >&2
     echo "" >&2
+    echo "We'll use this value later to generate the required chown/chmod commands." >&2
+    echo "" >&2
+    local ssh_user_value=$(prompt_text "Enter the deployment username you'll store in SSH_USER" "deploy")
+    configured_ssh_user="$ssh_user_value"
+    echo "" >&2
     echo "📝 Action Required:" >&2
     echo "   1. Decide which user performs deployments (e.g. deploy)" >&2
     echo "   2. Create repository secret: SSH_USER" >&2
-    echo "   3. Set the value to that username" >&2
+    echo "   3. Set the value to: $ssh_user_value" >&2
     echo "" >&2
     wait_for_enter "Press Enter when you've created SSH_USER..."
     success_message "SSH_USER configured"
-
+    
     # SSH port
     section_header "Secret: SSH_PORT"
     echo "This is the TCP port exposed for SSH (defaults to 22)." >&2
@@ -195,6 +177,34 @@ create_linux_secrets() {
     wait_for_enter "Press Enter when you've created SSH_PORT..."
     success_message "SSH_PORT configured"
 
+    # Now create all repository variables
+    section_header "📋 Repository Variables Configuration"
+    echo "Now we'll create repository variables (non-sensitive configuration)." >&2
+    echo "" >&2
+    wait_for_enter "Press Enter to continue..."
+    
+    # IMAGE_NAME variable
+    section_header "Repository Variable: IMAGE_NAME"
+    echo "This variable tells the pipeline which Docker image to build and push." >&2
+    echo "" >&2
+    local suggested_image_name="${IMAGE_NAME:-your-docker-namespace/your-image}"
+    echo "📍 Where to find it:" >&2
+    echo "   - Check your local .env (IMAGE_NAME=$suggested_image_name)" >&2
+    echo "   - Confirm the repository in Docker Hub / GHCR matches" >&2
+    echo "" >&2
+    echo "📝 Action Required:" >&2
+    if [ "$platform" = "github" ]; then
+        echo "   1. Open: Settings → Secrets and variables → Actions → Variables" >&2
+        echo "      (URL: https://github.com/<owner>/<repo>/settings/variables/actions )" >&2
+    else
+        echo "   1. Open your CI/CD variables management page" >&2
+    fi
+    echo "   2. Create a variable named: IMAGE_NAME" >&2
+    echo "   3. Set the value to your full image reference (e.g. $suggested_image_name)" >&2
+    echo "" >&2
+    wait_for_enter "Press Enter when you've created the IMAGE_NAME variable..."
+    success_message "IMAGE_NAME repository variable configured"
+    
     # Deployment path variable
     section_header "Repository Variable: DEPLOY_PATH"
     echo "This variable holds the absolute path to your deployment directory on the server." >&2
@@ -204,6 +214,12 @@ create_linux_secrets() {
     echo "   - cd to the directory hosting your stack" >&2
     echo "   - Run: pwd (copy the output)" >&2
     echo "" >&2
+    echo "We'll reuse this path to generate chown/chmod commands in the next steps." >&2
+    echo "" >&2
+
+    local deploy_path=$(prompt_text "Enter the deployment path (e.g. /swarm/prod/react/ai-tut)" "")
+    
+    echo "" >&2
     echo "📝 Action Required:" >&2
     if [ "$platform" = "github" ]; then
         echo "   1. Open: Settings → Secrets and variables → Actions → Variables" >&2
@@ -211,10 +227,44 @@ create_linux_secrets() {
         echo "   1. Open your CI/CD variables management page" >&2
     fi
     echo "   2. Create a variable named: DEPLOY_PATH" >&2
-    echo "   3. Paste the absolute path exactly (e.g. /swarm/prod/api)" >&2
+    echo "   3. Set the value to: $deploy_path" >&2
     echo "" >&2
     wait_for_enter "Press Enter when you've created the DEPLOY_PATH variable..."
     success_message "DEPLOY_PATH repository variable configured"
+    
+    # Deployment directory ownership setup
+    section_header "🔧 Server Setup: Directory Permissions"
+    echo "The CI/CD pipeline needs to update .env in your deployment directory." >&2
+    echo "You must grant ownership to the SSH_USER you configured earlier." >&2
+    echo "" >&2
+
+    local ssh_user="$configured_ssh_user"
+    if [ -z "$ssh_user" ]; then
+        ssh_user=$(prompt_text "Enter the SSH_USER you configured" "deploy")
+    fi
+
+    # Extract parent directory and directory name from deploy_path
+    local parent_dir=$(dirname "$deploy_path")
+    local dir_name=$(basename "$deploy_path")
+    
+    echo "" >&2
+    echo "📝 Action Required (on your server):" >&2
+    echo "   1. SSH into your server" >&2
+    echo "" >&2
+    echo "   2. Navigate to the parent directory:" >&2
+    echo "      cd $parent_dir" >&2
+    echo "" >&2
+    echo "   3. Grant ownership to the deployment user:" >&2
+    echo "      sudo chown -R $ssh_user:$ssh_user $dir_name" >&2
+    echo "" >&2
+    echo "   4. Set appropriate permissions (owner+group read/write/execute):" >&2
+    echo "      sudo chmod -R 775 $dir_name" >&2
+    echo "" >&2
+    echo "   ✅ Verify with: ls -la" >&2
+    echo "      Expected output: drwxrwxr-x ... $ssh_user $ssh_user ... $dir_name" >&2
+    echo "" >&2
+    wait_for_enter "Press Enter when you've set directory permissions..."
+    success_message "Directory permissions configured"
 
     # Stack name variable
     section_header "Repository Variable: STACK_NAME"

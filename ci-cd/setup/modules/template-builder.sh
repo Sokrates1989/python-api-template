@@ -2,16 +2,18 @@
 # Template builder module
 # Builds CI/CD configuration files from templates
 
-# Build .ci.env file (only IMAGE_VERSION)
-# Usage: build_ci_env "0.1.4" "/path/to/project"
+# Build .ci.env file with image and python versions
+# Usage: build_ci_env "0.1.4" "3.13" "/path/to/project"
 build_ci_env() {
     local image_version="$1"
-    local project_root="$2"
+    local python_version="$2"
+    local project_root="$3"
     
     echo "⚙️  Building .ci.env..." >&2
     
     cat > "$project_root/.ci.env" << EOF
 IMAGE_VERSION=$image_version
+PYTHON_VERSION=$python_version
 EOF
     
     success_message ".ci.env created with IMAGE_VERSION=$image_version"

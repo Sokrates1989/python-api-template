@@ -149,6 +149,10 @@ echo "" >&2
 echo "Current IMAGE_VERSION from .env: $IMAGE_VERSION" >&2
 IMAGE_VERSION=$(prompt_text "Initial image version" "$IMAGE_VERSION")
 
+echo "" >&2
+echo "Current PYTHON_VERSION from .env: ${PYTHON_VERSION:-3.13}" >&2
+PYTHON_VERSION=$(prompt_text "Python version for Docker builds" "${PYTHON_VERSION:-3.13}")
+
 success_message "Image: $IMAGE_NAME:$IMAGE_VERSION"
 
 echo ""
@@ -161,6 +165,7 @@ display_config_summary "$PLATFORM" "$DEPLOYMENT"
 
 echo "Branches: $SELECTED_BRANCHES" >&2
 echo "Image: $IMAGE_NAME:$IMAGE_VERSION" >&2
+echo "Python: $PYTHON_VERSION" >&2
 echo "" >&2
 
 if ! prompt_yes_no "Proceed with this configuration?" "Y"; then
@@ -172,8 +177,8 @@ fi
 # BUILD CONFIGURATION FILES
 # =============================================================================
 
-# Build .ci.env (only IMAGE_VERSION)
-build_ci_env "$IMAGE_VERSION" "$PROJECT_ROOT"
+# Build .ci.env
+build_ci_env "$IMAGE_VERSION" "$PYTHON_VERSION" "$PROJECT_ROOT"
 
 # Build CI/CD workflow files
 if [ "$PLATFORM" = "github" ]; then
