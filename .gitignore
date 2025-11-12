@@ -1,7 +1,6 @@
 # Environments
 .env
 .env.backup.*
-.ci.env
 .venv/
 venv/
 

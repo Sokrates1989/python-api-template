@@ -1,8 +1,6 @@
 # Production Docker Compose Configuration
 # This file is used for deploying to Linux servers or Docker Swarm clusters
 
-version: '3.8'
-
 services:
   api:
     image: ${IMAGE_NAME}:${IMAGE_TAG:-latest}
