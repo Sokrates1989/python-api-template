@@ -49,9 +49,9 @@ def custom_openapi():
         }
     }
     
-    # Add security requirements to backup endpoints
+    # Add security requirements to backup and packages endpoints
     for path, path_item in openapi_schema.get("paths", {}).items():
-        if path.startswith("/backup/"):
+        if path.startswith("/backup/") or path.startswith("/packages/"):
             for method, operation in path_item.items():
                 if method in ["get", "post", "delete", "put", "patch"]:
                     # Determine which security scheme based on endpoint

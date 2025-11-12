@@ -8,13 +8,13 @@ from fastapi import APIRouter, Depends
 from typing import List, Dict, Any
 import importlib.metadata
 import sys
-from api.security import verify_api_key
+from api.security import verify_admin_key
 
 router = APIRouter(prefix="/packages", tags=["packages"])
 
 
 @router.get("/list")
-def list_packages(api_key: str = Depends(verify_api_key)) -> Dict[str, Any]:
+def list_packages(_: str = Depends(verify_admin_key)) -> Dict[str, Any]:
     """
     List all installed Python packages and their versions.
     
@@ -41,7 +41,7 @@ def list_packages(api_key: str = Depends(verify_api_key)) -> Dict[str, Any]:
 
 
 @router.get("/info/{package_name}")
-def get_package_info(package_name: str, api_key: str = Depends(verify_api_key)) -> Dict[str, Any]:
+def get_package_info(package_name: str, _: str = Depends(verify_admin_key)) -> Dict[str, Any]:
     """
     Get detailed information about a specific package.
     
