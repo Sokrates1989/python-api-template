@@ -24,6 +24,7 @@ jobs:
       - name: 🔍 Debug ENV values
         run: |
           echo "IMAGE_NAME=$IMAGE_NAME"
+          echo "PYTHON_VERSION=$PYTHON_VERSION"
           echo "IMAGE_VERSION=$IMAGE_VERSION"
           
       - name: 🐳 Set up Docker Buildx
@@ -36,6 +37,7 @@ jobs:
         run: |
           docker buildx build --load \
             --build-arg IMAGE_TAG=$IMAGE_VERSION \
+            --build-arg PYTHON_VERSION=$PYTHON_VERSION \
             -t $IMAGE_NAME:$IMAGE_VERSION \
             .
           docker push $IMAGE_NAME:$IMAGE_VERSION

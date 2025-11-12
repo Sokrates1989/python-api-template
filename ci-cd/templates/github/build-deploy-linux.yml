@@ -2,7 +2,7 @@ name: 🚀 CI/CD Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: __BRANCHES__
 
 jobs:
   build-and-push:
@@ -21,19 +21,19 @@ jobs:
             echo "$key=$value" >> $GITHUB_ENV
           done < .ci.env
       
-      - name: Debug ENV values
+      - name: 🔍 Debug ENV values
         run: |
           echo "IMAGE_NAME=$IMAGE_NAME"
           echo "PYTHON_VERSION=$PYTHON_VERSION"
           echo "IMAGE_VERSION=$IMAGE_VERSION"
           
-      - name: Set up Docker Buildx
+      - name: 🐳 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Docker Login
+      - name: 🔐 Docker Login
         run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
 
-      - name: Build & Push Image
+      - name: 🚀 Build & Push Image
         run: |
           docker buildx build --load \
             --build-arg IMAGE_TAG=$IMAGE_VERSION \
@@ -42,11 +42,12 @@ jobs:
             .
           docker push $IMAGE_NAME:$IMAGE_VERSION
 
-      - name: Build Summary
+      - name: ✅ Build Summary
         run: |
-          echo "### Docker Image Built Successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "### 🎉 Docker Image Built Successfully!" >> $GITHUB_STEP_SUMMARY
           echo "**Image:** \`$IMAGE_NAME:$IMAGE_VERSION\`" >> $GITHUB_STEP_SUMMARY
 
+# BEGIN_DEPLOY_SECTION
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
@@ -57,7 +58,7 @@ jobs:
       DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
 
     steps:
-      - name: Checkout Code
+      - name: ⬇️ Checkout Code
         uses: actions/checkout@v4
 
       - name: 🧪 Load CI Environment Variables
@@ -66,6 +67,13 @@ jobs:
           do
             echo "$key=$value" >> $GITHUB_ENV
           done < .ci.env
+
+      - name: 🔍 Debug ENV values
+        run: |
+          echo "IMAGE_VERSION=$IMAGE_VERSION"
+          echo "STACK_FILE=$STACK_FILE"
+          echo "STACK_NAME=$STACK_NAME"
+          echo "DEPLOY_PATH=$DEPLOY_PATH"
 
       - name: 🔐 Setup SSH Agent
         uses: webfactory/ssh-agent@v0.9.0
@@ -103,3 +111,4 @@ jobs:
           echo "**Server:** \`${{ secrets.SSH_HOST }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Stack:** \`$STACK_NAME\`" >> $GITHUB_STEP_SUMMARY
           echo "**Image:** \`$IMAGE_NAME:$IMAGE_VERSION\`" >> $GITHUB_STEP_SUMMARY
+# END_DEPLOY_SECTION
