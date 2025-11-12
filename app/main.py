@@ -10,7 +10,7 @@ from backend.database.migrations import run_migrations
 app = FastAPI(
     title="Python API Template",
     description="A flexible API template with SQL and Neo4j support, including database backup/restore",
-    version="1.0.0"
+    version=settings.IMAGE_TAG
 )
 
 # Configure OpenAPI security schemes for Swagger UI
