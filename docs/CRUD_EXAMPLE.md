@@ -90,8 +90,10 @@ app/
 │   └── services/
 │       └── example_service.py  # Business logic layer
 └── api/
-    └── routes/
-        └── examples.py         # API endpoints (FastAPI)
+    ├── routes/
+    │   └── examples.py         # API endpoints (FastAPI)
+    └── schemas/
+        └── sql/examples/       # Request/response models used by the routes
 ```
 
 ### Layer Responsibilities
@@ -100,7 +102,8 @@ app/
 |-------|------|---------|
 | **Model** | `models/example.py` | Defines database schema, table structure, and data validation |
 | **Service** | `backend/services/example_service.py` | Contains business logic, database operations, error handling |
-| **Routes** | `api/routes/examples.py` | HTTP endpoints, request/response handling, status codes |
+| **Schemas** | `api/schemas/sql/examples/` | Pydantic request/response models shared across routes |
+| **Routes** | `api/routes/examples.py` | HTTP endpoints importing schemas, returning responses |
 
 ---
 

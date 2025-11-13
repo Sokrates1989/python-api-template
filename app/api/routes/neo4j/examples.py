@@ -15,9 +15,16 @@ To create your own Neo4j routes:
 4. Register in main.py (conditionally for Neo4j)
 """
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional
 from backend.services.neo4j.example_node_service import ExampleNodeService
+from api.schemas.neo4j.examples.requests import (
+    ExampleNodeCreateRequest,
+    ExampleNodeUpdateRequest,
+)
+from api.schemas.neo4j.examples.responses import (
+    ExampleNodeListResponse,
+    ExampleNodeResponse,
+)
 
 
 router = APIRouter(
@@ -33,71 +40,11 @@ def get_service() -> ExampleNodeService:
 
 
 # ============================================================================
-# REQUEST/RESPONSE MODELS
-# ============================================================================
-
-class ExampleNodeCreate(BaseModel):
-    """Request model for creating a new ExampleNode."""
-    name: str = Field(..., min_length=1, max_length=255, description="Node name")
-    description: Optional[str] = Field(None, description="Optional description")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "name": "Sample Node",
-                "description": "This is a sample Neo4j node"
-            }
-        }
-
-
-class ExampleNodeUpdate(BaseModel):
-    """Request model for updating an ExampleNode."""
-    name: Optional[str] = Field(None, min_length=1, max_length=255, description="New name")
-    description: Optional[str] = Field(None, description="New description")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "name": "Updated Node Name",
-                "description": "Updated description"
-            }
-        }
-
-
-class ExampleNodeResponse(BaseModel):
-    """Response model for a single ExampleNode."""
-    id: str
-    name: str
-    description: Optional[str]
-    created_at: str
-    updated_at: Optional[str]
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "id": "550e8400-e29b-41d4-a716-446655440000",
-                "name": "Sample Node",
-                "description": "This is a sample Neo4j node",
-                "created_at": "2024-01-01T12:00:00",
-                "updated_at": None
-            }
-        }
-
-
-class ExampleNodeListResponse(BaseModel):
-    """Response model for list of ExampleNodes."""
-    total: int
-    offset: int
-    limit: int
-    data: List[ExampleNodeResponse]
-
-
-# ============================================================================
 # CRUD ENDPOINTS
 # ============================================================================
 
 @router.post("/", response_model=dict, status_code=201)
-async def create_example_node(node: ExampleNodeCreate):
+async def create_example_node(node: ExampleNodeCreateRequest):
     """
     Create a new ExampleNode in Neo4j.
     
@@ -113,10 +60,12 @@ async def create_example_node(node: ExampleNodeCreate):
             description=node.description
         )
         
+        payload = ExampleNodeResponse(**created_node.model_dump())
+
         return {
             "status": "success",
             "message": "ExampleNode created successfully",
-            "data": created_node.model_dump()
+            "data": payload.model_dump(),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create node: {str(e)}")
@@ -144,14 +93,16 @@ async def list_example_nodes(
         nodes = service.get_all(skip=offset, limit=limit, name_filter=name)
         total = service.count(name_filter=name)
         
+        response_payload = ExampleNodeListResponse(
+            total=total,
+            offset=offset,
+            limit=limit,
+            data=[ExampleNodeResponse(**node.model_dump()) for node in nodes],
+        )
+
         return {
             "status": "success",
-            "data": {
-                "total": total,
-                "offset": offset,
-                "limit": limit,
-                "items": [node.model_dump() for node in nodes]
-            }
+            "data": response_payload.model_dump(),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list nodes: {str(e)}")
@@ -173,9 +124,11 @@ async def get_example_node(node_id: str):
         if not node:
             raise HTTPException(status_code=404, detail="ExampleNode not found")
         
+        payload = ExampleNodeResponse(**node.model_dump())
+
         return {
             "status": "success",
-            "data": node.model_dump()
+            "data": payload.model_dump(),
         }
     except HTTPException:
         raise
@@ -184,7 +137,7 @@ async def get_example_node(node_id: str):
 
 
 @router.put("/{node_id}", response_model=dict)
-async def update_example_node(node_id: str, node_update: ExampleNodeUpdate):
+async def update_example_node(node_id: str, node_update: ExampleNodeUpdateRequest):
     """
     Update an ExampleNode.
     
@@ -213,10 +166,12 @@ async def update_example_node(node_id: str, node_update: ExampleNodeUpdate):
         if not updated_node:
             raise HTTPException(status_code=404, detail="ExampleNode not found")
         
+        payload = ExampleNodeResponse(**updated_node.model_dump())
+
         return {
             "status": "success",
             "message": "ExampleNode updated successfully",
-            "data": updated_node.model_dump()
+            "data": payload.model_dump(),
         }
     except HTTPException:
         raise

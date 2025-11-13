@@ -13,6 +13,9 @@ python-api-template/
 │   │   │   ├── test.py              # Database test endpoints
 │   │   │   ├── files.py             # File operation endpoints
 │   │   │   └── [your_route].py      # Your new endpoints here
+│   │   ├── schemas/                  # Request/response Pydantic models
+│   │   │   ├── sql/                 # SQL-specific schemas
+│   │   │   └── neo4j/               # Neo4j-specific schemas
 │   │   └── settings.py              # Configuration management
 │   │
 │   ├── backend/                      # 🔧 Backend Layer (Business Logic)

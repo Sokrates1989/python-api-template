@@ -187,6 +187,7 @@ python-api-template/
 ├── app/                          # Main application code
 │   ├── api/                      # API layer
 │   │   ├── routes/              # Route handlers
+│   │   ├── schemas/             # Pydantic request/response models
 │   │   └── settings.py          # Configuration
 │   ├── backend/                  # Backend layer
 │   │   └── database/            # Database handlers

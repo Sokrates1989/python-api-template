@@ -151,10 +151,13 @@ Products route - handles product HTTP endpoints.
 
 STRUCTURE:
 - This file: HTTP request/response handling only
+- Schemas: api/schemas/products/ (Pydantic models)
 - Business logic: backend/services/product_service.py
 """
 from fastapi import APIRouter, Query
 from backend.services.product_service import ProductService
+from api.schemas.products.requests import ProductSearchRequest
+from api.schemas.products.responses import ProductListResponse
 
 router = APIRouter(tags=["products"], prefix="/products")
 
@@ -162,16 +165,17 @@ router = APIRouter(tags=["products"], prefix="/products")
 product_service = ProductService()
 
 
-@router.get("/")
+@router.get("/", response_model=ProductListResponse)
 def get_products():
     """Get all products."""
-    return product_service.get_all_products()
+    return ProductListResponse(**product_service.get_all_products())
 
 
-@router.get("/search")
+@router.get("/search", response_model=ProductListResponse)
 def search_products(q: str = Query(..., description="Search query")):
     """Search products by name."""
-    return product_service.search_products(q)
+    request = ProductSearchRequest(query=q)
+    return ProductListResponse(**product_service.search_products(request.query))
 
 
 @router.get("/{product_id}")
@@ -234,10 +238,12 @@ class ProductService:
 ```
 app/
 ├── api/
-│   └── routes/
-│       ├── test.py          # Example: Database endpoints
-│       ├── files.py         # Example: File endpoints
-│       └── products.py      # Your new endpoint
+│   ├── routes/
+│   │   ├── test.py          # Example: Database endpoints
+│   │   ├── files.py         # Example: File endpoints
+│   │   └── products.py      # Your new endpoint
+│   └── schemas/
+│       └── products/        # Pydantic request/response models
 ├── backend/
 │   ├── database/            # Database layer (auto Neo4j/SQL)
 │   └── services/

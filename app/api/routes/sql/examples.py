@@ -13,9 +13,16 @@ STRUCTURE:
 - Data models: models/example.py
 """
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
-from typing import Optional
 from backend.services.sql.example_service import ExampleService
+from api.schemas.sql.examples.requests import (
+    ExampleCreateRequest,
+    ExampleUpdateRequest,
+)
+from api.schemas.sql.examples.responses import (
+    ExampleDetailResponse,
+    ExampleListResponse,
+    ExampleMutationResponse,
+)
 
 router = APIRouter(tags=["examples"], prefix="/examples")
 
@@ -26,19 +33,6 @@ def get_service() -> ExampleService:
     return ExampleService()
 
 
-# Pydantic models for request/response validation
-class ExampleCreate(BaseModel):
-    """Request model for creating an example."""
-    name: str = Field(..., min_length=1, max_length=255, description="Name of the example")
-    description: Optional[str] = Field(None, description="Optional description")
-
-
-class ExampleUpdate(BaseModel):
-    """Request model for updating an example."""
-    name: Optional[str] = Field(None, min_length=1, max_length=255, description="New name")
-    description: Optional[str] = Field(None, description="New description")
-
-
 # ============================================================================
 # CRUD Endpoints
 # ============================================================================
@@ -46,7 +40,7 @@ class ExampleUpdate(BaseModel):
 # No manual initialization needed!
 
 @router.post("/", status_code=201)
-async def create_example(example: ExampleCreate):
+async def create_example(example: ExampleCreateRequest):
     """
     Create a new example.
     
@@ -67,7 +61,7 @@ async def create_example(example: ExampleCreate):
     if result["status"] == "error":
         raise HTTPException(status_code=500, detail=result["message"])
     
-    return result
+    return ExampleMutationResponse(**result)
 
 
 @router.get("/{example_id}")
@@ -91,7 +85,7 @@ async def get_example(example_id: str):
             raise HTTPException(status_code=404, detail=result["message"])
         raise HTTPException(status_code=500, detail=result["message"])
     
-    return result
+    return ExampleDetailResponse(**result)
 
 
 @router.get("/")
@@ -116,11 +110,11 @@ async def list_examples(
     if result["status"] == "error":
         raise HTTPException(status_code=500, detail=result["message"])
     
-    return result
+    return ExampleListResponse(**result)
 
 
 @router.put("/{example_id}")
-async def update_example(example_id: str, example: ExampleUpdate):
+async def update_example(example_id: str, example: ExampleUpdateRequest):
     """
     Update an existing example (rename or update description).
     
@@ -158,7 +152,7 @@ async def update_example(example_id: str, example: ExampleUpdate):
             raise HTTPException(status_code=404, detail=result["message"])
         raise HTTPException(status_code=500, detail=result["message"])
     
-    return result
+    return ExampleMutationResponse(**result)
 
 
 @router.delete("/{example_id}")
@@ -182,4 +176,4 @@ async def delete_example(example_id: str):
             raise HTTPException(status_code=404, detail=result["message"])
         raise HTTPException(status_code=500, detail=result["message"])
     
-    return result
+    return ExampleMutationResponse(**result)
