@@ -1,5 +1,5 @@
 # Entry point for the FastAPI app
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Response
 import uvicorn
 import redis
 from api.settings import settings
@@ -122,14 +122,34 @@ if settings.DEBUG:
 
         # Read and log the request headers.
         headers = request.headers
-        print(f"🔹 Received request with headers: {headers}")
+        print(f"🔹 Request headers: {headers}")
 
         # Read and log the request body
         body = await request.body()
-        print(f"🔹 Body: {body.decode('utf-8') if body else 'No Body'}")
+        print(f"🔹 Request body: {body.decode('utf-8') if body else 'No Body'}")
 
         response = await call_next(request)
-        return response
+
+        # Collect the response body so it can be logged and re-sent.
+        response_body = b""
+        async for chunk in response.body_iterator:
+            response_body += chunk
+
+        print(f"🟪 Response status: {response.status_code}")
+        print(f"🟪 Response headers: {dict(response.headers)}")
+        print(f"🟪 Response body: {response_body.decode('utf-8') if response_body else 'No Body'}")
+
+        # call_next returns a streaming Response whose body_iterator can only be consumed once.
+        # We iterate above to log the payload, so we must rebuild the Response to forward the body.
+        new_response = Response(
+            content=response_body,
+            status_code=response.status_code,
+            headers=dict(response.headers),
+            media_type=response.media_type,
+            background=response.background,
+        )
+
+        return new_response
 
 
 # Redis test Endpoints.
