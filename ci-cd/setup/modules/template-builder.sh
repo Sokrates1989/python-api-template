@@ -31,7 +31,8 @@ build_github_workflow() {
 
     echo "⚙️  Creating GitHub Actions workflow..." >&2
 
-    mkdir -p "$project_root/.github/workflows"
+    local workflow_dir="$project_root/.github/workflows"
+    mkdir -p "$workflow_dir"
 
     local template_path="$SCRIPT_DIR/../templates/github/build-deploy-linux.yml"
     if [ ! -f "$template_path" ]; then
@@ -41,18 +42,28 @@ build_github_workflow() {
 
     local branches_yaml=$(format_branches_github "$branches")
 
+    local workflow_branch
+    IFS=' ' read -r workflow_branch _ <<< "$branches"
+    if [ -z "$workflow_branch" ]; then
+        workflow_branch="main"
+    fi
+
+    local sanitized_branch=$(echo "$workflow_branch" | sed 's/[^A-Za-z0-9._-]/-/g')
+    local workflow_file="$workflow_dir/${sanitized_branch}.yml"
+
     # Copy template and replace placeholder
-    sed "s|__BRANCHES__|$branches_yaml|" "$template_path" > "$project_root/.github/workflows/ci-cd.yml"
+    sed "s|__BRANCHES__|$branches_yaml|" "$template_path" > "$workflow_file"
 
     if [ "$deployment_target" = "build-only" ]; then
         # Remove deploy job block between markers
-        sed '/^# BEGIN_DEPLOY_SECTION/,/^# END_DEPLOY_SECTION/d' "$project_root/.github/workflows/ci-cd.yml" > "$project_root/.github/workflows/ci-cd.yml.tmp" && mv "$project_root/.github/workflows/ci-cd.yml.tmp" "$project_root/.github/workflows/ci-cd.yml"
+        local workflow_file_tmp="${workflow_file}.tmp"
+        sed '/^# BEGIN_DEPLOY_SECTION/,/^# END_DEPLOY_SECTION/d' "$workflow_file" > "$workflow_file_tmp" && mv "$workflow_file_tmp" "$workflow_file"
     else
         # Remove marker comments only
-        sed -i '/^# BEGIN_DEPLOY_SECTION/d;/^# END_DEPLOY_SECTION/d' "$project_root/.github/workflows/ci-cd.yml"
+        sed -i '/^# BEGIN_DEPLOY_SECTION/d;/^# END_DEPLOY_SECTION/d' "$workflow_file"
     fi
 
-    success_message "GitHub Actions workflow created: .github/workflows/ci-cd.yml"
+    success_message "GitHub Actions workflow created: .github/workflows/${sanitized_branch}.yml (branch: $workflow_branch)"
 }
 
 # Build GitLab CI configuration

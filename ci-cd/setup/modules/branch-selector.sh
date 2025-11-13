@@ -2,8 +2,8 @@
 # Branch selector module
 # Handles branch selection for CI/CD triggers
 
-# Select branches for CI/CD
-# Returns: space-separated list of branch names
+# Select branch for CI/CD
+# Returns: single branch name
 select_cicd_branches() {
     section_header "Branch Selection for CI/CD"
     
@@ -32,23 +32,18 @@ select_cicd_branches() {
         return 0
     fi
     
-    echo "Select which branches should trigger CI/CD pipeline:" >&2
+    echo "Select which branch should trigger the CI/CD pipeline:" >&2
     echo "(Common choices: main, master, develop, production)" >&2
     echo "" >&2
-    
-    local indices=$(prompt_multi_selection "Select branches" "${branches[@]}")
-    
-    # Convert indices to branch names
-    local selected_branches=()
-    for idx in $indices; do
-        selected_branches+=("${branches[$idx]}")
-    done
-    
+
+    local index=$(prompt_selection "Select branch" "${branches[@]}")
+    local selected_branch="${branches[$index]}"
+
     echo "" >&2
-    success_message "Selected branches: ${selected_branches[*]}"
-    
-    # Return as space-separated string
-    echo "${selected_branches[@]}"
+    success_message "Selected branch: ${selected_branch}"
+
+    # Return the selected branch
+    echo "${selected_branch}"
 }
 
 # Format branches for GitHub Actions YAML
