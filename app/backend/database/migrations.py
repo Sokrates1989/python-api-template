@@ -73,8 +73,9 @@ def run_migrations():
         logging.getLogger('sqlalchemy').setLevel(logging.ERROR)
         
         # Print each migration that will be applied
-        for migration_info in pending:
-            print(f"   ⏩ Applying: {migration_info['revision'][:12]} - {migration_info['description']}")
+        if pending:
+            for migration_info in pending:
+                print(f"   ⏩ Applying: {migration_info['revision'][:12]} - {migration_info['description']}")
         
         print("")
         sys.stdout.flush()  # Force output before Alembic runs
@@ -90,9 +91,10 @@ def run_migrations():
             sys.stdout.flush()  # Force output after Alembic runs
             
             # Show success for each migration that was applied
-            for migration_info in pending:
-                print(f"   ✅ SUCCESS: {migration_info['revision'][:12]} - {migration_info['description']}")
-                sys.stdout.flush()
+            if pending:
+                for migration_info in pending:
+                    print(f"   ✅ SUCCESS: {migration_info['revision'][:12]} - {migration_info['description']}")
+                    sys.stdout.flush()
             
             print("")
             sys.stdout.flush()
@@ -150,8 +152,10 @@ def _get_pending_migrations(alembic_cfg, current_version):
         # Get all revisions from current to head
         if current_version:
             # Get revisions between current and head
+            # iterate_revisions(upper, lower) goes backwards from upper to lower
+            # So we need ("head", current_version) to get migrations from current to head
             revisions = []
-            for rev in script.iterate_revisions(current_version, "head"):
+            for rev in script.iterate_revisions("head", current_version):
                 if rev.revision != current_version:
                     desc = rev.doc.split('\n')[0] if rev.doc else "No description"
                     revisions.append({

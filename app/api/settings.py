@@ -1,6 +1,6 @@
 # Configuration using pydantic-settings
 from pydantic_settings import BaseSettings
-from typing import Literal
+from typing import Literal, Optional
 from pathlib import Path
 
 
@@ -22,7 +22,14 @@ class Settings(BaseSettings):
     # Database Type Configuration
     DB_TYPE: Literal["neo4j", "postgresql", "mysql", "sqlite"] = "neo4j"
     DB_MODE: Literal["local", "external"] = "local"
-    
+
+    # AWS Cognito Configuration
+    AWS_REGION: Optional[str] = None
+    COGNITO_USER_POOL_ID: Optional[str] = None
+    COGNITO_APP_CLIENT_ID: Optional[str] = None
+    AWS_ACCESS_KEY_ID: Optional[str] = None
+    AWS_SECRET_ACCESS_KEY: Optional[str] = None
+
     # Neo4j Configuration
     NEO4J_URL: str = ""
     DB_USER: str = ""

@@ -4,13 +4,13 @@ This directory contains **reference migration examples** showing common database
 
 ## ⚠️ Important
 
-**All migrations (001-007) run automatically as a complete demonstration!**
+**All migrations (001-008) run automatically as a complete demonstration!**
 
 This template includes a **full migration chain** showing real-world schema evolution:
 
 **Active migration chain:**
 ```
-001 → 002 → 003 → 004 → 005 → 006 → 007
+001 → 002 → 003 → 004 → 005 → 006 → 007 -> 008
 ```
 
 All migrations run on startup, demonstrating:
@@ -33,6 +33,7 @@ All migrations run on startup, demonstrating:
 | `005_example_add_1n_relationship.py` | 📚 Reference | Creating 1:N relationship |
 | `006_example_add_nm_relationship.py` | 📚 Reference | Creating N:M relationship |
 | `007_example_data_migration.py` | 📚 Reference | Migrating existing data |
+| `008_create_users_table.py` | 📚 Reference | Creating users table |
 
 ## How to Use These Examples
 
@@ -112,6 +113,23 @@ op.execute("""
 op.execute("""
     UPDATE table SET column = 'value' WHERE condition
 """)
+```
+
+**008 - Users Table: (Authentication)**
+```python
+op.create_table('users',
+    sa.Column('id', sa.String(), nullable=False),
+    sa.Column('email', sa.String(length=255), nullable=False),
+    sa.Column('username', sa.String(length=255), nullable=False),
+    sa.Column('first_name', sa.String(length=255), nullable=True),
+    sa.Column('last_name', sa.String(length=255), nullable=True),
+    sa.Column('is_active', sa.Boolean(), nullable=False, server_default='true'),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
+    sa.PrimaryKeyConstraint('id')
+)
+op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
+op.create_index(op.f('ix_users_username'), 'users', ['username'], unique=True)
 ```
 
 ## Creating Your Own Migrations

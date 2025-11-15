@@ -21,7 +21,7 @@ To create your own Neo4j services:
 """
 from typing import List, Optional
 from datetime import datetime
-from models.neo4j.example_node import ExampleNode
+from models.neo4j.example import ExampleNode
 from backend.database import get_database_handler
 
 
