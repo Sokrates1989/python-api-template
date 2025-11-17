@@ -110,61 +110,79 @@ function Show-MainMenu {
         [string]$ComposeFile
     )
 
-    while ($true) {
-        $hasCognito = [bool](Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue)
-        Write-Host "Choose an option:" -ForegroundColor Yellow
-        Write-Host "1) Start backend directly (docker compose up)" -ForegroundColor Gray
-        Write-Host "2) Open Dependency Management only" -ForegroundColor Gray
-        Write-Host "3) Both - Dependency Management and then start backend" -ForegroundColor Gray
-        Write-Host "4) Run Docker/Build Diagnostics" -ForegroundColor Gray
-        Write-Host "5) Build Production Docker Image" -ForegroundColor Gray
-        Write-Host "6) Setup CI/CD Pipeline" -ForegroundColor Gray
-        Write-Host "7) Update Docker Image Version" -ForegroundColor Gray
-        Write-Host "8) Configure AWS Cognito" -ForegroundColor Gray
-        Write-Host "9) Exit" -ForegroundColor Gray
-        Write-Host ""
-        $choice = Read-Host "Your choice (1-9)"
+    $hasCognito = [bool](Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue)
+    Write-Host "Choose an option:" -ForegroundColor Yellow
+    Write-Host "1) Start backend directly (docker compose up)" -ForegroundColor Gray
+    Write-Host "2) Open Dependency Management only" -ForegroundColor Gray
+    Write-Host "3) Both - Dependency Management and then start backend" -ForegroundColor Gray
+    Write-Host "4) Run Docker/Build Diagnostics" -ForegroundColor Gray
+    Write-Host "5) Configure AWS Cognito" -ForegroundColor Gray
+    Write-Host "6) Build Production Docker Image" -ForegroundColor Gray
+    Write-Host "7) Setup CI/CD Pipeline" -ForegroundColor Gray
+    Write-Host "8) Bump release version for docker image" -ForegroundColor Gray
+    Write-Host "9) Exit" -ForegroundColor Gray
+    Write-Host ""
+    $choice = Read-Host "Your choice (1-9)"
 
-        switch ($choice) {
-            "1" {
-                Start-Backend -Port $Port -ComposeFile $ComposeFile
-            }
-            "2" {
-                Start-DependencyManagement
-                Write-Host "To start the backend, run: docker compose -f $ComposeFile up --build" -ForegroundColor Yellow
-            }
-            "3" {
-                Start-DependencyAndBackend -Port $Port -ComposeFile $ComposeFile
-            }
-            "4" {
-                Invoke-EnvironmentDiagnostics
-            }
-            "5" {
-                Build-ProductionImage
-            }
-            "6" {
-                Start-CICDSetup
-            }
-            "7" {
-                Update-ImageVersion
-            }
-            "8" {
-                if ($hasCognito) {
-                    Invoke-CognitoSetup
-                } else {
-                    Write-Host "AWS Cognito module not loaded." -ForegroundColor Yellow
-                    Write-Host "Ensure setup/modules/cognito_setup.ps1 is imported before selecting this option." -ForegroundColor Yellow
-                }
-            }
-            "9" {
-                Write-Host "Exiting script." -ForegroundColor Cyan
-                exit 0
-            }
-            Default {
-                Write-Host "Invalid selection." -ForegroundColor Yellow
+    $summary = $null
+    $exitCode = 0
+
+    switch ($choice) {
+        "1" {
+            Start-Backend -Port $Port -ComposeFile $ComposeFile
+            $summary = "Backend start triggered (docker compose up)"
+        }
+        "2" {
+            Start-DependencyManagement
+            Write-Host "To start the backend, run: docker compose -f $ComposeFile up --build" -ForegroundColor Yellow
+            $summary = "Dependency Management executed"
+        }
+        "3" {
+            Start-DependencyAndBackend -Port $Port -ComposeFile $ComposeFile
+            $summary = "Dependency Management and backend start executed"
+        }
+        "4" {
+            Invoke-EnvironmentDiagnostics
+            $summary = "Docker/Build diagnostics launched"
+        }
+        "5" {
+            if ($hasCognito) {
+                Invoke-CognitoSetup
+                $summary = "AWS Cognito setup executed"
+            } else {
+                Write-Host "AWS Cognito module not loaded." -ForegroundColor Yellow
+                Write-Host "Ensure setup/modules/cognito_setup.ps1 is imported before selecting this option." -ForegroundColor Yellow
+                $summary = "AWS Cognito setup could not run"
+                $exitCode = 1
             }
         }
-
-        Write-Host ""
+        "6" {
+            Build-ProductionImage
+            $summary = "Production Docker image build triggered"
+        }
+        "7" {
+            Start-CICDSetup
+            $summary = "CI/CD setup started"
+        }
+        "8" {
+            Update-ImageVersion
+            $summary = "IMAGE_VERSION updated"
+        }
+        "9" {
+            Write-Host "Exiting script." -ForegroundColor Cyan
+            exit 0
+        }
+        Default {
+            Write-Host "Invalid selection. Please re-run the script." -ForegroundColor Yellow
+            exit 1
+        }
     }
+
+    Write-Host ""
+    if ($summary) {
+        Write-Host ("✅ {0}" -f $summary) -ForegroundColor Green
+    }
+    Write-Host 'ℹ️  Quick-start finished. Run the script again for more actions.' -ForegroundColor Cyan
+    Write-Host ""
+    exit $exitCode
 }
