@@ -15,12 +15,15 @@ from api.settings import settings
 
 def _get_cognito_jwks() -> Dict[str, Dict[str, str]]:
     """Fetch the JWKS for the configured Cognito user pool."""
-    if not settings.AWS_REGION or not settings.COGNITO_USER_POOL_ID:
+    region = (settings.AWS_REGION or "").strip()
+    user_pool = (settings.COGNITO_USER_POOL_ID or "").strip()
+
+    if not region or not user_pool:
         raise RuntimeError("AWS Cognito configuration is missing")
 
     jwks_url = (
-        f"https://cognito-idp.{settings.AWS_REGION}.amazonaws.com/"
-        f"{settings.COGNITO_USER_POOL_ID}/.well-known/jwks.json"
+        f"https://cognito-idp.{region}.amazonaws.com/"
+        f"{user_pool}/.well-known/jwks.json"
     )
 
     response = requests.get(jwks_url, timeout=5)

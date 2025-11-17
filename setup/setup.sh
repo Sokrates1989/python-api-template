@@ -5,6 +5,12 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${SCRIPT_DIR}/cognito_setup.sh" ]; then
+    # shellcheck disable=SC1091
+    source "${SCRIPT_DIR}/cognito_setup.sh"
+fi
+
 echo "🚀 Python API Template - Initial Setup"
 echo "======================================"
 echo ""
@@ -29,7 +35,7 @@ if [ -f .env ]; then
 fi
 
 # Start with template
-cp setup/.env.template .env
+cp "${SCRIPT_DIR}/.env.template" .env
 
 echo "Let's configure your API project!"
 echo ""
@@ -209,6 +215,16 @@ sed -i "s|^DEBUG=.*|DEBUG=$DEBUG|" .env
 
 echo "✅ API will run on port $PORT"
 echo ""
+
+# =============================================================================
+# OPTIONAL: AWS COGNITO CONFIGURATION
+# =============================================================================
+if declare -F run_cognito_setup >/dev/null; then
+    if ! run_cognito_setup; then
+        echo "⚠️  AWS Cognito configuration skipped or failed. You can configure it later via quick-start scripts."
+        echo ""
+    fi
+fi
 
 # =============================================================================
 # SUMMARY

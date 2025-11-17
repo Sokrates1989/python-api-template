@@ -45,7 +45,7 @@ class UserService:
                 username = email.split('@')[0]
             
             # Check if user already exists
-            async with self.handler.get_session() as session:
+            async with self.handler.AsyncSessionLocal() as session:
                 result = await session.execute(select(User).where(User.id == user_id))
                 existing_user = result.scalar_one_or_none()
                 
@@ -88,12 +88,16 @@ class UserService:
                 }
                 
         except IntegrityError as e:
+            if 'session' in locals():
+                await session.rollback()
             return {
                 "status": "error",
                 "message": f"Database integrity error: {str(e)}",
                 "data": None
             }
         except Exception as e:
+            if 'session' in locals():
+                await session.rollback()
             return {
                 "status": "error",
                 "message": f"Error creating user: {str(e)}",
@@ -111,7 +115,7 @@ class UserService:
             Dict with status, message, and data
         """
         try:
-            async with self.handler.get_session() as session:
+            async with self.handler.AsyncSessionLocal() as session:
                 result = await session.execute(select(User).where(User.id == user_id))
                 user = result.scalar_one_or_none()
                 
@@ -156,8 +160,9 @@ class UserService:
         Returns:
             Dict with status, message, and data
         """
+        session = None
         try:
-            async with self.handler.get_session() as session:
+            async with self.handler.AsyncSessionLocal() as session:
                 result = await session.execute(select(User).where(User.id == user_id))
                 user = result.scalar_one_or_none()
                 
@@ -213,12 +218,16 @@ class UserService:
                 }
                 
         except IntegrityError as e:
+            if session is not None:
+                await session.rollback()
             return {
                 "status": "error",
                 "message": f"Database integrity error: {str(e)}",
                 "data": None
             }
         except Exception as e:
+            if session is not None:
+                await session.rollback()
             return {
                 "status": "error",
                 "message": f"Error updating user: {str(e)}",

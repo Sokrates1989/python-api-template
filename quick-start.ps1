@@ -4,6 +4,13 @@
 
 $ErrorActionPreference = "Stop"
 
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$setupDir = Join-Path $scriptDir "setup"
+$cognitoScript = Join-Path $setupDir "cognito_setup.ps1"
+if (Test-Path $cognitoScript) {
+    . $cognitoScript
+}
+
 Write-Host "FastAPI Redis API Test - Quick Start" -ForegroundColor Cyan
 Write-Host "======================================" -ForegroundColor Cyan
 Write-Host ""
@@ -63,6 +70,10 @@ if (-not (Test-Path .setup-complete)) {
         Write-Host "Starting setup wizard..." -ForegroundColor Cyan
         docker compose -f setup/docker-compose.setup.yml run --rm setup
         Write-Host ""
+        if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
+            Invoke-CognitoSetup
+            Write-Host "" -ForegroundColor Gray
+        }
     } else {
         Write-Host ""
         Write-Host "Skipping setup wizard. Creating basic .env from template..." -ForegroundColor Yellow
@@ -70,6 +81,10 @@ if (-not (Test-Path .setup-complete)) {
             Copy-Item setup\.env.template .env
             Write-Host ".env file created from template." -ForegroundColor Green
             Write-Host "  Please edit .env to configure your environment before continuing." -ForegroundColor Yellow
+            if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
+                Invoke-CognitoSetup
+                Write-Host "" -ForegroundColor Gray
+            }
         } else {
             Write-Host "[ERROR] setup\.env.template not found!" -ForegroundColor Red
             exit 1
@@ -83,6 +98,10 @@ if (-not (Test-Path .setup-complete)) {
         Copy-Item setup\.env.template .env
         Write-Host ".env file created from template." -ForegroundColor Green
         Write-Host "Please check the values in .env if needed." -ForegroundColor Yellow
+        if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
+            Invoke-CognitoSetup
+            Write-Host "" -ForegroundColor Gray
+        }
     } else {
         Write-Host "[ERROR] setup\.env.template not found!" -ForegroundColor Red
         exit 1
@@ -238,8 +257,15 @@ if (-not (Test-Path .setup-complete)) {
     Write-Host "4) Test Python Version Configuration" -ForegroundColor Gray
     Write-Host "5) Build Production Docker Image" -ForegroundColor Gray
     Write-Host "6) Setup CI/CD Pipeline" -ForegroundColor Gray
+    if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
+        Write-Host "7) Configure AWS Cognito" -ForegroundColor Gray
+    }
     Write-Host ""
-    $choice = Read-Host "Your choice (1-6)"
+    if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
+        $choice = Read-Host "Your choice (1-7)"
+    } else {
+        $choice = Read-Host "Your choice (1-6)"
+    }
 
     switch ($choice) {
         "1" {
@@ -336,6 +362,14 @@ if (-not (Test-Path .setup-complete)) {
             } else {
                 Write-Host "ci-cd\docker-compose.cicd-setup.yml not found" -ForegroundColor Red
                 Write-Host "Please ensure the ci-cd directory exists" -ForegroundColor Yellow
+            }
+        }
+        "7" {
+            if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
+                Invoke-CognitoSetup
+            } else {
+                Write-Host "Invalid selection. Starting backend directly..." -ForegroundColor Yellow
+                docker compose --env-file .env -f $COMPOSE_FILE up --build
             }
         }
         default {

@@ -10,6 +10,13 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SETUP_DIR="${SCRIPT_DIR}/setup"
+if [ -f "${SETUP_DIR}/cognito_setup.sh" ]; then
+    # shellcheck disable=SC1091
+    source "${SETUP_DIR}/cognito_setup.sh"
+fi
+
 echo "🚀 FastAPI Redis API Test - Quick Start"
 echo "======================================"
 
@@ -59,6 +66,10 @@ if [ ! -f .setup-complete ]; then
         echo "Starte Setup-Assistenten..."
         docker compose -f setup/docker-compose.setup.yml run --rm setup
         echo ""
+        if declare -F run_cognito_setup >/dev/null; then
+            run_cognito_setup
+            echo ""
+        fi
     else
         echo ""
         echo "Setup-Assistent übersprungen. Erstelle einfache .env aus Vorlage..."
@@ -66,6 +77,10 @@ if [ ! -f .setup-complete ]; then
             cp setup/.env.template .env
             echo "✅ .env wurde aus Vorlage erstellt."
             echo "⚠️  Bitte bearbeite .env, um deine Umgebung zu konfigurieren, bevor du fortfährst."
+            if declare -F run_cognito_setup >/dev/null; then
+                run_cognito_setup
+                echo ""
+            fi
         else
             echo "❌ setup/.env.template nicht gefunden!"
             exit 1
@@ -79,6 +94,10 @@ elif [ ! -f .env ]; then
         cp setup/.env.template .env
         echo "✅ .env wurde aus Vorlage erstellt."
         echo "Bitte prüfe die Werte in .env bei Bedarf."
+        if declare -F run_cognito_setup >/dev/null; then
+            run_cognito_setup
+            echo ""
+        fi
     else
         echo "❌ setup/.env.template nicht gefunden!"
         exit 1
@@ -200,8 +219,15 @@ else
     echo "4) Python Version Konfiguration testen"
     echo "5) Production Docker Image bauen"
     echo "6) CI/CD Pipeline einrichten"
+    if declare -F run_cognito_setup >/dev/null; then
+        echo "7) AWS Cognito konfigurieren"
+    fi
     echo ""
-    read -p "Deine Wahl (1-6): " choice
+    if declare -F run_cognito_setup >/dev/null; then
+        read -p "Deine Wahl (1-7): " choice
+    else
+        read -p "Deine Wahl (1-6): " choice
+    fi
 
     case $choice in
       1)
@@ -296,9 +322,18 @@ else
             echo "⚠️  Please ensure the ci-cd directory exists"
         fi
         ;;
+      7)
+        if declare -F run_cognito_setup >/dev/null; then
+            run_cognito_setup
+            echo ""
+        else
+            echo "❌ Ungültige Auswahl. Starte Backend direkt..."
+            docker compose --env-file .env -f "$COMPOSE_FILE" up --build
+        fi
+        ;;
       *)
         echo "❌ Ungültige Auswahl. Starte Backend direkt..."
-        docker compose --env-file .env up --build
+        docker compose --env-file .env -f "$COMPOSE_FILE" up --build
         ;;
     esac
 fi
