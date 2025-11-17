@@ -7,10 +7,11 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SETUP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_ROOT="$(cd "${SETUP_DIR}/.." && pwd)"
 
 _env_file="${PROJECT_ROOT}/.env"
-_template_file="${SCRIPT_DIR}/.env.template"
+_template_file="${SETUP_DIR}/.env.template"
 
 _cognito_setup_is_macos() {
   case "$(uname)" in

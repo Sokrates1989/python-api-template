@@ -2,10 +2,11 @@
 # This script can be dot-sourced by other PowerShell scripts (setup.ps1, quick-start.ps1)
 # to provide a consistent interactive configuration flow.
 
-$script:CognitoScriptDir = Split-Path -Parent $PSCommandPath
-$script:CognitoProjectRoot = Split-Path -Parent $script:CognitoScriptDir
+$script:CognitoModulesDir = Split-Path -Parent $PSCommandPath
+$script:CognitoSetupDir = Split-Path -Parent $script:CognitoModulesDir
+$script:CognitoProjectRoot = Split-Path -Parent $script:CognitoSetupDir
 $script:CognitoEnvPath = Join-Path $script:CognitoProjectRoot '.env'
-$script:CognitoTemplatePath = Join-Path $script:CognitoScriptDir '.env.template'
+$script:CognitoTemplatePath = Join-Path $script:CognitoSetupDir '.env.template'
 
 function Get-CognitoEnvValue {
     param([string]$Key)

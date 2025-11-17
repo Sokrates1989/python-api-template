@@ -6,7 +6,14 @@ $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $setupDir = Join-Path $scriptDir "setup"
-$cognitoScript = Join-Path $setupDir "cognito_setup.ps1"
+
+# Import modules
+Import-Module "$setupDir\modules\docker_helpers.ps1" -Force
+Import-Module "$setupDir\modules\version_manager.ps1" -Force
+Import-Module "$setupDir\modules\menu_handlers.ps1" -Force
+
+# Source Cognito setup script if available
+$cognitoScript = Join-Path $setupDir "modules\cognito_setup.ps1"
 if (Test-Path $cognitoScript) {
     . $cognitoScript
 }
@@ -16,37 +23,9 @@ Write-Host "======================================" -ForegroundColor Cyan
 Write-Host ""
 
 # Check Docker availability
-Write-Host "Checking Docker installation..." -ForegroundColor Yellow
-try {
-    $null = docker --version 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "Docker not found" }
-} catch {
-    Write-Host "[ERROR] Docker is not installed!" -ForegroundColor Red
-    Write-Host "Please install Docker from: https://www.docker.com/get-started" -ForegroundColor Yellow
+if (-not (Test-DockerInstallation)) {
     exit 1
 }
-
-# Check Docker daemon
-try {
-    $null = docker info 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "Docker daemon not running" }
-} catch {
-    Write-Host "[ERROR] Docker daemon is not running!" -ForegroundColor Red
-    Write-Host "Please start Docker Desktop or the Docker service" -ForegroundColor Yellow
-    exit 1
-}
-
-# Check Docker Compose
-try {
-    $null = docker compose version 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "Docker Compose not available" }
-} catch {
-    Write-Host "[ERROR] Docker Compose is not available!" -ForegroundColor Red
-    Write-Host "Please install a current Docker version with Compose plugin" -ForegroundColor Yellow
-    exit 1
-}
-
-Write-Host "Docker is installed and running" -ForegroundColor Green
 Write-Host ""
 
 # Check if initial setup is needed
@@ -110,49 +89,27 @@ if (-not (Test-Path .setup-complete)) {
 }
 
 # Read PORT from .env (default: 8000)
-$PORT = "8000"
-if (Test-Path .env) {
-    $envContent = Get-Content .env -ErrorAction SilentlyContinue
-    $portLine = $envContent | Where-Object { $_ -match "^PORT=" }
-    if ($portLine) {
-        $PORT = ($portLine -split "=", 2)[1].Trim().Trim('"')
-    }
-}
+$PORT = Get-EnvVariable -VariableName "PORT" -EnvFile ".env" -DefaultValue "8000"
 
 # Read database configuration from .env
-$DB_TYPE = "neo4j"
-$DB_MODE = "local"
-if (Test-Path .env) {
-    $envContent = Get-Content .env -ErrorAction SilentlyContinue
-    
-    $dbTypeLine = $envContent | Where-Object { $_ -match "^DB_TYPE=" }
-    if ($dbTypeLine) {
-        $DB_TYPE = ($dbTypeLine -split "=", 2)[1].Trim().Trim('"')
-    }
-    
-    $dbModeLine = $envContent | Where-Object { $_ -match "^DB_MODE=" }
-    if ($dbModeLine) {
-        $DB_MODE = ($dbModeLine -split "=", 2)[1].Trim().Trim('"')
-    }
-}
+$DB_TYPE = Get-EnvVariable -VariableName "DB_TYPE" -EnvFile ".env" -DefaultValue "neo4j"
+$DB_MODE = Get-EnvVariable -VariableName "DB_MODE" -EnvFile ".env" -DefaultValue "local"
 
 # Determine Docker Compose file based on DB_TYPE and DB_MODE
+$COMPOSE_FILE = Get-ComposeFile -DbType $DB_TYPE -DbMode $DB_MODE
+
 if ($DB_MODE -eq "external") {
-    $COMPOSE_FILE = "local-deployment\docker-compose.yml"
     Write-Host "Detected external database mode" -ForegroundColor Cyan
     Write-Host "   Database Type: $DB_TYPE" -ForegroundColor Gray
     Write-Host "   Will connect to external database (no local DB container)" -ForegroundColor Gray
 } elseif ($DB_TYPE -eq "neo4j") {
-    $COMPOSE_FILE = "local-deployment\docker-compose.neo4j.yml"
     Write-Host "Detected local Neo4j database" -ForegroundColor Cyan
     Write-Host "   Will start Neo4j container" -ForegroundColor Gray
 } elseif ($DB_TYPE -eq "postgresql" -or $DB_TYPE -eq "mysql") {
-    $COMPOSE_FILE = "local-deployment\docker-compose.postgres.yml"
     Write-Host "Detected local $DB_TYPE database" -ForegroundColor Cyan
     Write-Host "   Will start PostgreSQL container" -ForegroundColor Gray
 } else {
-    $COMPOSE_FILE = "local-deployment\docker-compose.yml"
-    Write-Host "Unknown DB_TYPE: $DB_TYPE, using default local-deployment\docker-compose.yml" -ForegroundColor Yellow
+    Write-Host "Unknown DB_TYPE: $DB_TYPE, using default compose file" -ForegroundColor Yellow
 }
 
 Write-Host "   Using: $COMPOSE_FILE" -ForegroundColor Gray
@@ -164,38 +121,37 @@ if (-not (Test-Path .setup-complete)) {
     Write-Host "The first start may take a bit longer, but it will be much faster afterwards." -ForegroundColor Yellow
     Write-Host ""
     
-    # Test Python version configuration first
-    if (Test-Path python-dependency-management\scripts\test-python-version.ps1) {
-        Write-Host "Testing Python version configuration..." -ForegroundColor Yellow
-        Write-Host "Running Python version tests..." -ForegroundColor Gray
+    # Run diagnostics to validate Docker/build configuration first
+    $diagnosticsScript = "python-dependency-management\scripts\run-docker-build-diagnostics.ps1"
+    if (Test-Path $diagnosticsScript) {
+        Write-Host "Running Docker/Build diagnostics..." -ForegroundColor Yellow
+        Write-Host "Collecting diagnostic information..." -ForegroundColor Gray
         try {
-            & .\python-dependency-management\scripts\test-python-version.ps1
+            & .\$diagnosticsScript
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "Python version configuration test passed" -ForegroundColor Green
+                Write-Host "Diagnostics completed successfully" -ForegroundColor Green
             } else {
-                Write-Host ""
-                Write-Host "Python version configuration test failed!" -ForegroundColor Red
-                Write-Host "This indicates a problem with your .env file or Docker setup." -ForegroundColor Yellow
-                Write-Host ""
-                Write-Host "Troubleshooting steps:" -ForegroundColor Yellow
-                Write-Host "1. Check if .env file exists and contains PYTHON_VERSION=3.13" -ForegroundColor Gray
-                Write-Host "2. Ensure Docker is running: docker --version" -ForegroundColor Gray
-                Write-Host "3. Verify .env file format: Get-Content .env" -ForegroundColor Gray
-                Write-Host ""
-                Write-Host "The following steps may fail if Python version is not configured correctly." -ForegroundColor Yellow
-                $continue = Read-Host "Continue anyway? (y/N)"
-                if ($continue -notmatch "^[Yy]$") {
-                    Write-Host "Setup aborted. Please fix the Python version configuration first." -ForegroundColor Red
-                    exit 1
-                }
-                Write-Host "Continuing with potentially broken configuration..." -ForegroundColor Yellow
+                throw "Diagnostics reported issues"
             }
         } catch {
-            Write-Host "Error running Python version test: $_" -ForegroundColor Red
-            Write-Host "Skipping version test..." -ForegroundColor Yellow
+            Write-Host "Diagnostics reported issues with your Docker or build configuration!" -ForegroundColor Red
+            Write-Host "Please address the reported problems before continuing." -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "Troubleshooting steps:" -ForegroundColor Yellow
+            Write-Host "1. Ensure Docker Desktop/daemon is running" -ForegroundColor Gray
+            Write-Host "2. Verify .env values (especially PYTHON_VERSION and DB settings)" -ForegroundColor Gray
+            Write-Host "3. Review missing files noted in the diagnostics output" -ForegroundColor Gray
+            Write-Host "4. Re-run manually via: .\$diagnosticsScript" -ForegroundColor Gray
+            Write-Host "" -ForegroundColor Gray
+            $continue = Read-Host "Continue anyway? (y/N)"
+            if ($continue -notmatch "^[Yy]$") {
+                Write-Host "Setup aborted. Please fix the reported diagnostics issues first." -ForegroundColor Red
+                exit 1
+            }
+            Write-Host "Continuing with potentially broken configuration..." -ForegroundColor Yellow
         }
     } else {
-        Write-Host "python-dependency-management\scripts\test-python-version.ps1 not found - skipping version test" -ForegroundColor Yellow
+        Write-Host "$diagnosticsScript not found - skipping diagnostics" -ForegroundColor Yellow
     }
     
     Write-Host ""
@@ -245,136 +201,9 @@ if (-not (Test-Path .setup-complete)) {
     Write-Host ""
     docker compose --env-file .env -f $COMPOSE_FILE up --build
 } else {
-    Write-Host "Starting backend with Docker Compose..." -ForegroundColor Cyan
-    Write-Host "Backend will be available at: http://localhost:$PORT" -ForegroundColor Cyan
+    Write-Host "🐳 Starte Backend mit Docker Compose..." -ForegroundColor Cyan
+    Write-Host "Backend wird verfügbar sein auf: http://localhost:$PORT" -ForegroundColor Cyan
     Write-Host ""
 
-    # Selection menu for subsequent starts
-    Write-Host "Choose an option:" -ForegroundColor Yellow
-    Write-Host "1) Start backend directly (docker compose up)" -ForegroundColor Gray
-    Write-Host "2) Open Dependency Management only" -ForegroundColor Gray
-    Write-Host "3) Both - Dependency Management and then start backend" -ForegroundColor Gray
-    Write-Host "4) Test Python Version Configuration" -ForegroundColor Gray
-    Write-Host "5) Build Production Docker Image" -ForegroundColor Gray
-    Write-Host "6) Setup CI/CD Pipeline" -ForegroundColor Gray
-    if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
-        Write-Host "7) Configure AWS Cognito" -ForegroundColor Gray
-    }
-    Write-Host ""
-    if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
-        $choice = Read-Host "Your choice (1-7)"
-    } else {
-        $choice = Read-Host "Your choice (1-6)"
-    }
-
-    switch ($choice) {
-        "1" {
-            Write-Host "Starting backend directly..." -ForegroundColor Cyan
-            Write-Host ""
-            Write-Host "========================================" -ForegroundColor Green
-            Write-Host "  API will be accessible at:" -ForegroundColor Cyan
-            Write-Host "  http://localhost:$PORT/docs" -ForegroundColor Yellow
-            Write-Host "========================================" -ForegroundColor Green
-            Write-Host ""
-            Write-Host "Press ENTER to open the API documentation in your browser..." -ForegroundColor Yellow
-            Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
-            $null = Read-Host
-            
-            # Open browser in incognito/private mode
-            Write-Host "Opening browser..." -ForegroundColor Cyan
-            Start-Process "msedge" "--inprivate http://localhost:$PORT/docs" -ErrorAction SilentlyContinue
-            if ($LASTEXITCODE -ne 0) {
-                Start-Process "chrome" "--incognito http://localhost:$PORT/docs" -ErrorAction SilentlyContinue
-                if ($LASTEXITCODE -ne 0) {
-                    Start-Process "http://localhost:$PORT/docs"
-                }
-            }
-            
-            Write-Host ""
-            docker compose --env-file .env -f $COMPOSE_FILE up --build
-        }
-        "2" {
-            if (Test-Path python-dependency-management\scripts\manage-python-project-dependencies.ps1) {
-                Write-Host "Opening Dependency Management..." -ForegroundColor Cyan
-                & .\python-dependency-management\scripts\manage-python-project-dependencies.ps1
-            } else {
-                Write-Host "python-dependency-management\scripts\manage-python-project-dependencies.ps1 not found" -ForegroundColor Red
-            }
-            Write-Host ""
-            Write-Host "To start the backend, run: docker compose -f $COMPOSE_FILE up --build" -ForegroundColor Yellow
-        }
-        "3" {
-            if (Test-Path python-dependency-management\scripts\manage-python-project-dependencies.ps1) {
-                Write-Host "Opening Dependency Management first..." -ForegroundColor Cyan
-                & .\python-dependency-management\scripts\manage-python-project-dependencies.ps1
-            } else {
-                Write-Host "python-dependency-management\scripts\manage-python-project-dependencies.ps1 not found" -ForegroundColor Red
-                Write-Host "Skipping dependency management." -ForegroundColor Yellow
-            }
-            Write-Host ""
-            Write-Host "Starting backend now..." -ForegroundColor Cyan
-            Write-Host ""
-            Write-Host "========================================" -ForegroundColor Green
-            Write-Host "  API will be accessible at:" -ForegroundColor Cyan
-            Write-Host "  http://localhost:$PORT/docs" -ForegroundColor Yellow
-            Write-Host "========================================" -ForegroundColor Green
-            Write-Host ""
-            Write-Host "Press ENTER to open the API documentation in your browser..." -ForegroundColor Yellow
-            Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
-            $null = Read-Host
-            
-            # Open browser in incognito/private mode
-            Write-Host "Opening browser..." -ForegroundColor Cyan
-            Start-Process "msedge" "--inprivate http://localhost:$PORT/docs" -ErrorAction SilentlyContinue
-            if ($LASTEXITCODE -ne 0) {
-                Start-Process "chrome" "--incognito http://localhost:$PORT/docs" -ErrorAction SilentlyContinue
-                if ($LASTEXITCODE -ne 0) {
-                    Start-Process "http://localhost:$PORT/docs"
-                }
-            }
-            
-            Write-Host ""
-            docker compose --env-file .env -f $COMPOSE_FILE up --build
-        }
-        "4" {
-            if (Test-Path python-dependency-management\scripts\test-python-version.ps1) {
-                Write-Host "Testing Python version configuration..." -ForegroundColor Yellow
-                & .\python-dependency-management\scripts\test-python-version.ps1
-            } else {
-                Write-Host "python-dependency-management\scripts\test-python-version.ps1 not found" -ForegroundColor Red
-            }
-        }
-        "5" {
-            Write-Host "Building production Docker image..." -ForegroundColor Cyan
-            Write-Host ""
-            if (Test-Path build-image\docker-compose.build.yml) {
-                docker compose -f build-image\docker-compose.build.yml run --rm build-image
-            } else {
-                Write-Host "build-image\docker-compose.build.yml not found" -ForegroundColor Red
-                Write-Host "Please ensure the build-image directory exists" -ForegroundColor Yellow
-            }
-        }
-        "6" {
-            Write-Host "Setting up CI/CD Pipeline..." -ForegroundColor Cyan
-            Write-Host ""
-            if (Test-Path ci-cd\docker-compose.cicd-setup.yml) {
-                docker compose -f ci-cd\docker-compose.cicd-setup.yml run --rm cicd-setup
-            } else {
-                Write-Host "ci-cd\docker-compose.cicd-setup.yml not found" -ForegroundColor Red
-                Write-Host "Please ensure the ci-cd directory exists" -ForegroundColor Yellow
-            }
-        }
-        "7" {
-            if (Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue) {
-                Invoke-CognitoSetup
-            } else {
-                Write-Host "Invalid selection. Starting backend directly..." -ForegroundColor Yellow
-                docker compose --env-file .env -f $COMPOSE_FILE up --build
-            }
-        }
-        default {
-            Write-Host "Invalid selection. Starting backend directly..." -ForegroundColor Yellow
-            docker compose --env-file .env -f $COMPOSE_FILE up --build
-        }
-    }
+    Show-MainMenu -Port $PORT -ComposeFile $COMPOSE_FILE
 }

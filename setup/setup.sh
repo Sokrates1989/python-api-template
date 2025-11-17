@@ -6,9 +6,9 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -f "${SCRIPT_DIR}/cognito_setup.sh" ]; then
+if [ -f "${SCRIPT_DIR}/modules/cognito_setup.sh" ]; then
     # shellcheck disable=SC1091
-    source "${SCRIPT_DIR}/cognito_setup.sh"
+    source "${SCRIPT_DIR}/modules/cognito_setup.sh"
 fi
 
 echo "🚀 Python API Template - Initial Setup"
