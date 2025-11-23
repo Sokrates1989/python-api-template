@@ -16,7 +16,7 @@ from api.settings import settings
 def _get_cognito_jwks() -> Dict[str, Dict[str, str]]:
     """Fetch the JWKS for the configured Cognito user pool."""
     region = (settings.AWS_REGION or "").strip()
-    user_pool = (settings.COGNITO_USER_POOL_ID or "").strip()
+    user_pool = (settings.get_cognito_user_pool_id() or "").strip()
 
     if not region or not user_pool:
         raise RuntimeError("AWS Cognito configuration is missing")
@@ -58,10 +58,10 @@ def _verify_cognito_token(token: str) -> Dict[str, str]:
 
     issuer = (
         f"https://cognito-idp.{settings.AWS_REGION}.amazonaws.com/"
-        f"{settings.COGNITO_USER_POOL_ID}"
+        f"{settings.get_cognito_user_pool_id()}"
     )
 
-    audience = settings.COGNITO_APP_CLIENT_ID
+    audience = settings.get_cognito_app_client_id()
     if audience == "app_client_id_is_not_set":
         audience = None
 
