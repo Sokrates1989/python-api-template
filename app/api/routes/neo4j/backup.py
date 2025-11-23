@@ -1,6 +1,7 @@
 """API routes for Neo4j database backup and restore operations."""
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import List
 from pathlib import Path
@@ -84,35 +85,26 @@ backup_service = Neo4jBackupService()
 
 @router.post("/create", response_model=BackupResponse)
 async def create_database_backup(compress: bool = True, use_apoc: bool = False, _: str = Depends(verify_admin_key)):
-    """
-    Create a Neo4j database backup.
-    
+    """Create a Neo4j database backup.
+
     **Requires admin authentication.**
-    
-    Args:
-        compress: Whether to compress the backup with gzip (default: True)
-        use_apoc: Whether to use APOC export (requires APOC plugin, default: False)
-        
-    Returns:
-        Backup information including filename and size
-        
-    Example:
-        ```
-        POST /backup/create?compress=true&use_apoc=false
-        Headers: X-Admin-Key: your-admin-key
-        ```
-        
-    Note:
-        - Standard backup exports all nodes and relationships as Cypher CREATE statements
-        - APOC backup uses the APOC plugin (if installed) for more efficient export
-        - Both methods create portable Cypher scripts that can be restored
+
+    The heavy backup work is executed in a threadpool to avoid blocking
+    the FastAPI event loop, but this endpoint still waits for completion
+    and returns the backup metadata in the response.
     """
     try:
         if use_apoc:
-            filename, filepath = backup_service.create_backup_apoc(compress=compress)
+            filename, filepath = await run_in_threadpool(
+                backup_service.create_backup_apoc,
+                compress=compress,
+            )
             backup_type = "apoc"
         else:
-            filename, filepath = backup_service.create_backup(compress=compress)
+            filename, filepath = await run_in_threadpool(
+                backup_service.create_backup,
+                compress=compress,
+            )
             backup_type = "cypher"
         
         # Get file size
@@ -172,28 +164,19 @@ async def download_backup(filename: str, _: str = Depends(verify_admin_key)):
 
 @router.post("/restore/{filename}", response_model=RestoreResponse)
 async def restore_from_backup(filename: str, _: str = Depends(verify_restore_key)):
-    """
-    Restore Neo4j database from an existing backup file.
-    
+    """Restore Neo4j database from an existing backup file.
+
     **⚠️ WARNING: This will DELETE ALL existing data and replace it with the backup!**
-    
+
     **Requires admin authentication.**
-    
-    Args:
-        filename: Name of the backup file to restore from
-        
-    Returns:
-        Restore operation result
-        
-    Example:
-        ```
-        POST /backup/restore/backup_neo4j_20241110_120000.cypher.gz
-        Headers: X-Admin-Key: your-admin-key
-        ```
+
+    The restore operation itself is heavy and runs in a threadpool so the
+    event loop stays responsive, but this endpoint still waits until the
+    restore finishes and then returns the result.
     """
     try:
         filepath = backup_service.get_backup_path(filename)
-        backup_service.restore_backup(filepath)
+        await run_in_threadpool(backup_service.restore_backup, filepath)
         
         return RestoreResponse(
             success=True,

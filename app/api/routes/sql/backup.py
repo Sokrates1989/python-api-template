@@ -1,6 +1,7 @@
 """API routes for database backup and restore operations."""
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from fastapi.responses import FileResponse
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import List
 from pathlib import Path
@@ -80,7 +81,10 @@ async def create_database_backup(compress: bool = True, _: str = Depends(verify_
         ```
     """
     try:
-        filename, filepath = backup_service.create_backup(compress=compress)
+        filename, filepath = await run_in_threadpool(
+            backup_service.create_backup,
+            compress=compress,
+        )
         
         # Get file size
         size_bytes = filepath.stat().st_size
@@ -162,7 +166,11 @@ async def restore_from_backup(filename: str, create_safety_backup: bool = True, 
     """
     try:
         filepath = backup_service.get_backup_path(filename)
-        restore_info = backup_service.restore_backup(filepath, create_safety_backup=create_safety_backup)
+        restore_info = await run_in_threadpool(
+            backup_service.restore_backup,
+            filepath,
+            create_safety_backup=create_safety_backup,
+        )
         
         return RestoreResponse(
             success=True,
@@ -213,7 +221,11 @@ async def restore_from_uploaded_backup(file: UploadFile = File(...), create_safe
             shutil.copyfileobj(file.file, temp)
         
         # Restore from temporary file
-        restore_info = backup_service.restore_backup(temp_file, create_safety_backup=create_safety_backup)
+        restore_info = await run_in_threadpool(
+            backup_service.restore_backup,
+            temp_file,
+            create_safety_backup=create_safety_backup,
+        )
         
         return RestoreResponse(
             success=True,
