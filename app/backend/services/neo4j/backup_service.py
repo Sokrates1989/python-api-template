@@ -1,9 +1,11 @@
 """Database backup and restore service for Neo4j."""
 import subprocess
 import os
+import tempfile
+import time
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Tuple
 import gzip
 import json
 from neo4j import GraphDatabase
@@ -13,10 +15,92 @@ from api.settings import settings
 class Neo4jBackupService:
     """Service for creating and restoring Neo4j database backups."""
     
+    LOCK_TIMEOUT = 7200  # 2 hours in seconds
+    
     def __init__(self):
-        """Initialize Neo4j backup service."""
+        """Initialize Neo4j backup service with file-based tracking."""
         self.backup_dir = Path("/app/backups")
         self.backup_dir.mkdir(exist_ok=True)
+        
+        # Create data directory for locks and status files
+        self.data_dir = Path(tempfile.gettempdir()) / "neo4j_backup"
+        self.data_dir.mkdir(exist_ok=True)
+        
+        self.lock_file = self.data_dir / "operation.lock"
+        self.status_file = self.data_dir / "restore_status.json"
+        self.warnings_file = self.data_dir / "restore_warnings.json"
+
+    def _acquire_lock(self, operation: str) -> bool:
+        """Acquire operation lock to prevent concurrent operations."""
+        try:
+            if self.lock_file.exists():
+                lock_data = json.loads(self.lock_file.read_text())
+                lock_time = lock_data.get("timestamp", 0)
+                if time.time() - lock_time < self.LOCK_TIMEOUT:
+                    return False
+            lock_data = {"operation": operation, "timestamp": time.time()}
+            self.lock_file.write_text(json.dumps(lock_data))
+            return True
+        except Exception as e:
+            print(f"Warning: Failed to acquire lock: {e}")
+            return True
+
+    def _release_lock(self):
+        """Release the operation lock."""
+        try:
+            if self.lock_file.exists():
+                self.lock_file.unlink()
+        except Exception as e:
+            print(f"Warning: Failed to release lock: {e}")
+
+    def _update_restore_progress(
+        self, status: str, current: int = 0, total: int = 0,
+        message: str = "", warnings: list = None
+    ):
+        """Update restore operation progress to file."""
+        try:
+            progress_data = {
+                "status": status, "current": current, "total": total,
+                "message": message,
+                "warnings_count": len(warnings) if warnings else 0,
+                "timestamp": datetime.now().isoformat()
+            }
+            self.status_file.write_text(json.dumps(progress_data, indent=2))
+            if warnings:
+                self.warnings_file.write_text(json.dumps(warnings, indent=2))
+        except Exception as e:
+            print(f"Warning: Failed to update progress: {e}")
+
+    def get_restore_status(self) -> Optional[Dict]:
+        """Get current restore operation status."""
+        try:
+            if not self.status_file.exists():
+                return None
+            status_data = json.loads(self.status_file.read_text())
+            if self.warnings_file.exists():
+                status_data["warnings"] = json.loads(self.warnings_file.read_text())
+            lock_operation = self.check_operation_lock()
+            status_data["is_locked"] = bool(lock_operation)
+            status_data["lock_operation"] = lock_operation
+            return status_data
+        except Exception as e:
+            print(f"Warning: Failed to get restore status: {e}")
+            return None
+
+    def check_operation_lock(self) -> Optional[str]:
+        """Check if there's an active operation lock."""
+        try:
+            if not self.lock_file.exists():
+                return None
+            lock_data = json.loads(self.lock_file.read_text())
+            lock_time = lock_data.get("timestamp", 0)
+            if time.time() - lock_time >= self.LOCK_TIMEOUT:
+                self.lock_file.unlink()
+                return None
+            return lock_data.get("operation")
+        except Exception as e:
+            print(f"Warning: Failed to check lock: {e}")
+            return None
         
     def create_backup(self, compress: bool = True) -> tuple[str, Path]:
         """
@@ -111,11 +195,17 @@ class Neo4jBackupService:
             raise Exception(f"Neo4j backup failed: {str(e)}")
     
     def _format_value(self, value) -> str:
-        """Format a value for Cypher."""
+        """Format a value for Cypher.
+
+        Uses JSON-style string escaping for text values so that embedded
+        quotes, backslashes and newlines do not break the generated Cypher
+        statements when they are executed during restore.
+        """
         if isinstance(value, str):
-            # Escape quotes and backslashes
-            escaped = value.replace('\\', '\\\\').replace('"', '\\"')
-            return f'"{escaped}"'
+            # json.dumps produces a valid string literal with proper escaping
+            # (e.g. quotes, backslashes, newlines as \n). We keep
+            # ensure_ascii=False so non-ASCII characters remain readable.
+            return json.dumps(value, ensure_ascii=False)
         elif isinstance(value, bool):
             return str(value).lower()
         elif isinstance(value, (int, float)):
@@ -198,7 +288,7 @@ class Neo4jBackupService:
                 raise Exception("APOC plugin not available. Use standard backup method instead.")
             raise Exception(f"Neo4j APOC backup failed: {str(e)}")
     
-    def restore_backup(self, backup_file: Path) -> None:
+    def restore_backup(self, backup_file: Path):
         """
         Restore Neo4j database from backup file.
         
@@ -207,16 +297,36 @@ class Neo4jBackupService:
         Args:
             backup_file: Path to backup file
             
+        Returns:
+            List of warnings encountered during restore
+            
         Raises:
-            Exception: If restore fails
+            Exception: If restore fails or operation is locked
         """
         if not backup_file.exists():
             raise FileNotFoundError(f"Backup file not found: {backup_file}")
+        
+        # Check if another operation is in progress
+        lock_operation = self.check_operation_lock()
+        if lock_operation:
+            raise Exception(f"Cannot restore: {lock_operation} operation is in progress")
+        
+        # Acquire lock for restore operation
+        if not self._acquire_lock("restore"):
+            raise Exception("Failed to acquire lock for restore operation")
         
         # Check if file is compressed
         is_compressed = backup_file.suffix == '.gz'
         
         try:
+            # Initialize progress tracking
+            self._update_restore_progress(
+                status="in_progress",
+                current=0,
+                total=0,
+                message="Reading backup file..."
+            )
+            
             # Read backup file
             if is_compressed:
                 with gzip.open(backup_file, 'rt', encoding='utf-8') as f:
@@ -231,31 +341,85 @@ class Neo4jBackupService:
                 auth=(settings.DB_USER, settings.get_db_password())
             )
             
+            warnings = []
+            max_warnings_to_collect = 100
+            
             with driver.session() as session:
                 # Clear existing data
                 print("🗑️  Clearing existing data...")
+                self._update_restore_progress(
+                    status="in_progress",
+                    message="Clearing existing database data..."
+                )
                 session.run("MATCH (n) DETACH DELETE n")
                 
                 # Execute each Cypher statement
                 print("📥 Restoring data...")
                 statements = [s.strip() for s in cypher_statements.split(';') if s.strip()]
+                total = len(statements)
+                
+                self._update_restore_progress(
+                    status="in_progress",
+                    current=0,
+                    total=total,
+                    message=f"Restoring {total} statements..."
+                )
                 
                 for i, statement in enumerate(statements):
                     if statement:
                         try:
                             session.run(statement)
                             if (i + 1) % 100 == 0:
-                                print(f"   Executed {i + 1}/{len(statements)} statements...")
+                                print(f"   Executed {i + 1}/{total} statements...")
+                                self._update_restore_progress(
+                                    status="in_progress",
+                                    current=i + 1,
+                                    total=total,
+                                    message=f"Executing statement {i + 1} of {total}...",
+                                    warnings=warnings
+                                )
                         except Exception as e:
-                            print(f"   Warning: Failed to execute statement {i + 1}: {e}")
+                            warn_msg = f"Failed to execute statement {i + 1}/{total}: {e}"
+                            print(f"   Warning: {warn_msg}")
+                            
+                            # Collect a limited number of warning details
+                            if len(warnings) < max_warnings_to_collect:
+                                snippet = statement.replace("\n", " ")
+                                if len(snippet) > 200:
+                                    snippet = snippet[:200] + "..."
+                                warnings.append(f"{warn_msg} | Cypher: {snippet}")
                             # Continue with other statements
                 
-                print(f"✅ Executed {len(statements)} statements")
+                print(f"✅ Executed {total} statements")
             
             driver.close()
             
+            # Update final status
+            self._update_restore_progress(
+                status="completed",
+                current=total,
+                total=total,
+                message=f"Restore completed. Executed {total} statements.",
+                warnings=warnings
+            )
+            
+            return warnings
+            
         except Exception as e:
+            # Update failed status
+            self._update_restore_progress(
+                status="failed",
+                message=f"Restore failed: {str(e)}"
+            )
             raise Exception(f"Neo4j restore failed: {str(e)}")
+        finally:
+            # Always release lock and clean up temp file when done
+            self._release_lock()
+            if backup_file.exists():
+                try:
+                    backup_file.unlink()
+                except Exception as e:
+                    print(f"Warning: Failed to clean up temp file: {e}")
     
     def list_backups(self) -> list[dict]:
         """

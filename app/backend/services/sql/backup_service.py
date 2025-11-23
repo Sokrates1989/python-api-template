@@ -2,9 +2,11 @@
 import subprocess
 import os
 import tempfile
+import time
+import json
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict
 import gzip
 import shutil
 from api.settings import settings
@@ -13,10 +15,92 @@ from api.settings import settings
 class BackupService:
     """Service for creating and restoring database backups."""
     
+    LOCK_TIMEOUT = 7200  # 2 hours in seconds
+    
     def __init__(self):
-        """Initialize backup service."""
+        """Initialize backup service with file-based tracking."""
         self.backup_dir = Path("/app/backups")
         self.backup_dir.mkdir(exist_ok=True)
+        
+        # Create data directory for locks and status files
+        self.data_dir = Path(tempfile.gettempdir()) / "sql_backup"
+        self.data_dir.mkdir(exist_ok=True)
+        
+        self.lock_file = self.data_dir / "operation.lock"
+        self.status_file = self.data_dir / "restore_status.json"
+        self.warnings_file = self.data_dir / "restore_warnings.json"
+
+    def _acquire_lock(self, operation: str) -> bool:
+        """Acquire operation lock to prevent concurrent operations."""
+        try:
+            if self.lock_file.exists():
+                lock_data = json.loads(self.lock_file.read_text())
+                lock_time = lock_data.get("timestamp", 0)
+                if time.time() - lock_time < self.LOCK_TIMEOUT:
+                    return False
+            lock_data = {"operation": operation, "timestamp": time.time()}
+            self.lock_file.write_text(json.dumps(lock_data))
+            return True
+        except Exception as e:
+            print(f"Warning: Failed to acquire lock: {e}")
+            return True
+
+    def _release_lock(self):
+        """Release the operation lock."""
+        try:
+            if self.lock_file.exists():
+                self.lock_file.unlink()
+        except Exception as e:
+            print(f"Warning: Failed to release lock: {e}")
+
+    def _update_restore_progress(
+        self, status: str, current: int = 0, total: int = 0,
+        message: str = "", warnings: list = None
+    ):
+        """Update restore operation progress to file."""
+        try:
+            progress_data = {
+                "status": status, "current": current, "total": total,
+                "message": message,
+                "warnings_count": len(warnings) if warnings else 0,
+                "timestamp": datetime.now().isoformat()
+            }
+            self.status_file.write_text(json.dumps(progress_data, indent=2))
+            if warnings:
+                self.warnings_file.write_text(json.dumps(warnings, indent=2))
+        except Exception as e:
+            print(f"Warning: Failed to update progress: {e}")
+
+    def get_restore_status(self) -> Optional[Dict]:
+        """Get current restore operation status."""
+        try:
+            if not self.status_file.exists():
+                return None
+            status_data = json.loads(self.status_file.read_text())
+            if self.warnings_file.exists():
+                status_data["warnings"] = json.loads(self.warnings_file.read_text())
+            lock_operation = self.check_operation_lock()
+            status_data["is_locked"] = bool(lock_operation)
+            status_data["lock_operation"] = lock_operation
+            return status_data
+        except Exception as e:
+            print(f"Warning: Failed to get restore status: {e}")
+            return None
+
+    def check_operation_lock(self) -> Optional[str]:
+        """Check if there's an active operation lock."""
+        try:
+            if not self.lock_file.exists():
+                return None
+            lock_data = json.loads(self.lock_file.read_text())
+            lock_time = lock_data.get("timestamp", 0)
+            if time.time() - lock_time >= self.LOCK_TIMEOUT:
+                self.lock_file.unlink()
+                return None
+            return lock_data.get("operation")
+        except Exception as e:
+            print(f"Warning: Failed to check lock: {e}")
+            return None
         
     def create_backup(self, compress: bool = True) -> tuple[str, Path]:
         """
@@ -169,63 +253,125 @@ class BackupService:
             create_safety_backup: If True, creates a backup before restoring (default: True)
             
         Returns:
-            dict: Information about the restore operation including safety backup filename
+            dict: Information about the restore operation including safety backup filename and warnings
             
         Raises:
-            Exception: If restore fails
+            Exception: If restore fails or operation is locked
         """
         if not backup_file.exists():
             raise FileNotFoundError(f"Backup file not found: {backup_file}")
         
+        # Check if another operation is in progress
+        lock_operation = self.check_operation_lock()
+        if lock_operation:
+            raise Exception(f"Cannot restore: {lock_operation} operation is in progress")
+        
+        # Acquire lock for restore operation
+        if not self._acquire_lock("restore"):
+            raise Exception("Failed to acquire lock for restore operation")
+        
         db_type = settings.DB_TYPE.lower()
         safety_backup_filename = None
+        warnings = []
         
-        # Create safety backup before restoring
-        if create_safety_backup:
-            try:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                safety_backup_filename = f"safety_backup_{db_type}_{timestamp}.sql.gz"
-                safety_backup_path = self.backup_dir / safety_backup_filename
-                
-                # Create compressed backup
-                if db_type in ["postgresql", "postgres"]:
-                    self._backup_postgresql(timestamp, compress=True)
-                elif db_type == "mysql":
-                    self._backup_mysql(timestamp, compress=True)
-                elif db_type == "sqlite":
-                    self._backup_sqlite(timestamp, compress=True)
-                
-                # Rename to safety backup
-                latest_backup = max(self.backup_dir.glob(f"backup_{db_type}_*.sql.gz"), 
-                                  key=lambda p: p.stat().st_mtime)
-                latest_backup.rename(safety_backup_path)
-                
-            except Exception as e:
-                raise Exception(f"Failed to create safety backup: {str(e)}")
-        
-        # Check if file is compressed
-        is_compressed = backup_file.suffix == '.gz'
-        
-        # Drop existing database data before restore
         try:
-            self._drop_database()
+            # Initialize progress tracking
+            self._update_restore_progress(
+                status="in_progress",
+                message="Starting restore operation...",
+                warnings=warnings
+            )
+            
+            # Create safety backup before restoring
+            if create_safety_backup:
+                try:
+                    self._update_restore_progress(
+                        status="in_progress",
+                        message="Creating safety backup...",
+                        warnings=warnings
+                    )
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    safety_backup_filename = f"safety_backup_{db_type}_{timestamp}.sql.gz"
+                    safety_backup_path = self.backup_dir / safety_backup_filename
+                    
+                    # Create compressed backup
+                    if db_type in ["postgresql", "postgres"]:
+                        self._backup_postgresql(timestamp, compress=True)
+                    elif db_type == "mysql":
+                        self._backup_mysql(timestamp, compress=True)
+                    elif db_type == "sqlite":
+                        self._backup_sqlite(timestamp, compress=True)
+                    
+                    # Rename to safety backup
+                    latest_backup = max(self.backup_dir.glob(f"backup_{db_type}_*.sql.gz"), 
+                                      key=lambda p: p.stat().st_mtime)
+                    latest_backup.rename(safety_backup_path)
+                    
+                except Exception as e:
+                    warn_msg = f"Failed to create safety backup: {str(e)}"
+                    warnings.append(warn_msg)
+                    print(f"Warning: {warn_msg}")
+            
+            # Check if file is compressed
+            is_compressed = backup_file.suffix == '.gz'
+            
+            # Drop existing database data before restore
+            try:
+                self._update_restore_progress(
+                    status="in_progress",
+                    message="Dropping existing database data...",
+                    warnings=warnings
+                )
+                self._drop_database()
+            except Exception as e:
+                raise Exception(f"Failed to drop existing database: {str(e)}")
+            
+            # Restore from backup
+            self._update_restore_progress(
+                status="in_progress",
+                message=f"Restoring {db_type} database from backup...",
+                warnings=warnings
+            )
+            
+            if db_type in ["postgresql", "postgres"]:
+                self._restore_postgresql(backup_file, is_compressed)
+            elif db_type == "mysql":
+                self._restore_mysql(backup_file, is_compressed)
+            elif db_type == "sqlite":
+                self._restore_sqlite(backup_file, is_compressed)
+            else:
+                raise ValueError(f"Restore not supported for database type: {db_type}")
+            
+            # Update final status
+            self._update_restore_progress(
+                status="completed",
+                message="Restore completed successfully",
+                warnings=warnings
+            )
+            
+            return {
+                "safety_backup_created": create_safety_backup,
+                "safety_backup_filename": safety_backup_filename,
+                "warnings": warnings,
+                "warning_count": len(warnings)
+            }
+            
         except Exception as e:
-            raise Exception(f"Failed to drop existing database: {str(e)}")
-        
-        # Restore from backup
-        if db_type in ["postgresql", "postgres"]:
-            self._restore_postgresql(backup_file, is_compressed)
-        elif db_type == "mysql":
-            self._restore_mysql(backup_file, is_compressed)
-        elif db_type == "sqlite":
-            self._restore_sqlite(backup_file, is_compressed)
-        else:
-            raise ValueError(f"Restore not supported for database type: {db_type}")
-        
-        return {
-            "safety_backup_created": create_safety_backup,
-            "safety_backup_filename": safety_backup_filename
-        }
+            # Update failed status
+            self._update_restore_progress(
+                status="failed",
+                message=f"Restore failed: {str(e)}",
+                warnings=warnings
+            )
+            raise
+        finally:
+            # Always release lock and clean up temp file when done
+            self._release_lock()
+            if backup_file.exists():
+                try:
+                    backup_file.unlink()
+                except Exception as e:
+                    print(f"Warning: Failed to clean up temp file: {e}")
     
     def _restore_postgresql(self, backup_file: Path, is_compressed: bool) -> None:
         """Restore PostgreSQL database using psql."""

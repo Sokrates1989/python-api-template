@@ -1,6 +1,6 @@
 """API routes for Neo4j database backup and restore operations."""
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, BackgroundTasks
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from typing import List
 from pathlib import Path
@@ -47,12 +47,27 @@ class RestoreResponse(BaseModel):
     """Response model for restore operation."""
     success: bool
     message: str
+    warnings: List[str] | None = None
+    warning_count: int = 0
 
 
 class DeleteResponse(BaseModel):
     """Response model for delete operation."""
     success: bool
     message: str
+
+
+class RestoreStatusResponse(BaseModel):
+    """Response model for restore operation status."""
+    status: str  # in_progress, completed, failed, or none
+    current: int = 0
+    total: int = 0
+    message: str = ""
+    warnings_count: int = 0
+    warnings: List[str] | None = None
+    timestamp: str | None = None
+    is_locked: bool = False
+    lock_operation: str | None = None
 
 
 class DatabaseStats(BaseModel):
@@ -194,51 +209,83 @@ async def restore_from_backup(filename: str, _: str = Depends(verify_restore_key
 
 
 @router.post("/restore-upload", response_model=RestoreResponse)
-async def restore_from_uploaded_backup(file: UploadFile = File(...), _: str = Depends(verify_restore_key)):
+async def restore_from_uploaded_backup(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    _: str = Depends(verify_restore_key)
+):
     """
-    Restore Neo4j database from an uploaded backup file.
+    Restore Neo4j database from an uploaded backup file (runs in background).
     
     **⚠️ WARNING: This will DELETE ALL existing data and replace it with the backup!**
     
-    **Requires admin authentication.**
+    **Requires restore authentication.**
+    
+    This endpoint accepts the backup file, saves it, and starts the restore
+    operation in the background. It returns immediately with a 202 Accepted status.
+    
+    Use GET /backup/restore-status to monitor the restore progress.
     
     Args:
         file: Backup file to upload and restore from (Cypher script)
         
     Returns:
-        Restore operation result
+        Immediate response confirming restore has started
         
     Example:
         ```
         POST /backup/restore-upload
-        Headers: X-Admin-Key: your-admin-key
+        Headers: X-Restore-Key: your-restore-key
         Body: multipart/form-data with file
+        
+        Response: 202 Accepted
+        {
+            "success": true,
+            "message": "Restore operation started in background..."
+        }
+        
+        Then poll: GET /backup/restore-status
         ```
+        
+    Security:
+        - Requires X-Restore-Key header with restore API key
+        - Clears all existing Neo4j data before restore
+        - Use with extreme caution in production
     """
-    # Create temporary file
     temp_file = None
     try:
+        # Check if another operation is in progress
+        lock_operation = backup_service.check_operation_lock()
+        if lock_operation:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot start restore: {lock_operation} operation is already in progress"
+            )
+        
         # Save uploaded file to temporary location
-        suffix = '.cypher.gz' if file.filename.endswith('.gz') else '.cypher'
+        suffix = '.cypher.gz' if file.filename and file.filename.endswith('.gz') else '.cypher'
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp:
             temp_file = Path(temp.name)
             shutil.copyfileobj(file.file, temp)
         
-        # Restore from temporary file
-        backup_service.restore_backup(temp_file)
+        # Start restore in background
+        background_tasks.add_task(backup_service.restore_backup, temp_file)
         
-        return RestoreResponse(
-            success=True,
-            message=f"Neo4j database restored successfully from uploaded file: {file.filename}"
+        return JSONResponse(
+            status_code=202,
+            content={
+                "success": True,
+                "message": f"Restore operation started in background for file: {file.filename}. Use GET /backup/restore-status to monitor progress."
+            }
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Restore failed: {str(e)}")
-        
-    finally:
-        # Clean up temporary file
+        # Clean up temp file on error
         if temp_file and temp_file.exists():
             temp_file.unlink()
+        raise HTTPException(status_code=500, detail=f"Failed to start restore: {str(e)}")
 
 
 @router.get("/list", response_model=BackupListResponse)
@@ -302,6 +349,57 @@ async def delete_backup(filename: str, _: str = Depends(verify_delete_key)):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")
+
+
+@router.get("/restore-status", response_model=RestoreStatusResponse)
+async def get_restore_status(_: str = Depends(verify_restore_key)):
+    """
+    Get the current status of a restore operation.
+    
+    **Requires restore authentication.**
+    
+    Returns:
+        Current restore operation status including progress, warnings, and lock status
+        
+    Example:
+        ```
+        GET /backup/restore-status
+        Headers: X-Restore-Key: your-restore-key
+        ```
+        
+    Response:
+        - `status`: Operation status (in_progress, completed, failed, or none)
+        - `current`: Current statement number being executed
+        - `total`: Total number of statements
+        - `message`: Status message
+        - `warnings_count`: Number of warnings encountered
+        - `warnings`: List of warning messages (if any)
+        - `is_locked`: Whether backup/restore operations are currently locked
+        - `lock_operation`: Name of the operation holding the lock (if any)
+        
+    Useful for:
+        - Monitoring long-running restore operations
+        - Checking if restore completed successfully
+        - Detecting if another operation is blocking backup/restore
+        - Viewing warnings from the most recent restore
+    """
+    try:
+        status = backup_service.get_restore_status()
+        
+        if status is None:
+            # No restore operation tracked
+            lock_operation = backup_service.check_operation_lock()
+            return RestoreStatusResponse(
+                status="none",
+                message="No restore operation in progress or completed recently",
+                is_locked=bool(lock_operation),
+                lock_operation=lock_operation
+            )
+        
+        return RestoreStatusResponse(**status)
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get restore status: {str(e)}")
 
 
 @router.get("/stats", response_model=DatabaseStats)
