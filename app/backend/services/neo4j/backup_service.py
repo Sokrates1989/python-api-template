@@ -197,15 +197,18 @@ class Neo4jBackupService:
     def _format_value(self, value) -> str:
         """Format a value for Cypher.
 
-        Uses JSON-style string escaping for text values so that embedded
-        quotes, backslashes and newlines do not break the generated Cypher
-        statements when they are executed during restore.
+        Properly escapes strings for Cypher syntax, handling quotes, backslashes,
+        and control characters that would otherwise break the generated statements.
         """
         if isinstance(value, str):
-            # json.dumps produces a valid string literal with proper escaping
-            # (e.g. quotes, backslashes, newlines as \n). We keep
-            # ensure_ascii=False so non-ASCII characters remain readable.
-            return json.dumps(value, ensure_ascii=False)
+            # Manually escape special characters for Cypher string literals
+            # Order matters: escape backslashes first, then other characters
+            escaped = value.replace('\\', '\\\\')  # Backslash must be first
+            escaped = escaped.replace('"', '\\"')   # Escape double quotes
+            escaped = escaped.replace('\n', '\\n')  # Escape newlines
+            escaped = escaped.replace('\r', '\\r')  # Escape carriage returns
+            escaped = escaped.replace('\t', '\\t')  # Escape tabs
+            return f'"{escaped}"'
         elif isinstance(value, bool):
             return str(value).lower()
         elif isinstance(value, (int, float)):
