@@ -34,19 +34,13 @@ def custom_openapi():
             "type": "apiKey",
             "in": "header",
             "name": "X-Admin-Key",
-            "description": "Admin API Key for backup operations (create, download, list)"
+            "description": "Admin API Key for backup operations (download backups)"
         },
         "X-Restore-Key": {
             "type": "apiKey",
             "in": "header",
             "name": "X-Restore-Key",
             "description": "Restore API Key for restore operations (overwrites database)"
-        },
-        "X-Delete-Key": {
-            "type": "apiKey",
-            "in": "header",
-            "name": "X-Delete-Key",
-            "description": "Delete API Key for delete operations (permanent deletion)"
         }
     }
     
@@ -56,9 +50,7 @@ def custom_openapi():
             for method, operation in path_item.items():
                 if method in ["get", "post", "delete", "put", "patch"]:
                     # Determine which security scheme based on endpoint
-                    if "delete" in path:
-                        operation["security"] = [{"X-Delete-Key": []}]
-                    elif "restore" in path:
+                    if "restore" in path:
                         operation["security"] = [{"X-Restore-Key": []}]
                     else:
                         operation["security"] = [{"X-Admin-Key": []}]

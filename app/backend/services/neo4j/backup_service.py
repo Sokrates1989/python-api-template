@@ -1,6 +1,4 @@
 """Database backup and restore service for Neo4j."""
-import subprocess
-import os
 import tempfile
 import time
 from pathlib import Path
@@ -19,9 +17,6 @@ class Neo4jBackupService:
     
     def __init__(self):
         """Initialize Neo4j backup service with file-based tracking."""
-        self.backup_dir = Path("/app/backups")
-        self.backup_dir.mkdir(exist_ok=True)
-        
         # Create data directory for locks and status files
         self.data_dir = Path(tempfile.gettempdir()) / "neo4j_backup"
         self.data_dir.mkdir(exist_ok=True)
@@ -102,27 +97,41 @@ class Neo4jBackupService:
             print(f"Warning: Failed to check lock: {e}")
             return None
         
-    def create_backup(self, compress: bool = True) -> tuple[str, Path]:
+    def create_backup_to_temp(self, compress: bool = True) -> Tuple[str, Path]:
         """
-        Create a Neo4j database backup using Cypher export.
+        Create a Neo4j database backup to a temporary file.
         
-        This exports all nodes and relationships as Cypher CREATE statements.
+        This exports all nodes and relationships as Cypher CREATE statements
+        to a temporary file that should be deleted after download.
         
         Args:
             compress: Whether to compress the backup with gzip
             
         Returns:
-            Tuple of (filename, filepath)
+            Tuple of (filename, temp_filepath)
             
         Raises:
-            Exception: If backup creation fails
+            Exception: If backup creation fails or operation is locked
         """
+        # Check if another operation is in progress
+        lock_operation = self.check_operation_lock()
+        if lock_operation:
+            raise Exception(f"Cannot create backup: {lock_operation} operation is in progress")
+        
+        # Acquire lock for backup operation
+        if not self._acquire_lock("backup"):
+            raise Exception("Failed to acquire lock for backup operation")
+        
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"backup_neo4j_{timestamp}.cypher"
         if compress:
             filename += ".gz"
         
-        filepath = self.backup_dir / filename
+        # Create temporary file that won't be auto-deleted
+        suffix = '.cypher.gz' if compress else '.cypher'
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        temp_filepath = Path(temp_file.name)
+        temp_file.close()  # Close it so we can write to it properly
         
         try:
             # Connect to Neo4j
@@ -178,21 +187,27 @@ class Neo4jBackupService:
             
             driver.close()
             
-            # Write to file
+            # Write to temporary file
             content = "\n".join(cypher_statements)
             
             if compress:
-                with gzip.open(filepath, 'wt', encoding='utf-8') as f:
+                with gzip.open(temp_filepath, 'wt', encoding='utf-8') as f:
                     f.write(content)
             else:
-                with open(filepath, 'w', encoding='utf-8') as f:
+                with open(temp_filepath, 'w', encoding='utf-8') as f:
                     f.write(content)
             
-            print(f"✅ Exported {len(cypher_statements)} statements")
-            return filename, filepath
+            print(f"✅ Exported {len(cypher_statements)} statements to temporary file")
+            return filename, temp_filepath
             
         except Exception as e:
+            # Clean up temp file on error
+            if temp_filepath.exists():
+                temp_filepath.unlink()
             raise Exception(f"Neo4j backup failed: {str(e)}")
+        finally:
+            # Always release lock when done
+            self._release_lock()
     
     def _format_value(self, value) -> str:
         """Format a value for Cypher.
@@ -228,68 +243,6 @@ class Neo4jBackupService:
         
         props_str = ", ".join([f"{k}: {self._format_value(v)}" for k, v in props.items()])
         return f"{{{props_str}}}"
-    
-    def create_backup_apoc(self, compress: bool = True) -> tuple[str, Path]:
-        """
-        Create a Neo4j database backup using APOC export (if available).
-        
-        This requires the APOC plugin to be installed in Neo4j.
-        
-        Args:
-            compress: Whether to compress the backup with gzip
-            
-        Returns:
-            Tuple of (filename, filepath)
-            
-        Raises:
-            Exception: If backup creation fails or APOC not available
-        """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"backup_neo4j_apoc_{timestamp}.cypher"
-        if compress:
-            filename += ".gz"
-        
-        filepath = self.backup_dir / filename
-        
-        try:
-            driver = GraphDatabase.driver(
-                settings.get_neo4j_uri(),
-                auth=(settings.DB_USER, settings.get_db_password())
-            )
-            
-            with driver.session() as session:
-                # Use APOC to export database
-                result = session.run("""
-                    CALL apoc.export.cypher.all(null, {
-                        stream: true,
-                        format: 'cypher-shell'
-                    })
-                    YIELD cypherStatements
-                    RETURN cypherStatements
-                """)
-                
-                record = result.single()
-                if not record:
-                    raise Exception("APOC export returned no data")
-                
-                content = record["cypherStatements"]
-            
-            driver.close()
-            
-            # Write to file
-            if compress:
-                with gzip.open(filepath, 'wt', encoding='utf-8') as f:
-                    f.write(content)
-            else:
-                with open(filepath, 'w', encoding='utf-8') as f:
-                    f.write(content)
-            
-            return filename, filepath
-            
-        except Exception as e:
-            if "apoc" in str(e).lower():
-                raise Exception("APOC plugin not available. Use standard backup method instead.")
-            raise Exception(f"Neo4j APOC backup failed: {str(e)}")
     
     def restore_backup(self, backup_file: Path):
         """
@@ -358,7 +311,22 @@ class Neo4jBackupService:
                 
                 # Execute each Cypher statement
                 print("📥 Restoring data...")
-                statements = [s.strip() for s in cypher_statements.split(';') if s.strip()]
+                # Backups generated by create_backup_to_temp contain exactly
+                # one Cypher statement per line (ending with ';'). Splitting
+                # on lines avoids breaking statements that contain ';' inside
+                # string literals (e.g. medication names).
+                raw_lines = cypher_statements.splitlines()
+                statements = []
+                for line in raw_lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    # Remove the trailing CLI-style ';' terminator while
+                    # leaving any semicolons inside string literals intact.
+                    if line.endswith(';'):
+                        line = line[:-1].strip()
+                    if line:
+                        statements.append(line)
                 total = len(statements)
                 
                 self._update_restore_progress(
@@ -423,76 +391,6 @@ class Neo4jBackupService:
                     backup_file.unlink()
                 except Exception as e:
                     print(f"Warning: Failed to clean up temp file: {e}")
-    
-    def list_backups(self) -> list[dict]:
-        """
-        List all available Neo4j backups.
-        
-        Returns:
-            List of backup info dictionaries
-        """
-        backups = []
-        
-        for backup_file in self.backup_dir.glob("backup_neo4j_*.cypher*"):
-            stat = backup_file.stat()
-            backups.append({
-                "filename": backup_file.name,
-                "size_bytes": stat.st_size,
-                "size_mb": round(stat.st_size / (1024 * 1024), 2),
-                "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                "compressed": backup_file.suffix == '.gz',
-                "backup_type": "apoc" if "apoc" in backup_file.name else "cypher"
-            })
-        
-        # Sort by creation time, newest first
-        backups.sort(key=lambda x: x['created_at'], reverse=True)
-        
-        return backups
-    
-    def delete_backup(self, filename: str) -> None:
-        """
-        Delete a backup file.
-        
-        Args:
-            filename: Name of backup file to delete
-            
-        Raises:
-            FileNotFoundError: If backup file doesn't exist
-        """
-        filepath = self.backup_dir / filename
-        
-        if not filepath.exists():
-            raise FileNotFoundError(f"Backup file not found: {filename}")
-        
-        # Security check: ensure file is in backup directory
-        if not filepath.resolve().parent == self.backup_dir.resolve():
-            raise ValueError("Invalid backup filename")
-        
-        filepath.unlink()
-    
-    def get_backup_path(self, filename: str) -> Path:
-        """
-        Get full path to backup file.
-        
-        Args:
-            filename: Name of backup file
-            
-        Returns:
-            Path to backup file
-            
-        Raises:
-            FileNotFoundError: If backup file doesn't exist
-        """
-        filepath = self.backup_dir / filename
-        
-        if not filepath.exists():
-            raise FileNotFoundError(f"Backup file not found: {filename}")
-        
-        # Security check
-        if not filepath.resolve().parent == self.backup_dir.resolve():
-            raise ValueError("Invalid backup filename")
-        
-        return filepath
     
     def get_database_stats(self) -> dict:
         """

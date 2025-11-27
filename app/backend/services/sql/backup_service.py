@@ -19,9 +19,6 @@ class BackupService:
     
     def __init__(self):
         """Initialize backup service with file-based tracking."""
-        self.backup_dir = Path("/app/backups")
-        self.backup_dir.mkdir(exist_ok=True)
-        
         # Create data directory for locks and status files
         self.data_dir = Path(tempfile.gettempdir()) / "sql_backup"
         self.data_dir.mkdir(exist_ok=True)
@@ -102,30 +99,43 @@ class BackupService:
             print(f"Warning: Failed to check lock: {e}")
             return None
         
-    def create_backup(self, compress: bool = True) -> tuple[str, Path]:
+    def create_backup_to_temp(self, compress: bool = True) -> tuple[str, Path]:
         """
-        Create a database backup.
+        Create a database backup to a temporary file.
         
         Args:
             compress: Whether to compress the backup with gzip
             
         Returns:
-            Tuple of (filename, filepath)
+            Tuple of (filename, temp_filepath)
             
         Raises:
-            Exception: If backup creation fails
+            Exception: If backup creation fails or operation is locked
         """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        db_type = settings.DB_TYPE.lower()
+        # Check if another operation is in progress
+        lock_operation = self.check_operation_lock()
+        if lock_operation:
+            raise Exception(f"Cannot create backup: {lock_operation} operation is in progress")
         
-        if db_type in ["postgresql", "postgres"]:
-            return self._backup_postgresql(timestamp, compress)
-        elif db_type == "mysql":
-            return self._backup_mysql(timestamp, compress)
-        elif db_type == "sqlite":
-            return self._backup_sqlite(timestamp, compress)
-        else:
-            raise ValueError(f"Backup not supported for database type: {db_type}")
+        # Acquire lock for backup operation
+        if not self._acquire_lock("backup"):
+            raise Exception("Failed to acquire lock for backup operation")
+        
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            db_type = settings.DB_TYPE.lower()
+            
+            if db_type in ["postgresql", "postgres"]:
+                return self._backup_postgresql(timestamp, compress)
+            elif db_type == "mysql":
+                return self._backup_mysql(timestamp, compress)
+            elif db_type == "sqlite":
+                return self._backup_sqlite(timestamp, compress)
+            else:
+                raise ValueError(f"Backup not supported for database type: {db_type}")
+        finally:
+            # Always release lock when done
+            self._release_lock()
     
     def _backup_postgresql(self, timestamp: str, compress: bool) -> tuple[str, Path]:
         """Create PostgreSQL backup using pg_dump."""
@@ -133,7 +143,11 @@ class BackupService:
         if compress:
             filename += ".gz"
         
-        filepath = self.backup_dir / filename
+        # Create temporary file
+        suffix = '.sql.gz' if compress else '.sql'
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        filepath = Path(temp_file.name)
+        temp_file.close()
         
         # Build pg_dump command
         env = os.environ.copy()
@@ -179,7 +193,11 @@ class BackupService:
         if compress:
             filename += ".gz"
         
-        filepath = self.backup_dir / filename
+        # Create temporary file
+        suffix = '.sql.gz' if compress else '.sql'
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        filepath = Path(temp_file.name)
+        temp_file.close()
         
         # Try mariadb-dump first (newer), fall back to mysqldump
         dump_cmd = 'mariadb-dump' if shutil.which('mariadb-dump') else 'mysqldump'
@@ -221,7 +239,11 @@ class BackupService:
         if compress:
             filename += ".gz"
         
-        filepath = self.backup_dir / filename
+        # Create temporary file
+        suffix = '.db.gz' if compress else '.db'
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        filepath = Path(temp_file.name)
+        temp_file.close()
         
         # SQLite database is a file, just copy it
         db_file = Path(settings.DB_NAME)
@@ -242,18 +264,15 @@ class BackupService:
         except Exception as e:
             raise Exception(f"SQLite backup failed: {str(e)}")
     
-    def restore_backup(self, backup_file: Path, create_safety_backup: bool = True) -> dict:
+    def restore_backup(self, backup_file: Path) -> dict:
         """
         Restore database from backup file.
         
-        Creates a safety backup before restoring and drops existing data.
-        
         Args:
             backup_file: Path to backup file
-            create_safety_backup: If True, creates a backup before restoring (default: True)
             
         Returns:
-            dict: Information about the restore operation including safety backup filename and warnings
+            dict: Information about the restore operation including warnings
             
         Raises:
             Exception: If restore fails or operation is locked
@@ -271,7 +290,6 @@ class BackupService:
             raise Exception("Failed to acquire lock for restore operation")
         
         db_type = settings.DB_TYPE.lower()
-        safety_backup_filename = None
         warnings = []
         
         try:
@@ -281,36 +299,6 @@ class BackupService:
                 message="Starting restore operation...",
                 warnings=warnings
             )
-            
-            # Create safety backup before restoring
-            if create_safety_backup:
-                try:
-                    self._update_restore_progress(
-                        status="in_progress",
-                        message="Creating safety backup...",
-                        warnings=warnings
-                    )
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    safety_backup_filename = f"safety_backup_{db_type}_{timestamp}.sql.gz"
-                    safety_backup_path = self.backup_dir / safety_backup_filename
-                    
-                    # Create compressed backup
-                    if db_type in ["postgresql", "postgres"]:
-                        self._backup_postgresql(timestamp, compress=True)
-                    elif db_type == "mysql":
-                        self._backup_mysql(timestamp, compress=True)
-                    elif db_type == "sqlite":
-                        self._backup_sqlite(timestamp, compress=True)
-                    
-                    # Rename to safety backup
-                    latest_backup = max(self.backup_dir.glob(f"backup_{db_type}_*.sql.gz"), 
-                                      key=lambda p: p.stat().st_mtime)
-                    latest_backup.rename(safety_backup_path)
-                    
-                except Exception as e:
-                    warn_msg = f"Failed to create safety backup: {str(e)}"
-                    warnings.append(warn_msg)
-                    print(f"Warning: {warn_msg}")
             
             # Check if file is compressed
             is_compressed = backup_file.suffix == '.gz'
@@ -350,8 +338,6 @@ class BackupService:
             )
             
             return {
-                "safety_backup_created": create_safety_backup,
-                "safety_backup_filename": safety_backup_filename,
                 "warnings": warnings,
                 "warning_count": len(warnings)
             }
@@ -589,72 +575,3 @@ class BackupService:
         except Exception as e:
             raise Exception(f"Failed to drop SQLite tables: {str(e)}")
     
-    def list_backups(self) -> list[dict]:
-        """
-        List all available backups.
-        
-        Returns:
-            List of backup info dictionaries
-        """
-        backups = []
-        
-        # Include both regular backups and safety backups
-        for backup_file in self.backup_dir.glob("*backup_*"):
-            stat = backup_file.stat()
-            backups.append({
-                "filename": backup_file.name,
-                "size_bytes": stat.st_size,
-                "size_mb": round(stat.st_size / (1024 * 1024), 2),
-                "created_at": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                "compressed": backup_file.suffix == '.gz'
-            })
-        
-        # Sort by creation time, newest first
-        backups.sort(key=lambda x: x['created_at'], reverse=True)
-        
-        return backups
-    
-    def delete_backup(self, filename: str) -> None:
-        """
-        Delete a backup file.
-        
-        Args:
-            filename: Name of backup file to delete
-            
-        Raises:
-            FileNotFoundError: If backup file doesn't exist
-        """
-        filepath = self.backup_dir / filename
-        
-        if not filepath.exists():
-            raise FileNotFoundError(f"Backup file not found: {filename}")
-        
-        # Security check: ensure file is in backup directory
-        if not filepath.resolve().parent == self.backup_dir.resolve():
-            raise ValueError("Invalid backup filename")
-        
-        filepath.unlink()
-    
-    def get_backup_path(self, filename: str) -> Path:
-        """
-        Get full path to backup file.
-        
-        Args:
-            filename: Name of backup file
-            
-        Returns:
-            Path to backup file
-            
-        Raises:
-            FileNotFoundError: If backup file doesn't exist
-        """
-        filepath = self.backup_dir / filename
-        
-        if not filepath.exists():
-            raise FileNotFoundError(f"Backup file not found: {filename}")
-        
-        # Security check
-        if not filepath.resolve().parent == self.backup_dir.resolve():
-            raise ValueError("Invalid backup filename")
-        
-        return filepath

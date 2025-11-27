@@ -1,6 +1,6 @@
 """API routes for database backup and restore operations."""
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, HTTPException, UploadFile, File, Depends, BackgroundTasks
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import List
@@ -9,300 +9,221 @@ import tempfile
 import shutil
 
 from backend.services.sql.backup_service import BackupService
-from api.security import verify_admin_key, verify_restore_key, verify_delete_key
+from api.security import verify_admin_key, verify_restore_key
 
 
 router = APIRouter(
     prefix="/backup",
-    tags=["Database Backup"]
+    tags=["database backup"]
     # Note: Security is applied per-endpoint based on operation sensitivity
 )
 
 
 # Pydantic models
-class BackupResponse(BaseModel):
-    """Response model for backup creation."""
-    success: bool
-    message: str
-    filename: str
-    size_mb: float
-
-
-class BackupInfo(BaseModel):
-    """Model for backup file information."""
-    filename: str
-    size_bytes: int
-    size_mb: float
-    created_at: str
-    compressed: bool
-
-
-class BackupListResponse(BaseModel):
-    """Response model for listing backups."""
-    backups: List[BackupInfo]
-    total_count: int
-
-
 class RestoreResponse(BaseModel):
     """Response model for restore operation."""
     success: bool
     message: str
-    safety_backup_created: bool = False
-    safety_backup_filename: str | None = None
+    warnings: List[str] | None = None
+    warning_count: int = 0
 
 
-class DeleteResponse(BaseModel):
-    """Response model for delete operation."""
-    success: bool
-    message: str
+class RestoreStatusResponse(BaseModel):
+    """Response model for restore operation status."""
+    status: str  # in_progress, completed, failed, or none
+    current: int = 0
+    total: int = 0
+    message: str = ""
+    warnings_count: int = 0
+    warnings: List[str] | None = None
+    timestamp: str | None = None
+    is_locked: bool = False
+    lock_operation: str | None = None
 
 
 # Initialize service
 backup_service = BackupService()
 
 
-@router.post("/create", response_model=BackupResponse)
-async def create_database_backup(compress: bool = True, _: str = Depends(verify_admin_key)):
+@router.get("/download")
+async def download_backup(compress: bool = True, _: str = Depends(verify_admin_key)):
     """
-    Create a database backup.
+    Create and immediately download a database backup.
     
-    **Security:** Requires `X-Admin-Key` header
+    **Requires admin authentication.**
+    
+    The backup is created in a temporary file and immediately returned for download.
+    The temporary file is automatically deleted after the download completes.
     
     Args:
         compress: Whether to compress the backup with gzip (default: True)
-        
-    Returns:
-        Backup information including filename and size
-        
-    Example:
-        ```
-        POST /backup/create?compress=true
-        Headers: X-Admin-Key: your-admin-key
-        ```
-    """
-    try:
-        filename, filepath = await run_in_threadpool(
-            backup_service.create_backup,
-            compress=compress,
-        )
-        
-        # Get file size
-        size_bytes = filepath.stat().st_size
-        size_mb = round(size_bytes / (1024 * 1024), 2)
-        
-        return BackupResponse(
-            success=True,
-            message=f"Backup created successfully: {filename}",
-            filename=filename,
-            size_mb=size_mb
-        )
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Backup creation failed: {str(e)}")
-
-
-@router.get("/download/{filename}")
-async def download_backup(filename: str, _: str = Depends(verify_admin_key)):
-    """
-    Download a backup file.
-    
-    **Security:** Requires `X-Admin-Key` header
-    
-    Args:
-        filename: Name of the backup file to download
         
     Returns:
         The backup file for download
         
     Example:
         ```
-        GET /backup/download/backup_postgresql_20241110_120000.sql.gz
+        GET /backup/download?compress=true
         Headers: X-Admin-Key: your-admin-key
         ```
+        
+    Note:
+        - Exports database as SQL statements
+        - Compressed backups (.sql.gz) are smaller and faster to transfer
+        - Uncompressed backups (.sql) are plain text and easier to inspect
     """
+    temp_filepath = None
     try:
-        filepath = backup_service.get_backup_path(filename)
+        # Create backup in temporary file off the main event loop
+        filename, temp_filepath = await run_in_threadpool(
+            backup_service.create_backup_to_temp,
+            compress=compress,
+        )
         
         # Determine media type
-        media_type = "application/gzip" if filename.endswith('.gz') else "application/sql"
+        media_type = "application/gzip" if compress else "application/sql"
         
+        # Return file for download (FastAPI will handle cleanup via background task)
         return FileResponse(
-            path=filepath,
+            path=temp_filepath,
             filename=filename,
-            media_type=media_type
+            media_type=media_type,
+            background=lambda: temp_filepath.unlink() if temp_filepath and temp_filepath.exists() else None
         )
         
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Backup file not found: {filename}")
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
-
-
-@router.post("/restore/{filename}", response_model=RestoreResponse)
-async def restore_from_backup(filename: str, create_safety_backup: bool = True, _: str = Depends(verify_restore_key)):
-    """
-    Restore database from an existing backup file.
-    
-    **⚠️ WARNING: This will overwrite the current database!**
-    
-    **Security:** Requires `X-Restore-Key` header
-    
-    Creates a safety backup before restoring and drops existing data.
-    
-    Args:
-        filename: Name of the backup file to restore from
-        create_safety_backup: Create a safety backup before restoring (default: True)
-        
-    Returns:
-        Restore operation result including safety backup info
-        
-    Example:
-        ```
-        POST /backup/restore/backup_postgresql_20241110_120000.sql.gz?create_safety_backup=true
-        Headers: X-Restore-Key: your-restore-key
-        ```
-    """
-    try:
-        filepath = backup_service.get_backup_path(filename)
-        restore_info = await run_in_threadpool(
-            backup_service.restore_backup,
-            filepath,
-            create_safety_backup=create_safety_backup,
-        )
-        
-        return RestoreResponse(
-            success=True,
-            message=f"Database restored successfully from: {filename}",
-            safety_backup_created=restore_info["safety_backup_created"],
-            safety_backup_filename=restore_info["safety_backup_filename"]
-        )
-        
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Backup file not found: {filename}")
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Restore failed: {str(e)}")
+        # Clean up temp file on error
+        if temp_filepath and temp_filepath.exists():
+            temp_filepath.unlink()
+        raise HTTPException(status_code=500, detail=f"Backup download failed: {str(e)}")
 
 
 @router.post("/restore-upload", response_model=RestoreResponse)
-async def restore_from_uploaded_backup(file: UploadFile = File(...), create_safety_backup: bool = True, _: str = Depends(verify_restore_key)):
+async def restore_from_uploaded_backup(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    _: str = Depends(verify_restore_key)
+):
     """
-    Restore database from an uploaded backup file.
+    Restore database from an uploaded backup file (runs in background).
     
     **⚠️ WARNING: This will overwrite the current database!**
     
-    **Security:** Requires `X-Restore-Key` header
+    **Requires restore authentication.**
     
-    Creates a safety backup before restoring and drops existing data.
+    This endpoint accepts the backup file, saves it, and starts the restore
+    operation in the background. It returns immediately with a 202 Accepted status.
+    
+    Use GET /backup/restore-status to monitor the restore progress.
     
     Args:
-        file: Backup file to upload and restore from
-        create_safety_backup: Create a safety backup before restoring (default: True)
+        file: Backup file to upload and restore from (SQL script)
         
     Returns:
-        Restore operation result including safety backup info
+        Immediate response confirming restore has started
         
     Example:
         ```
-        POST /backup/restore-upload?create_safety_backup=true
+        POST /backup/restore-upload
         Headers: X-Restore-Key: your-restore-key
         Body: multipart/form-data with file
+        
+        Response: 202 Accepted
+        {
+            "success": true,
+            "message": "Restore operation started in background..."
+        }
+        
+        Then poll: GET /backup/restore-status
         ```
+        
+    Security:
+        - Requires X-Restore-Key header with restore API key
+        - Drops and recreates database schema before restore
+        - Use with extreme caution in production
     """
-    # Create temporary file
     temp_file = None
     try:
+        # Check if another operation is in progress
+        lock_operation = backup_service.check_operation_lock()
+        if lock_operation:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot start restore: {lock_operation} operation is already in progress"
+            )
+        
         # Save uploaded file to temporary location
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.sql') as temp:
+        suffix = '.sql.gz' if file.filename and file.filename.endswith('.gz') else '.sql'
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp:
             temp_file = Path(temp.name)
             shutil.copyfileobj(file.file, temp)
         
-        # Restore from temporary file
-        restore_info = await run_in_threadpool(
-            backup_service.restore_backup,
-            temp_file,
-            create_safety_backup=create_safety_backup,
+        # Start restore in background
+        background_tasks.add_task(backup_service.restore_backup, temp_file)
+        
+        return JSONResponse(
+            status_code=202,
+            content={
+                "success": True,
+                "message": f"Restore operation started in background for file: {file.filename}. Use GET /backup/restore-status to monitor progress."
+            }
         )
         
-        return RestoreResponse(
-            success=True,
-            message=f"Database restored successfully from uploaded file: {file.filename}",
-            safety_backup_created=restore_info["safety_backup_created"],
-            safety_backup_filename=restore_info["safety_backup_filename"]
-        )
-        
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Restore failed: {str(e)}")
-        
-    finally:
-        # Clean up temporary file
+        # Clean up temp file on error
         if temp_file and temp_file.exists():
             temp_file.unlink()
+        raise HTTPException(status_code=500, detail=f"Failed to start restore: {str(e)}")
 
 
-@router.get("/list", response_model=BackupListResponse)
-async def list_backups(_: str = Depends(verify_admin_key)):
+@router.get("/restore-status", response_model=RestoreStatusResponse)
+async def get_restore_status(_: str = Depends(verify_restore_key)):
     """
-    List all available backup files.
+    Get the current status of a restore operation.
     
-    **Security:** Requires `X-Admin-Key` header
+    **Requires restore authentication.**
     
     Returns:
-        List of backup files with metadata
+        Current restore operation status including progress, warnings, and lock status
         
     Example:
         ```
-        GET /backup/list
-        Headers: X-Admin-Key: your-admin-key
+        GET /backup/restore-status
+        Headers: X-Restore-Key: your-restore-key
         ```
+        
+    Response:
+        - `status`: Operation status (in_progress, completed, failed, or none)
+        - `current`: Current statement number being executed
+        - `total`: Total number of statements
+        - `message`: Status message
+        - `warnings_count`: Number of warnings encountered
+        - `warnings`: List of warning messages (if any)
+        - `is_locked`: Whether backup/restore operations are currently locked
+        - `lock_operation`: Name of the operation holding the lock (if any)
+        
+    Useful for:
+        - Monitoring long-running restore operations
+        - Checking if restore completed successfully
+        - Detecting if another operation is blocking backup/restore
+        - Viewing warnings from the most recent restore
     """
     try:
-        backups = backup_service.list_backups()
+        status = backup_service.get_restore_status()
         
-        return BackupListResponse(
-            backups=[BackupInfo(**backup) for backup in backups],
-            total_count=len(backups)
-        )
+        if status is None:
+            # No restore operation tracked
+            lock_operation = backup_service.check_operation_lock()
+            return RestoreStatusResponse(
+                status="none",
+                message="No restore operation in progress or completed recently",
+                is_locked=bool(lock_operation),
+                lock_operation=lock_operation
+            )
+        
+        return RestoreStatusResponse(**status)
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list backups: {str(e)}")
-
-
-@router.delete("/delete/{filename}", response_model=DeleteResponse)
-async def delete_backup(filename: str, _: str = Depends(verify_delete_key)):
-    """
-    Delete a backup file.
-    
-    **⚠️ WARNING: This permanently deletes the backup file!**
-    
-    **Security:** Requires `X-Delete-Key` header
-    
-    Args:
-        filename: Name of the backup file to delete
-        
-    Returns:
-        Delete operation result
-        
-    Example:
-        ```
-        DELETE /backup/delete/backup_postgresql_20241110_120000.sql.gz
-        Headers: X-Delete-Key: your-delete-key
-        ```
-    """
-    try:
-        backup_service.delete_backup(filename)
-        
-        return DeleteResponse(
-            success=True,
-            message=f"Backup deleted successfully: {filename}"
-        )
-        
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=f"Backup file not found: {filename}")
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get restore status: {str(e)}")
