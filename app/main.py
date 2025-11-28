@@ -1,18 +1,32 @@
 # Entry point for the FastAPI app
-from fastapi import FastAPI, Request, HTTPException, Response
+from fastapi import FastAPI, Request, HTTPException, Response, Depends
 from fastapi.responses import JSONResponse
+from fastapi.concurrency import run_in_threadpool
 import uvicorn
 import redis
+from pydantic import BaseModel
 from api.settings import settings
 from api.routes import test, files, packages
 from backend.database import initialize_database, close_database
 from backend.database.migrations import run_migrations
+from api.security import verify_admin_key
+from backend.services.sql.backup_service import BackupService
+from backend.services.neo4j.backup_service import Neo4jBackupService
 
 app = FastAPI(
     title="Python API Template",
     description="A flexible API template with SQL and Neo4j support, including database backup/restore",
     version=settings.IMAGE_TAG
 )
+
+
+class DatabaseStats(BaseModel):
+    database_type: str
+    stats: dict
+
+
+sql_backup_service = BackupService()
+neo4j_backup_service = Neo4jBackupService()
 
 # Configure OpenAPI security schemes for Swagger UI
 def custom_openapi():
@@ -44,16 +58,19 @@ def custom_openapi():
         }
     }
     
-    # Add security requirements to backup and packages endpoints
+    # Add security requirements to backup, packages, and stats endpoints
     for path, path_item in openapi_schema.get("paths", {}).items():
         if path.startswith("/backup/") or path.startswith("/packages/"):
             for method, operation in path_item.items():
                 if method in ["get", "post", "delete", "put", "patch"]:
-                    # Determine which security scheme based on endpoint
                     if "restore" in path:
                         operation["security"] = [{"X-Restore-Key": []}]
                     else:
                         operation["security"] = [{"X-Admin-Key": []}]
+        if path == "/stats":
+            for method, operation in path_item.items():
+                if method in ["get"]:
+                    operation["security"] = [{"X-Admin-Key": []}]
     
     app.openapi_schema = openapi_schema
     return app.openapi_schema
@@ -85,21 +102,23 @@ app.include_router(test.router)
 app.include_router(files.router)
 app.include_router(packages.router)
 
+# Include database lock router (for coordination with backup-restore service)
+from api.routes import database_lock
+app.include_router(database_lock.router)
+
 # Conditionally include database-specific routers
 if settings.DB_TYPE in ["postgresql", "postgres", "mysql", "sqlite"]:
     # SQL-specific routes - uses relational database tables
-    from api.routes.sql import examples, backup, users
+    from api.routes.sql import examples, users
     app.include_router(examples.router)
-    app.include_router(backup.router)
     app.include_router(users.router)
-    print(f"✅ Registered SQL-specific routes (/examples/, /backup/, /users/) for {settings.DB_TYPE}")
+    print(f"✅ Registered SQL-specific routes (/examples/, /users/) for {settings.DB_TYPE}")
 elif settings.DB_TYPE == "neo4j":
     # Neo4j-specific routes - uses graph database nodes
-    from api.routes.neo4j import examples, backup, users
+    from api.routes.neo4j import examples, users
     app.include_router(examples.router)
-    app.include_router(backup.router)
     app.include_router(users.router)
-    print(f"✅ Registered Neo4j-specific routes (/example-nodes/, /backup/, /users/) for {settings.DB_TYPE}")
+    print(f"✅ Registered Neo4j-specific routes (/example-nodes/, /users/) for {settings.DB_TYPE}")
 else:
     print(f"ℹ️  No database-specific example routes registered - DB_TYPE={settings.DB_TYPE}")
 
@@ -111,16 +130,17 @@ async def block_writes_during_restore(request: Request, call_next):
     Block write operations (POST, PUT, PATCH, DELETE) during database restore.
     
     This prevents data corruption by ensuring no data modifications occur while
-    the database is being restored. Read operations (GET) are allowed to continue.
+    the database is being restored by an external backup-restore service.
+    Read operations (GET) are allowed to continue.
     
     Exempted endpoints:
-    - /backup/* (all backup/restore management endpoints)
+    - /database/* (database lock management endpoints)
     - /health (health check)
     - /version (version info)
     - /cache/* (Redis operations for testing)
     """
-    # Allow all backup endpoints to proceed (they manage the restore operation)
-    if request.url.path.startswith("/backup/"):
+    # Allow database lock endpoints to proceed (they manage the lock)
+    if request.url.path.startswith("/database/"):
         return await call_next(request)
     
     # Allow health, version, and cache endpoints
@@ -130,35 +150,27 @@ async def block_writes_during_restore(request: Request, call_next):
     if request.url.path.startswith("/cache/"):
         return await call_next(request)
     
-    # Check if restore is in progress for write operations
+    # Check if database is locked for write operations
     if request.method in ["POST", "PUT", "PATCH", "DELETE"]:
         try:
-            # Import the appropriate backup service based on DB type
-            backup_service = None
-            if settings.DB_TYPE == "neo4j":
-                from backend.services.neo4j.backup_service import Neo4jBackupService
-                backup_service = Neo4jBackupService()
-            elif settings.DB_TYPE in ["postgresql", "postgres", "mysql", "sqlite"]:
-                from backend.services.sql.backup_service import BackupService
-                backup_service = BackupService()
+            # Check lock status using the database_lock module
+            from api.routes.database_lock import _check_lock
+            lock_operation = _check_lock()
             
-            if backup_service:
-                lock_operation = backup_service.check_operation_lock()
-                
-                if lock_operation == "restore":
-                    return JSONResponse(
-                        status_code=503,
-                        content={
-                            "error": "Service temporarily unavailable",
-                            "detail": f"Database restore is in progress for {settings.DB_TYPE}. Write operations are blocked to prevent data corruption.",
-                            "operation_in_progress": lock_operation,
-                            "database_type": settings.DB_TYPE,
-                            "retry_after": "Poll GET /backup/restore-status to monitor restore progress"
-                        }
-                    )
+            if lock_operation:
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "error": "Service temporarily unavailable",
+                        "detail": f"Database is locked for {lock_operation} operation. Write operations are blocked to prevent data corruption.",
+                        "operation_in_progress": lock_operation,
+                        "database_type": settings.DB_TYPE,
+                        "retry_after": "Poll GET /database/lock-status to check lock status"
+                    }
+                )
         except Exception as e:
             # If we can't check the lock, allow the request (fail open)
-            print(f"Warning: Failed to check restore lock: {e}")
+            print(f"Warning: Failed to check database lock: {e}")
     
     return await call_next(request)
 
@@ -257,3 +269,19 @@ def get_version():
 # @app.get("/hot-reload-test")
 # def hot_reload_test():
 #     return {"message": "This endpoint was added while the container was running!", "timestamp": "2024-01-01"}
+
+@app.get("/stats", response_model=DatabaseStats)
+async def get_database_stats(_: str = Depends(verify_admin_key)):
+    db_type = settings.DB_TYPE.lower()
+    try:
+        if db_type in ["postgresql", "postgres", "mysql", "sqlite"]:
+            stats = await run_in_threadpool(sql_backup_service.get_database_stats)
+        elif db_type == "neo4j":
+            stats = await run_in_threadpool(neo4j_backup_service.get_database_stats)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported DB_TYPE for stats: {settings.DB_TYPE}")
+        return DatabaseStats(database_type=db_type, stats=stats)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get database stats: {str(e)}")

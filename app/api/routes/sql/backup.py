@@ -41,6 +41,14 @@ class RestoreStatusResponse(BaseModel):
     lock_operation: str | None = None
 
 
+class SQLDatabaseStats(BaseModel):
+    """Response model for SQL database statistics."""
+    table_count: int = 0
+    total_rows: int = 0
+    database_size_mb: float = 0.0
+    tables: List[dict] = []
+
+
 # Initialize service
 backup_service = BackupService()
 
@@ -227,3 +235,19 @@ async def get_restore_status(_: str = Depends(verify_restore_key)):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get restore status: {str(e)}")
+
+
+@router.get("/stats", response_model=SQLDatabaseStats)
+async def get_database_stats(_: str = Depends(verify_admin_key)):
+    """Get SQL database statistics for the configured database.
+
+    **Requires admin authentication.**
+
+    Returns table count, total row count, estimated database size, and
+    per-table metrics for the current database configured in settings.
+    """
+    try:
+        stats = await run_in_threadpool(backup_service.get_database_stats)
+        return SQLDatabaseStats(**stats)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get database stats: {str(e)}")

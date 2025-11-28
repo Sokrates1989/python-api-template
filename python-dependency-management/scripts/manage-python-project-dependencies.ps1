@@ -17,6 +17,30 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Fix-ShellScripts {
+    param(
+        [Parameter(Mandatory=$true)][string]$RootPath
+    )
+
+    if (-not (Test-Path $RootPath)) {
+        return
+    }
+
+    Write-ColorOutput "[python-dependency-management] Normalizing shell scripts (line endings & BOM)..." "Yellow"
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+    Get-ChildItem -Path $RootPath -Filter *.sh -Recurse | ForEach-Object {
+        $filePath = $_.FullName
+        $content = [System.IO.File]::ReadAllText($filePath)
+        $normalized = $content -replace "`r`n", "`n"
+        $normalized = $normalized -replace "`r", "`n"
+        if (-not $normalized.EndsWith("`n")) {
+            $normalized += "`n"
+        }
+        [System.IO.File]::WriteAllText($filePath, $normalized, $utf8NoBom)
+    }
+}
+
 # Helper function for colored output
 function Write-ColorOutput {
     param(
@@ -70,6 +94,9 @@ $originalPath = Get-Location
 # First go to the script's directory, then to parent (python-dependency-management)
 Set-Location $PSScriptRoot
 Set-Location ..
+
+# Normalize scripts before mounting into Docker
+Fix-ShellScripts -RootPath (Get-Location)
 
 # Check if config.env exists, if not create it from example
 if (-not (Test-Path "config.env")) {
@@ -130,6 +157,7 @@ Write-ColorOutput "[python-dependency-management] Building dev environment Docke
 
 # Build the Docker image using the root docker-compose file
 Set-Location ..
+Fix-ShellScripts -RootPath (Get-Location)
 & docker compose --env-file .env -f local-deployment\docker-compose-python-dependency-management.yml build
 
 if ($LASTEXITCODE -ne 0) {
@@ -139,7 +167,7 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-ColorOutput "[python-dependency-management] Running setup script to generate lock files..." "Yellow"
 
-# Run the setup script in a container (use bash to handle potential line ending issues)
+# Run the setup script in a container (scripts already normalized on the host)
 & docker compose --env-file .env -f local-deployment\docker-compose-python-dependency-management.yml run --rm dev /bin/bash ./python-dependency-management/dev-setup.sh
 
 if ($LASTEXITCODE -ne 0) {
