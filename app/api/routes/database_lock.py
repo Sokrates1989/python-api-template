@@ -8,6 +8,7 @@ from pathlib import Path
 import time
 
 from api.security import verify_admin_key
+from api.settings import settings
 
 
 router = APIRouter(
@@ -33,7 +34,7 @@ class LockResponse(BaseModel):
 LOCK_DIR = Path(tempfile.gettempdir()) / "api_db_lock"
 LOCK_DIR.mkdir(exist_ok=True)
 LOCK_FILE = LOCK_DIR / "database.lock"
-LOCK_TIMEOUT = 7200  # 2 hours in seconds
+LOCK_TIMEOUT = settings.DB_LOCK_TIMEOUT_SECONDS
 
 
 def _check_lock() -> Optional[str]:

@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     DB_HOST: str = "localhost"
     DB_NAME: str = ""
     DB_PORT: int = 5432
+    # Database lock configuration (for /database/lock endpoints)
+    DB_LOCK_TIMEOUT_SECONDS: int = 3600
 
     class Config:
         env_file = ".env"

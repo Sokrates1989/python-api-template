@@ -13,6 +13,11 @@ function Start-Backend {
     Write-Host "  API will be accessible at:" -ForegroundColor Cyan
     Write-Host "  http://localhost:$Port/docs" -ForegroundColor Yellow
     Write-Host "========================================" -ForegroundColor Green
+    if ($ComposeFile -like "*neo4j*") {
+        Write-Host "  Neo4j Browser will be accessible at:" -ForegroundColor Cyan
+        Write-Host "  http://localhost:7474" -ForegroundColor Yellow
+        Write-Host "========================================" -ForegroundColor Green
+    }
     Write-Host ""
     Write-Host "Press ENTER to open the API documentation in your browser..." -ForegroundColor Yellow
     Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
@@ -23,6 +28,10 @@ function Start-Backend {
     Start-Process "msedge" "--inprivate http://localhost:$Port/docs" -ErrorAction SilentlyContinue
     if ($LASTEXITCODE -ne 0) {
         Start-Process "chrome" "--incognito http://localhost:$Port/docs" -ErrorAction SilentlyContinue
+    }
+    if ($ComposeFile -like "*neo4j*") {
+        Write-Host "Opening Neo4j Browser at http://localhost:7474 ..." -ForegroundColor Cyan
+        Start-Process "http://localhost:7474" -ErrorAction SilentlyContinue
     }
     
     Write-Host ""
@@ -51,6 +60,11 @@ function Start-DependencyAndBackend {
     Write-Host "  API will be accessible at:" -ForegroundColor Cyan
     Write-Host "  http://localhost:$Port/docs" -ForegroundColor Yellow
     Write-Host "========================================" -ForegroundColor Green
+    if ($ComposeFile -like "*neo4j*") {
+        Write-Host "  Neo4j Browser will be accessible at:" -ForegroundColor Cyan
+        Write-Host "  http://localhost:7474" -ForegroundColor Yellow
+        Write-Host "========================================" -ForegroundColor Green
+    }
     Write-Host ""
     Write-Host "Press ENTER to open the API documentation in your browser..." -ForegroundColor Yellow
     Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
@@ -61,6 +75,10 @@ function Start-DependencyAndBackend {
     Start-Process "msedge" "--inprivate http://localhost:$Port/docs" -ErrorAction SilentlyContinue
     if ($LASTEXITCODE -ne 0) {
         Start-Process "chrome" "--incognito http://localhost:$Port/docs" -ErrorAction SilentlyContinue
+    }
+    if ($ComposeFile -like "*neo4j*") {
+        Write-Host "Opening Neo4j Browser at http://localhost:7474 ..." -ForegroundColor Cyan
+        Start-Process "http://localhost:7474" -ErrorAction SilentlyContinue
     }
     
     Write-Host ""
@@ -107,6 +125,11 @@ function Start-BackendNoCache {
     Write-Host "  API will be accessible at:" -ForegroundColor Cyan
     Write-Host "  http://localhost:$Port/docs" -ForegroundColor Yellow
     Write-Host "========================================" -ForegroundColor Green
+    if ($ComposeFile -like "*neo4j*") {
+        Write-Host "  Neo4j Browser will be accessible at:" -ForegroundColor Cyan
+        Write-Host "  http://localhost:7474" -ForegroundColor Yellow
+        Write-Host "========================================" -ForegroundColor Green
+    }
     Write-Host ""
     Write-Host "Press ENTER to open the API documentation in your browser..." -ForegroundColor Yellow
     Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
@@ -117,6 +140,10 @@ function Start-BackendNoCache {
     Start-Process "msedge" "--inprivate http://localhost:$Port/docs" -ErrorAction SilentlyContinue
     if ($LASTEXITCODE -ne 0) {
         Start-Process "chrome" "--incognito http://localhost:$Port/docs" -ErrorAction SilentlyContinue
+    }
+    if ($ComposeFile -like "*neo4j*") {
+        Write-Host "Opening Neo4j Browser at http://localhost:7474 ..." -ForegroundColor Cyan
+        Start-Process "http://localhost:7474" -ErrorAction SilentlyContinue
     }
     
     Write-Host ""
