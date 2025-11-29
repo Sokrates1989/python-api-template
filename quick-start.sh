@@ -36,6 +36,10 @@ echo ""
 
 # Check if initial setup is needed
 if [ ! -f .setup-complete ]; then
+    EXISTING_ENV_BEFORE_PROMPT=false
+    if [ -f .env ]; then
+        EXISTING_ENV_BEFORE_PROMPT=true
+    fi
     echo "🚀 Erstmalige Einrichtung erkannt!"
     echo ""
     echo "Dies scheint das erste Mal zu sein, dass du dieses Projekt ausführst."
@@ -61,18 +65,33 @@ if [ ! -f .setup-complete ]; then
         fi
     else
         echo ""
-        echo "Setup-Assistent übersprungen. Erstelle einfache .env aus Vorlage..."
-        if [ -f setup/.env.template ]; then
-            cp setup/.env.template .env
-            echo "✅ .env wurde aus Vorlage erstellt."
-            echo "⚠️  Bitte bearbeite .env, um deine Umgebung zu konfigurieren, bevor du fortfährst."
-            if declare -F run_cognito_setup >/dev/null; then
-                run_cognito_setup
-                echo ""
+        if [ "$EXISTING_ENV_BEFORE_PROMPT" = true ]; then
+            echo "Setup-Assistent übersprungen. Bestehende .env gefunden, verwende aktuelle Werte."
+        else
+            echo "Setup-Assistent übersprungen. Erstelle einfache .env aus Vorlage..."
+            if [ -f setup/.env.template ]; then
+                cp setup/.env.template .env
+                echo "✅ .env wurde aus Vorlage erstellt."
+                echo "⚠️  Bitte bearbeite .env, um deine Umgebung zu konfigurieren, bevor du fortfährst."
+            else
+                echo "❌ setup/.env.template nicht gefunden!"
+                exit 1
+            fi
+        fi
+
+        if [ -f .env ]; then
+            read -p "Es wurde eine .env gefunden. .setup-complete jetzt neu erstellen und den Wizard überspringen? (y/N): " recreate_setup
+            if [[ "$recreate_setup" =~ ^[Yy]$ ]]; then
+                touch .setup-complete
+                echo ".setup-complete aus bestehender .env neu erstellt."
             fi
         else
-            echo "❌ setup/.env.template nicht gefunden!"
-            exit 1
+            echo "Keine .env gefunden – .setup-complete kann nicht automatisch neu erstellt werden."
+        fi
+
+        if declare -F run_cognito_setup >/dev/null; then
+            run_cognito_setup
+            echo ""
         fi
     fi
     echo ""

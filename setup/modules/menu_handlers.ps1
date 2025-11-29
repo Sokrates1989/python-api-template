@@ -111,6 +111,43 @@ function Invoke-EnvironmentDiagnostics {
     }
 }
 
+function Invoke-SetupWizard {
+    Write-Host "Re-running the interactive setup wizard" -ForegroundColor Cyan
+    Write-Host "" 
+    Write-Host "To launch the wizard again, delete the .setup-complete file and restart quick-start." -ForegroundColor Gray
+    Write-Host "The wizard automatically backs up your current .env before writing a new one." -ForegroundColor Gray
+    Write-Host "" 
+
+    if (-not (Test-Path .setup-complete)) {
+        Write-Host ".setup-complete is already missing. The next quick-start run will start the wizard automatically." -ForegroundColor Yellow
+    }
+
+    $choice = Read-Host "Delete .setup-complete and restart quick-start.ps1 now? (y/N)"
+    if ($choice -notmatch "^[Yy]$") {
+        Write-Host "No changes were made. Remove .setup-complete manually and run .\quick-start.ps1 when you're ready." -ForegroundColor Yellow
+        return 1
+    }
+
+    if (Test-Path .setup-complete) {
+        Remove-Item .setup-complete -Force -ErrorAction SilentlyContinue
+        Write-Host ".setup-complete removed." -ForegroundColor Green
+    } else {
+        Write-Host ".setup-complete was not found, continuing." -ForegroundColor Gray
+    }
+
+    $projectRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+    $quickStart = Join-Path $projectRoot "quick-start.ps1"
+
+    if (-not (Test-Path $quickStart)) {
+        Write-Host "quick-start.ps1 not found at $quickStart" -ForegroundColor Red
+        return 1
+    }
+
+    Write-Host "Restarting quick-start.ps1 so you can walk through the wizard again..." -ForegroundColor Cyan
+    & $quickStart
+    return $LASTEXITCODE
+}
+
 function Invoke-DockerComposeDown {
     param(
         [string]$ComposeFile
@@ -193,10 +230,11 @@ function Show-MainMenu {
     Write-Host "7) Configure AWS Cognito" -ForegroundColor Gray
     Write-Host "8) Build Production Docker Image" -ForegroundColor Gray
     Write-Host "9) Setup CI/CD Pipeline" -ForegroundColor Gray
-    Write-Host "10) Bump release version for docker image" -ForegroundColor Gray
-    Write-Host "11) Exit" -ForegroundColor Gray
+    Write-Host "10) Re-run setup wizard" -ForegroundColor Gray
+    Write-Host "11) Bump release version for docker image" -ForegroundColor Gray
+    Write-Host "12) Exit" -ForegroundColor Gray
     Write-Host ""
-    $choice = Read-Host "Your choice (1-11)"
+    $choice = Read-Host "Your choice (1-12)"
 
     $summary = $null
     $exitCode = 0
@@ -247,10 +285,19 @@ function Show-MainMenu {
             $summary = "CI/CD setup started"
         }
         "10" {
+            $result = Invoke-SetupWizard
+            if ($result -eq 0) {
+                $summary = "Setup wizard re-run completed"
+            } else {
+                $summary = "Setup wizard re-run failed or aborted"
+                $exitCode = 1
+            }
+        }
+        "11" {
             Update-ImageVersion
             $summary = "IMAGE_VERSION updated"
         }
-        "11" {
+        "12" {
             Write-Host "Exiting script." -ForegroundColor Cyan
             exit 0
         }
