@@ -248,7 +248,7 @@ function Show-MainMenu {
         }
         "4" {
             Start-DependencyManagement
-            Write-Host "To start the backend, run: docker compose -f $ComposeFile up --build" -ForegroundColor Yellow
+            Write-Host "To start the backend, re-run quick-start.ps1 and choose a start option." -ForegroundColor Yellow
             $summary = "Dependency Management executed"
         }
         "5" {
@@ -303,9 +303,9 @@ function Show-MainMenu {
 
     Write-Host ""
     if ($summary) {
-        Write-Host ("✅ {0}" -f $summary) -ForegroundColor Green
+        Write-Host ("{0}" -f $summary) -ForegroundColor Green
     }
-    Write-Host 'ℹ️  Quick-start finished. Run the script again for more actions.' -ForegroundColor Cyan
+    Write-Host 'Quick-start finished. Run the script again for more actions.' -ForegroundColor Cyan
     Write-Host ""
     exit $exitCode
 }
