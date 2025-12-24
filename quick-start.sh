@@ -73,20 +73,27 @@ if [ ! -f .setup-complete ]; then
                 cp setup/.env.template .env
                 echo "✅ .env wurde aus Vorlage erstellt."
                 echo "⚠️  Bitte bearbeite .env, um deine Umgebung zu konfigurieren, bevor du fortfährst."
+
+                EDITOR_CMD="${EDITOR:-nano}"
+                if ! command -v "$EDITOR_CMD" >/dev/null 2>&1; then
+                    EDITOR_CMD="vi"
+                fi
+                read -p "Soll die .env jetzt in $EDITOR_CMD geöffnet werden? (Y/n): " open_env
+                if [[ ! "$open_env" =~ ^[Nn]$ ]]; then
+                    "$EDITOR_CMD" .env
+                fi
             else
                 echo "❌ setup/.env.template nicht gefunden!"
                 exit 1
             fi
         fi
 
-        if [ -f .env ]; then
-            read -p "Es wurde eine .env gefunden. .setup-complete jetzt neu erstellen und den Wizard überspringen? (y/N): " recreate_setup
+        if [ "$EXISTING_ENV_BEFORE_PROMPT" = true ]; then
+            read -p "Es wurde bereits vor dem Prompt eine .env gefunden. .setup-complete jetzt neu erstellen und den Wizard überspringen? (y/N): " recreate_setup
             if [[ "$recreate_setup" =~ ^[Yy]$ ]]; then
                 touch .setup-complete
                 echo ".setup-complete aus bestehender .env neu erstellt."
             fi
-        else
-            echo "Keine .env gefunden – .setup-complete kann nicht automatisch neu erstellt werden."
         fi
 
         if declare -F run_cognito_setup >/dev/null; then

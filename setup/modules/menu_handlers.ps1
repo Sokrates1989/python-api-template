@@ -1,6 +1,13 @@
 # menu_handlers.ps1
 # PowerShell module for handling menu actions in quick-start script
 
+# Source browser helpers for auto-open functionality
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$BrowserHelpersPath = Join-Path $ScriptDir "browser_helpers.ps1"
+if (Test-Path $BrowserHelpersPath) {
+    . $BrowserHelpersPath
+}
+
 function Open-BrowserInIncognito {
     param(
         [string]$Port,
@@ -35,25 +42,13 @@ function Start-Backend {
     )
     
     Write-Host "Starting backend directly..." -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "========================================" -ForegroundColor Green
-    Write-Host "  API will be accessible at:" -ForegroundColor Cyan
-    Write-Host "  http://localhost:$Port/docs" -ForegroundColor Yellow
-    Write-Host "========================================" -ForegroundColor Green
-    if ($ComposeFile -like "*neo4j*") {
-        Write-Host "  Neo4j Browser will be accessible at:" -ForegroundColor Cyan
-        Write-Host "  http://localhost:7474" -ForegroundColor Yellow
-        Write-Host "========================================" -ForegroundColor Green
-    }
-    Write-Host ""
-    Write-Host "Press ENTER to open the API documentation in your browser..." -ForegroundColor Yellow
-    Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
-    $null = Read-Host
     
-    # Open browser in incognito/private mode, reusing the same window for Neo4j if needed
-    Open-BrowserInIncognito -Port $Port -ComposeFile $ComposeFile
+    # Determine if Neo4j is included
+    $includeNeo4j = $ComposeFile -like "*neo4j*"
     
-    Write-Host ""
+    # Open browsers automatically when services are ready
+    Open-BrowsersDelayed -Port $Port -IncludeNeo4j $includeNeo4j -TimeoutSeconds 120
+    
     docker compose --env-file .env -f $ComposeFile up --build
 }
 
@@ -74,25 +69,13 @@ function Start-DependencyAndBackend {
     & .\python-dependency-management\scripts\manage-python-project-dependencies.ps1
     Write-Host ""
     Write-Host "Starting backend now..." -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "========================================" -ForegroundColor Green
-    Write-Host "  API will be accessible at:" -ForegroundColor Cyan
-    Write-Host "  http://localhost:$Port/docs" -ForegroundColor Yellow
-    Write-Host "========================================" -ForegroundColor Green
-    if ($ComposeFile -like "*neo4j*") {
-        Write-Host "  Neo4j Browser will be accessible at:" -ForegroundColor Cyan
-        Write-Host "  http://localhost:7474" -ForegroundColor Yellow
-        Write-Host "========================================" -ForegroundColor Green
-    }
-    Write-Host ""
-    Write-Host "Press ENTER to open the API documentation in your browser..." -ForegroundColor Yellow
-    Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
-    $null = Read-Host
     
-    # Open browser in incognito/private mode, reusing the same window for Neo4j if needed
-    Open-BrowserInIncognito -Port $Port -ComposeFile $ComposeFile
+    # Determine if Neo4j is included
+    $includeNeo4j = $ComposeFile -like "*neo4j*"
     
-    Write-Host ""
+    # Open browsers automatically when services are ready
+    Open-BrowsersDelayed -Port $Port -IncludeNeo4j $includeNeo4j -TimeoutSeconds 120
+    
     docker compose --env-file .env -f $ComposeFile up --build
 }
 
@@ -150,7 +133,7 @@ function Invoke-DockerComposeDown {
     Write-Host "Stopping and removing containers..." -ForegroundColor Yellow
     Write-Host "   Using compose file: $ComposeFile" -ForegroundColor Gray
     Write-Host ""
-    docker compose --env-file .env -f $ComposeFile down
+    docker compose --env-file .env -f $ComposeFile down --remove-orphans
     Write-Host ""
     Write-Host "Containers stopped and removed" -ForegroundColor Green
 }
@@ -162,25 +145,13 @@ function Start-BackendNoCache {
     )
     
     Write-Host "Starting backend directly (with --no-cache)..." -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "========================================" -ForegroundColor Green
-    Write-Host "  API will be accessible at:" -ForegroundColor Cyan
-    Write-Host "  http://localhost:$Port/docs" -ForegroundColor Yellow
-    Write-Host "========================================" -ForegroundColor Green
-    if ($ComposeFile -like "*neo4j*") {
-        Write-Host "  Neo4j Browser will be accessible at:" -ForegroundColor Cyan
-        Write-Host "  http://localhost:7474" -ForegroundColor Yellow
-        Write-Host "========================================" -ForegroundColor Green
-    }
-    Write-Host ""
-    Write-Host "Press ENTER to open the API documentation in your browser..." -ForegroundColor Yellow
-    Write-Host "(The API may take a few seconds to start. Please refresh the page if needed.)" -ForegroundColor Gray
-    $null = Read-Host
     
-    # Open browser in incognito/private mode, reusing the same window for Neo4j if needed
-    Open-BrowserInIncognito -Port $Port -ComposeFile $ComposeFile
+    # Determine if Neo4j is included
+    $includeNeo4j = $ComposeFile -like "*neo4j*"
     
-    Write-Host ""
+    # Open browsers automatically when services are ready
+    Open-BrowsersDelayed -Port $Port -IncludeNeo4j $includeNeo4j -TimeoutSeconds 120
+    
     docker compose --env-file .env -f $ComposeFile build --no-cache
     docker compose --env-file .env -f $ComposeFile up
 }
@@ -212,94 +183,125 @@ function Show-MainMenu {
         [string]$Port,
         [string]$ComposeFile
     )
-
+ 
     $hasCognito = [bool](Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue)
-    Write-Host "Choose an option:" -ForegroundColor Yellow
-    Write-Host "1) Start backend directly (docker compose up)" -ForegroundColor Gray
-    Write-Host "2) Start backend with --no-cache (fixes caching issues)" -ForegroundColor Gray
-    Write-Host "3) Docker Compose Down (stop and remove containers)" -ForegroundColor Gray
-    Write-Host "4) Open Dependency Management only" -ForegroundColor Gray
-    Write-Host "5) Both - Dependency Management and then start backend" -ForegroundColor Gray
-    Write-Host "6) Run Docker/Build Diagnostics" -ForegroundColor Gray
-    Write-Host "7) Configure AWS Cognito" -ForegroundColor Gray
-    Write-Host "8) Build Production Docker Image" -ForegroundColor Gray
-    Write-Host "9) Setup CI/CD Pipeline" -ForegroundColor Gray
-    Write-Host "10) Re-run setup wizard" -ForegroundColor Gray
-    Write-Host "11) Bump release version for docker image" -ForegroundColor Gray
-    Write-Host "12) Exit" -ForegroundColor Gray
+ 
+    $menuNext = 1
+    $MENU_START_BACKEND = $menuNext; $menuNext++
+    $MENU_START_BACKEND_NO_CACHE = $menuNext; $menuNext++
+    $MENU_START_DEP_AND_BACKEND = $menuNext; $menuNext++
+ 
+    $MENU_MAINT_DOWN = $menuNext; $menuNext++
+    $MENU_MAINT_DEP_MGMT = $menuNext; $menuNext++
+    $MENU_MAINT_DIAGNOSTICS = $menuNext; $menuNext++
+ 
+    $MENU_BUILD_PROD_IMAGE = $menuNext; $menuNext++
+    $MENU_BUILD_CICD_SETUP = $menuNext; $menuNext++
+    $MENU_BUILD_BUMP_VERSION = $menuNext; $menuNext++
+ 
+    $MENU_SETUP_COGNITO = $menuNext; $menuNext++
+    $MENU_SETUP_WIZARD = $menuNext; $menuNext++
+ 
+    $MENU_EXIT = $menuNext
+ 
+    Write-Host "" 
+    Write-Host "================ Main Menu ================" -ForegroundColor Yellow
+    Write-Host "" 
+ 
+    Write-Host "Start:" -ForegroundColor Yellow
+    Write-Host "  $MENU_START_BACKEND) Start backend directly (docker compose up)" -ForegroundColor Gray
+    Write-Host "  $MENU_START_BACKEND_NO_CACHE) Start backend with --no-cache (fixes caching issues)" -ForegroundColor Gray
+    Write-Host "  $MENU_START_DEP_AND_BACKEND) Both - Dependency Management and then start backend" -ForegroundColor Gray
+    Write-Host "" 
+    Write-Host "Maintenance:" -ForegroundColor Yellow
+    Write-Host "  $MENU_MAINT_DOWN) Docker Compose Down (stop and remove containers)" -ForegroundColor Gray
+    Write-Host "  $MENU_MAINT_DEP_MGMT) Open Dependency Management only" -ForegroundColor Gray
+    Write-Host "  $MENU_MAINT_DIAGNOSTICS) Run Docker/Build Diagnostics" -ForegroundColor Gray
+    Write-Host "" 
+    Write-Host "Build / CI-CD:" -ForegroundColor Yellow
+    Write-Host "  $MENU_BUILD_PROD_IMAGE) Build Production Docker Image" -ForegroundColor Gray
+    Write-Host "  $MENU_BUILD_CICD_SETUP) Setup CI/CD Pipeline" -ForegroundColor Gray
+    Write-Host "  $MENU_BUILD_BUMP_VERSION) Bump release version for docker image" -ForegroundColor Gray
+    Write-Host "" 
+    Write-Host "Setup:" -ForegroundColor Yellow
+    Write-Host "  $MENU_SETUP_COGNITO) Configure AWS Cognito" -ForegroundColor Gray
+    Write-Host "  $MENU_SETUP_WIZARD) Re-run setup wizard" -ForegroundColor Gray
+    Write-Host "" 
+    Write-Host "  $MENU_EXIT) Exit" -ForegroundColor Gray
+ 
     Write-Host ""
-    $choice = Read-Host "Your choice (1-12)"
-
-    $summary = $null
-    $exitCode = 0
-
-    switch ($choice) {
-        "1" {
-            Start-Backend -Port $Port -ComposeFile $ComposeFile
-            $summary = "Backend start triggered (docker compose up)"
-        }
-        "2" {
-            Start-BackendNoCache -Port $Port -ComposeFile $ComposeFile
-            $summary = "Backend start with --no-cache triggered"
-        }
-        "3" {
-            Invoke-DockerComposeDown -ComposeFile $ComposeFile
-            $summary = "Docker Compose Down executed"
-        }
-        "4" {
-            Start-DependencyManagement
-            Write-Host "To start the backend, re-run quick-start.ps1 and choose a start option." -ForegroundColor Yellow
-            $summary = "Dependency Management executed"
-        }
-        "5" {
-            Start-DependencyAndBackend -Port $Port -ComposeFile $ComposeFile
-            $summary = "Dependency Management and backend start executed"
-        }
-        "6" {
-            Invoke-EnvironmentDiagnostics
-            $summary = "Docker/Build diagnostics launched"
-        }
-        "7" {
-            if ($hasCognito) {
-                Invoke-CognitoSetup
-                $summary = "AWS Cognito setup executed"
-            } else {
-                Write-Host "AWS Cognito module not loaded." -ForegroundColor Yellow
-                Write-Host "Ensure setup/modules/cognito_setup.ps1 is imported before selecting this option." -ForegroundColor Yellow
-                $summary = "AWS Cognito setup could not run"
-                $exitCode = 1
-            }
-        }
-        "8" {
-            Build-ProductionImage
-            $summary = "Production Docker image build triggered"
-        }
-        "9" {
-            Start-CICDSetup
-            $summary = "CI/CD setup started"
-        }
-        "10" {
-            $result = Invoke-SetupWizard
-            if ($result -eq 0) {
-                $summary = "Setup wizard re-run completed"
-            } else {
-                $summary = "Setup wizard re-run failed or aborted"
-                $exitCode = 1
-            }
-        }
-        "11" {
-            Update-ImageVersion
-            $summary = "IMAGE_VERSION updated"
-        }
-        "12" {
-            Write-Host "Exiting script." -ForegroundColor Cyan
-            exit 0
-        }
-        Default {
-            Write-Host "Invalid selection. Please re-run the script." -ForegroundColor Yellow
-            exit 1
-        }
-    }
+    $choice = Read-Host "Your choice (1-$MENU_EXIT)"
+ 
+     $summary = $null
+     $exitCode = 0
+ 
+     switch ($choice) {
+        "$MENU_START_BACKEND" {
+             Start-Backend -Port $Port -ComposeFile $ComposeFile
+             $summary = "Backend start triggered (docker compose up)"
+         }
+        "$MENU_START_BACKEND_NO_CACHE" {
+             Start-BackendNoCache -Port $Port -ComposeFile $ComposeFile
+             $summary = "Backend start with --no-cache triggered"
+         }
+        "$MENU_MAINT_DOWN" {
+             Invoke-DockerComposeDown -ComposeFile $ComposeFile
+             $summary = "Docker Compose Down executed"
+         }
+        "$MENU_MAINT_DEP_MGMT" {
+             Start-DependencyManagement
+             Write-Host "To start the backend, re-run quick-start.ps1 and choose a start option." -ForegroundColor Yellow
+             $summary = "Dependency Management executed"
+         }
+        "$MENU_START_DEP_AND_BACKEND" {
+             Start-DependencyAndBackend -Port $Port -ComposeFile $ComposeFile
+             $summary = "Dependency Management and backend start executed"
+         }
+        "$MENU_MAINT_DIAGNOSTICS" {
+             Invoke-EnvironmentDiagnostics
+             $summary = "Docker/Build diagnostics launched"
+         }
+        "$MENU_SETUP_COGNITO" {
+             if ($hasCognito) {
+                 Invoke-CognitoSetup
+                 $summary = "AWS Cognito setup executed"
+             } else {
+                 Write-Host "AWS Cognito module not loaded." -ForegroundColor Yellow
+                 Write-Host "Ensure setup/modules/cognito_setup.ps1 is imported before selecting this option." -ForegroundColor Yellow
+                 $summary = "AWS Cognito setup could not run"
+                 $exitCode = 1
+             }
+         }
+        "$MENU_BUILD_PROD_IMAGE" {
+             Build-ProductionImage
+             $summary = "Production Docker image build triggered"
+         }
+        "$MENU_BUILD_CICD_SETUP" {
+             Start-CICDSetup
+             $summary = "CI/CD setup started"
+         }
+        "$MENU_SETUP_WIZARD" {
+             $result = Invoke-SetupWizard
+             if ($result -eq 0) {
+                 $summary = "Setup wizard re-run completed"
+             } else {
+                 $summary = "Setup wizard re-run failed or aborted"
+                 $exitCode = 1
+             }
+         }
+        "$MENU_BUILD_BUMP_VERSION" {
+             Update-ImageVersion
+             $summary = "IMAGE_VERSION updated"
+         }
+        "$MENU_EXIT" {
+             Write-Host "Exiting script." -ForegroundColor Cyan
+             exit 0
+         }
+         Default {
+             Write-Host "Invalid selection. Please re-run the script." -ForegroundColor Yellow
+             exit 1
+         }
+     }
 
     Write-Host ""
     if ($summary) {

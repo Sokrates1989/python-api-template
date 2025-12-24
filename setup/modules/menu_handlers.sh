@@ -4,25 +4,27 @@
 #
 # Module for handling menu actions in quick-start script
 
+# Source browser helpers for auto-open functionality
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/browser_helpers.sh" ]; then
+    source "$SCRIPT_DIR/browser_helpers.sh"
+fi
+
 handle_backend_start() {
     local port="$1"
     local compose_file="$2"
     
     echo "🚀 Starte Backend direkt..."
-    echo ""
-    echo "========================================"
-    echo "  API will be accessible at:"
-    echo "  http://localhost:$port/docs"
-    echo "========================================"
-    echo ""
-    echo "Press ENTER to open the API documentation in your browser..."
-    echo "(The API may take a few seconds to start. Please refresh the page if needed.)"
-    read -r
     
-    # Open browser in incognito/private mode using shared window
-    open_browser_incognito "$port" "$compose_file"
+    # Determine if Neo4j is included
+    local include_neo4j="false"
+    if [[ "$compose_file" == *neo4j* ]]; then
+        include_neo4j="true"
+    fi
     
-    echo ""
+    # Open browsers automatically when services are ready
+    open_browsers_delayed "$port" "$include_neo4j" 120
+    
     docker compose --env-file .env -f "$compose_file" up --build
 }
 
@@ -41,21 +43,17 @@ handle_dependency_and_backend() {
     ./python-dependency-management/scripts/manage-python-project-dependencies.sh
     echo ""
     echo "🚀 Starte nun das Backend..."
-    echo ""
-    echo "========================================"
-    echo "  API will be accessible at:"
-    echo "  http://localhost:$port/docs"
-    echo "========================================"
-    echo ""
-    echo "Press ENTER to open the API documentation in your browser..."
-    echo "(The API may take a few seconds to start. Please refresh the page if needed.)"
-    read -r
     
-    # Open browser in incognito/private mode using shared window
-    open_browser_incognito "$port" "$compose_file"
+    # Determine if Neo4j is included
+    local include_neo4j="false"
+    if [[ "$compose_file" == *neo4j* ]]; then
+        include_neo4j="true"
+    fi
     
-    echo ""
-    docker compose --env-file .env -f "$compose_file" up --build
+    # Open browsers automatically when services are ready
+    open_browsers_delayed "$port" "$include_neo4j" 120
+    
+    docker compose --env-file .env -f "$compose_file" up
 }
 
 handle_environment_diagnostics() {
@@ -79,7 +77,11 @@ handle_rerun_setup_wizard() {
         echo ".setup-complete is already missing. The next quick-start run will start the wizard automatically."
     fi
 
-    read -p "Delete .setup-complete and restart ./quick-start.sh now? (y/N): " rerun_choice
+    if [[ -r /dev/tty ]]; then
+        read -r -p "Delete .setup-complete and restart ./quick-start.sh now? (y/N): " rerun_choice < /dev/tty
+    else
+        read -r -p "Delete .setup-complete and restart ./quick-start.sh now? (y/N): " rerun_choice
+    fi
     if [[ ! "$rerun_choice" =~ ^[Yy]$ ]]; then
         echo "No changes were made. Remove .setup-complete manually and run ./quick-start.sh when you're ready."
         return 1
@@ -103,7 +105,7 @@ handle_docker_compose_down() {
     echo "🛑 Stoppe und entferne Container..."
     echo "   Using compose file: $compose_file"
     echo ""
-    docker compose --env-file .env -f "$compose_file" down
+    docker compose --env-file .env -f "$compose_file" down --remove-orphans
     echo ""
     echo "✅ Container gestoppt und entfernt"
 }
@@ -113,20 +115,16 @@ handle_backend_start_no_cache() {
     local compose_file="$2"
     
     echo "🚀 Starte Backend direkt (mit --no-cache)..."
-    echo ""
-    echo "========================================"
-    echo "  API will be accessible at:"
-    echo "  http://localhost:$port/docs"
-    echo "========================================"
-    echo ""
-    echo "Press ENTER to open the API documentation in your browser..."
-    echo "(The API may take a few seconds to start. Please refresh the page if needed.)"
-    read -r
     
-    # Open browser in incognito/private mode
-    open_browser_incognito "$port" "$compose_file"
+    # Determine if Neo4j is included
+    local include_neo4j="false"
+    if [[ "$compose_file" == *neo4j* ]]; then
+        include_neo4j="true"
+    fi
     
-    echo ""
+    # Open browsers automatically when services are ready
+    open_browsers_delayed "$port" "$include_neo4j" 120
+    
     docker compose --env-file .env -f "$compose_file" build --no-cache
     docker compose --env-file .env -f "$compose_file" up
 }
@@ -216,56 +214,88 @@ show_main_menu() {
     local choice
 
     while true; do
-        echo "Wähle eine Option:"
-        echo "1) Backend direkt starten (docker compose up)"
-        echo "2) Backend starten mit --no-cache (behebt Caching-Probleme)"
-        echo "3) Docker Compose Down (Container stoppen und entfernen)"
-        echo "4) Nur Dependency Management öffnen"
-        echo "5) Beides - Dependency Management und dann Backend starten"
-        echo "6) Docker/Build Diagnose ausführen"
-        echo "7) AWS Cognito konfigurieren"
-        echo "8) Production Docker Image bauen"
-        echo "9) CI/CD Pipeline einrichten"
-        echo "10) Setup-Assistent erneut ausführen"
-        echo "11) Bump release version for docker image"
-        echo "12) Skript beenden"
+        local MENU_NEXT=1
+        local MENU_START_BACKEND=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_START_BACKEND_NO_CACHE=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_START_DEP_AND_BACKEND=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+
+        local MENU_MAINT_DOWN=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_MAINT_DEP_MGMT=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_MAINT_DIAGNOSTICS=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+
+        local MENU_BUILD_PROD_IMAGE=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_BUILD_CICD_SETUP=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_BUILD_BUMP_VERSION=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+
+        local MENU_SETUP_COGNITO=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_SETUP_WIZARD=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+
+        local MENU_EXIT=$MENU_NEXT
+
+        echo ""
+        echo "================ Main Menu ================"
+        echo ""
+        echo "Start:"
+        echo "  ${MENU_START_BACKEND}) Backend direkt starten (docker compose up)"
+        echo "  ${MENU_START_BACKEND_NO_CACHE}) Backend starten mit --no-cache (behebt Caching-Probleme)"
+        echo "  ${MENU_START_DEP_AND_BACKEND}) Beides - Dependency Management und dann Backend starten"
+        echo ""
+        echo "Maintenance:"
+        echo "  ${MENU_MAINT_DOWN}) Docker Compose Down (Container stoppen und entfernen)"
+        echo "  ${MENU_MAINT_DEP_MGMT}) Nur Dependency Management öffnen"
+        echo "  ${MENU_MAINT_DIAGNOSTICS}) Docker/Build Diagnose ausführen"
+        echo ""
+        echo "Build / CI/CD:"
+        echo "  ${MENU_BUILD_PROD_IMAGE}) Production Docker Image bauen"
+        echo "  ${MENU_BUILD_CICD_SETUP}) CI/CD Pipeline einrichten"
+        echo "  ${MENU_BUILD_BUMP_VERSION}) Bump release version for docker image"
+        echo ""
+        echo "Setup:"
+        echo "  ${MENU_SETUP_COGNITO}) AWS Cognito konfigurieren"
+        echo "  ${MENU_SETUP_WIZARD}) Setup-Assistent erneut ausführen"
+        echo ""
+        echo "  ${MENU_EXIT}) Skript beenden"
         echo ""
 
-        read -p "Deine Wahl (1-12): " choice
+        if [[ -r /dev/tty ]]; then
+            read -r -p "Deine Wahl (1-${MENU_EXIT}): " choice < /dev/tty
+        else
+            read -r -p "Deine Wahl (1-${MENU_EXIT}): " choice
+        fi
 
         case $choice in
-          1)
+          ${MENU_START_BACKEND})
             handle_backend_start "$port" "$compose_file"
             summary_msg="Backend start ausgelöst (docker compose up)"
             break
             ;;
-          2)
+          ${MENU_START_BACKEND_NO_CACHE})
             handle_backend_start_no_cache "$port" "$compose_file"
             summary_msg="Backend start mit --no-cache ausgelöst"
             break
             ;;
-          3)
+          ${MENU_MAINT_DOWN})
             handle_docker_compose_down "$compose_file"
             summary_msg="Docker Compose Down ausgeführt"
             break
             ;;
-          4)
+          ${MENU_MAINT_DEP_MGMT})
             handle_dependency_management
             echo "💡 Um das Backend zu starten, führe aus: docker compose -f $compose_file up --build"
             summary_msg="Dependency Management ausgeführt"
             break
             ;;
-          5)
+          ${MENU_START_DEP_AND_BACKEND})
             handle_dependency_and_backend "$port" "$compose_file"
             summary_msg="Dependency Management und Backendstart ausgeführt"
             break
             ;;
-          6)
+          ${MENU_MAINT_DIAGNOSTICS})
             handle_environment_diagnostics
             summary_msg="Docker/Build Diagnose gestartet"
             break
             ;;
-          7)
+          ${MENU_SETUP_COGNITO})
             if [ $has_cognito -eq 1 ]; then
                 run_cognito_setup
                 echo ""
@@ -278,27 +308,27 @@ show_main_menu() {
             fi
             break
             ;;
-          8)
+          ${MENU_BUILD_PROD_IMAGE})
             handle_build_production_image
             summary_msg="Production Docker Image Build ausgeführt"
             break
             ;;
-          9)
+          ${MENU_BUILD_CICD_SETUP})
             handle_cicd_setup
             summary_msg="CI/CD Setup ausgeführt"
             break
             ;;
-          10)
+          ${MENU_SETUP_WIZARD})
             handle_rerun_setup_wizard
             summary_msg="Setup-Assistent erneut gestartet"
             break
             ;;
-          11)
+          ${MENU_BUILD_BUMP_VERSION})
             update_image_version
             summary_msg="IMAGE_VERSION aktualisiert"
             break
             ;;
-          12)
+          ${MENU_EXIT})
             echo "👋 Skript wird beendet."
             exit 0
             ;;
