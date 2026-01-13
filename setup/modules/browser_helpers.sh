@@ -52,20 +52,52 @@ wait_for_url() {
 #
 # Returns:
 #   void
+stop_incognito_profile_procs() {
+    # Stops running Edge/Chrome processes that use a specific user-data-dir (best-effort).
+    # Args:
+    #   $1: profile_dir
+    #   $2..$: process names (e.g., "chrome", "msedge")
+    local profile_dir="$1"
+    shift || true
+    [ -z "$profile_dir" ] && return 0
+    [ $# -eq 0 ] && return 0
+    for pname in "$@"; do
+        pkill -f "$pname.*--user-data-dir=$profile_dir" >/dev/null 2>&1 || true
+    done
+}
+
 open_url() {
     local url="$1"
+    local profile_base="${TMPDIR:-/tmp}"
+    local edge_profile="${profile_base}/edge_incog_profile_python_api_template"
+    local chrome_profile="${profile_base}/chrome_incog_profile_python_api_template"
+    mkdir -p "$edge_profile" "$chrome_profile"
     
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
-        open -na "Google Chrome" --args --incognito "$url" 2>/dev/null || \
-        open -a "Safari" "$url" 2>/dev/null || \
+        if [ -d "/Applications/Google Chrome.app" ]; then
+            stop_incognito_profile_procs "$chrome_profile" "Google Chrome"
+            open -na "Google Chrome" --args --incognito --user-data-dir="$chrome_profile" "$url" >/dev/null 2>&1 || true
+            return
+        fi
+        if [ -d "/Applications/Microsoft Edge.app" ]; then
+            stop_incognito_profile_procs "$edge_profile" "Microsoft Edge"
+            open -na "Microsoft Edge" --args -inprivate --user-data-dir="$edge_profile" "$url" >/dev/null 2>&1 || true
+            return
+        fi
         open "$url" 2>/dev/null
     elif command -v microsoft-edge &> /dev/null; then
-        microsoft-edge --inprivate "$url" >/dev/null 2>&1 &
+        stop_incognito_profile_procs "$edge_profile" "microsoft-edge"
+        microsoft-edge --inprivate --user-data-dir="$edge_profile" "$url" >/dev/null 2>&1 &
     elif command -v google-chrome &> /dev/null; then
-        google-chrome --incognito "$url" >/dev/null 2>&1 &
+        stop_incognito_profile_procs "$chrome_profile" "chrome" "google-chrome"
+        google-chrome --incognito --user-data-dir="$chrome_profile" "$url" >/dev/null 2>&1 &
     elif command -v chromium-browser &> /dev/null; then
-        chromium-browser --incognito "$url" >/dev/null 2>&1 &
+        stop_incognito_profile_procs "$chrome_profile" "chromium-browser"
+        chromium-browser --incognito --user-data-dir="$chrome_profile" "$url" >/dev/null 2>&1 &
+    elif command -v chromium &> /dev/null; then
+        stop_incognito_profile_procs "$chrome_profile" "chromium"
+        chromium --incognito --user-data-dir="$chrome_profile" "$url" >/dev/null 2>&1 &
     elif command -v xdg-open &> /dev/null; then
         xdg-open "$url" 2>/dev/null &
     else

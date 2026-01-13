@@ -51,6 +51,28 @@ function Wait-ForUrl {
 
 <#
 .SYNOPSIS
+    Checks if a command exists.
+
+.PARAMETER Url
+    The command to check.
+
+.PARAMETER TimeoutSeconds
+    Maximum time to wait in seconds (default: 120).
+#>
+function Test-CommandExists {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Url,
+        
+        [Parameter(Mandatory = $false)]
+        [int]$TimeoutSeconds = 120
+    )
+    
+    # implementation of Test-CommandExists
+}
+
+<#
+.SYNOPSIS
     Opens a URL in the default browser, preferring incognito/private mode.
 
 .PARAMETER Url
@@ -62,31 +84,90 @@ function Open-Url {
         [string]$Url
     )
     
-    # Try Chrome incognito first
-    $chromePaths = @(
-        "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
-        "$env:ProgramFiles(x86)\Google\Chrome\Application\chrome.exe",
-        "$env:LocalAppData\Google\Chrome\Application\chrome.exe"
-    )
-    
-    foreach ($chromePath in $chromePaths) {
-        if (Test-Path $chromePath) {
-            Start-Process -FilePath $chromePath -ArgumentList "--incognito", $Url -ErrorAction SilentlyContinue
-            return
-        }
+    # Detect Windows: $IsWindows only exists in PS Core 6+; fallback for Windows PowerShell 5.x
+    $isWin = $false
+    if ($null -ne $IsWindows) {
+        $isWin = $IsWindows
+    } elseif ($env:OS -match "Windows") {
+        $isWin = $true
     }
-    
-    # Try Edge InPrivate
-    $edgePaths = @(
-        "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
-        "$env:ProgramFiles(x86)\Microsoft\Edge\Application\msedge.exe"
-    )
-    
-    foreach ($edgePath in $edgePaths) {
-        if (Test-Path $edgePath) {
-            Start-Process -FilePath $edgePath -ArgumentList "-inprivate", $Url -ErrorAction SilentlyContinue
+
+    Write-Host "[DEBUG] Open-Url: isWin=$isWin, Url=$Url" -ForegroundColor Magenta
+
+    if ($isWin) {
+        # Try Edge InPrivate first (preinstalled on Windows). Use repo-specific profile to separate taskbar groups.
+        $edgePaths = @(
+            "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
+            "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
+        )
+        
+        foreach ($edgePath in $edgePaths) {
+            if (Test-Path $edgePath) {
+                Write-Host "[DEBUG] Found Edge at: $edgePath - launching inprivate" -ForegroundColor Magenta
+                $profileDir = Join-Path $env:TEMP "edge_incog_profile_python_api_template"
+                New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+                Stop-IncognitoProfileProcesses -ProfileDir $profileDir -ProcessNames @("msedge.exe")
+                Start-Process -FilePath $edgePath -ArgumentList "-inprivate", "--user-data-dir=$profileDir", $Url -ErrorAction SilentlyContinue
+                return
+            }
+        }
+
+        # Then Chrome incognito
+        $chromePaths = @(
+            "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+            "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+            "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+        )
+        
+        foreach ($chromePath in $chromePaths) {
+            if (Test-Path $chromePath) {
+                Write-Host "[DEBUG] Found Chrome at: $chromePath - launching incognito" -ForegroundColor Magenta
+                $profileDir = Join-Path $env:TEMP "chrome_incog_profile_python_api_template"
+                New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+                Stop-IncognitoProfileProcesses -ProfileDir $profileDir -ProcessNames @("chrome.exe")
+                Start-Process -FilePath $chromePath -ArgumentList "--incognito", "--user-data-dir=$profileDir", $Url -ErrorAction SilentlyContinue
+                return
+            }
+        }
+        
+        # Try Firefox in common locations
+        $firefoxPaths = @(
+            "$env:ProgramFiles\Mozilla Firefox\firefox.exe",
+            "${env:ProgramFiles(x86)}\Mozilla Firefox\firefox.exe"
+        )
+        foreach ($firefoxPath in $firefoxPaths) {
+            if (Test-Path $firefoxPath) {
+                Write-Host "[DEBUG] Found Firefox at: $firefoxPath - launching private" -ForegroundColor Magenta
+                Start-Process -FilePath $firefoxPath -ArgumentList "-private-window", $Url -ErrorAction SilentlyContinue
+                return
+            }
+        }
+        
+        Write-Host "[DEBUG] No browser found in PATH, using default handler (NOT incognito)" -ForegroundColor Yellow
+        Start-Process $Url -ErrorAction SilentlyContinue
+        return
+    }
+
+    if ($IsMacOS) {
+        if (Test-Path "/Applications/Google Chrome.app") {
+            & open -na "Google Chrome" --args --incognito $Url 2>$null
             return
         }
+        if (Test-Path "/Applications/Microsoft Edge.app") {
+            & open -na "Microsoft Edge" --args -inprivate $Url 2>$null
+            return
+        }
+        & open $Url 2>$null
+        return
+    }
+
+    if ($IsLinux) {
+        $linuxChrome = Get-Command google-chrome -ErrorAction SilentlyContinue
+        if ($linuxChrome) { & $linuxChrome.Source --incognito $Url 2>$null | Out-Null; return }
+        $linuxChromium = Get-Command chromium-browser -ErrorAction SilentlyContinue
+        if ($linuxChromium) { & $linuxChromium.Source --incognito $Url 2>$null | Out-Null; return }
+        & xdg-open $Url 2>$null
+        return
     }
     
     # Fallback to default browser
@@ -169,6 +250,18 @@ function Open-BrowsersDelayed {
         function Open-UrlInJob {
             param([string]$Url)
             
+            $edgePaths = @(
+                "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
+                "$env:ProgramFiles(x86)\Microsoft\Edge\Application\msedge.exe"
+            )
+            
+            foreach ($edgePath in $edgePaths) {
+                if (Test-Path $edgePath) {
+                    Start-Process -FilePath $edgePath -ArgumentList "-inprivate", $Url -ErrorAction SilentlyContinue
+                    return
+                }
+            }
+
             $chromePaths = @(
                 "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
                 "$env:ProgramFiles(x86)\Google\Chrome\Application\chrome.exe",
@@ -178,18 +271,6 @@ function Open-BrowsersDelayed {
             foreach ($chromePath in $chromePaths) {
                 if (Test-Path $chromePath) {
                     Start-Process -FilePath $chromePath -ArgumentList "--incognito", $Url -ErrorAction SilentlyContinue
-                    return
-                }
-            }
-            
-            $edgePaths = @(
-                "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
-                "$env:ProgramFiles(x86)\Microsoft\Edge\Application\msedge.exe"
-            )
-            
-            foreach ($edgePath in $edgePaths) {
-                if (Test-Path $edgePath) {
-                    Start-Process -FilePath $edgePath -ArgumentList "-inprivate", $Url -ErrorAction SilentlyContinue
                     return
                 }
             }
