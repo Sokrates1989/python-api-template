@@ -31,13 +31,13 @@ function Invoke-ApiCall {
         }
         return $response
     } catch {
-        Write-Host "❌ API call failed: $_" -ForegroundColor Red
+        Write-Host "[FAIL] API call failed: $_" -ForegroundColor Red
         throw
     }
 }
 
 # Step 1: Create test data
-Write-Host "📝 Step 1: Creating test data..." -ForegroundColor Yellow
+Write-Host "Step 1: Creating test data..." -ForegroundColor Yellow
 
 $testData = @(
     @{ name = "Test Item 1"; description = "First test item" }
@@ -47,87 +47,87 @@ $testData = @(
 
 foreach ($item in $testData) {
     $result = Invoke-ApiCall -Method POST -Endpoint "/examples/" -Body $item
-    Write-Host "  ✅ Created: $($result.name)" -ForegroundColor Green
+    Write-Host "  [OK] Created: $($result.name)" -ForegroundColor Green
 }
 
 # Step 2: Verify data exists
 Write-Host ""
-Write-Host "🔍 Step 2: Verifying data exists..." -ForegroundColor Yellow
+Write-Host "Step 2: Verifying data exists..." -ForegroundColor Yellow
 $beforeBackup = Invoke-ApiCall -Method GET -Endpoint "/examples/"
-Write-Host "  📊 Found $($beforeBackup.total) items before backup" -ForegroundColor Green
+Write-Host "  Found $($beforeBackup.total) items before backup" -ForegroundColor Green
 
 # Step 3: Create backup
 Write-Host ""
-Write-Host "💾 Step 3: Creating backup..." -ForegroundColor Yellow
+Write-Host "Step 3: Creating backup..." -ForegroundColor Yellow
 $backup = Invoke-ApiCall -Method POST -Endpoint "/backup/create?compress=true"
-Write-Host "  ✅ Backup created: $($backup.filename)" -ForegroundColor Green
-Write-Host "  📦 Size: $($backup.size_mb) MB" -ForegroundColor Green
+Write-Host "  [OK] Backup created: $($backup.filename)" -ForegroundColor Green
+Write-Host "  Size: $($backup.size_mb) MB" -ForegroundColor Green
 $backupFilename = $backup.filename
 
 # Step 4: Wipe database
 Write-Host ""
-Write-Host "🗑️  Step 4: Wiping database..." -ForegroundColor Yellow
-Write-Host "  ⚠️  Stopping containers..." -ForegroundColor Yellow
+Write-Host "Step 4: Wiping database..." -ForegroundColor Yellow
+Write-Host "  Stopping containers..." -ForegroundColor Yellow
 docker compose down
 Start-Sleep -Seconds 2
 
-Write-Host "  🗑️  Deleting PostgreSQL data..." -ForegroundColor Yellow
+Write-Host "  Deleting PostgreSQL data..." -ForegroundColor Yellow
 $postgresDataPath = "d:\Development\Code\python\python-api-template\.docker\postgres-data"
 if (Test-Path $postgresDataPath) {
     Remove-Item -Path $postgresDataPath -Recurse -Force
-    Write-Host "  ✅ Database wiped" -ForegroundColor Green
+    Write-Host "  [OK] Database wiped" -ForegroundColor Green
 } else {
-    Write-Host "  ℹ️  No data directory found (already clean)" -ForegroundColor Cyan
+    Write-Host "  No data directory found (already clean)" -ForegroundColor Cyan
 }
 
-Write-Host "  🔄 Starting containers..." -ForegroundColor Yellow
+Write-Host "  Starting containers..." -ForegroundColor Yellow
 docker compose up -d
 Start-Sleep -Seconds 10  # Wait for services to start
 
 # Step 5: Verify database is empty
 Write-Host ""
-Write-Host "🔍 Step 5: Verifying database is empty..." -ForegroundColor Yellow
+Write-Host "Step 5: Verifying database is empty..." -ForegroundColor Yellow
 try {
     $afterWipe = Invoke-ApiCall -Method GET -Endpoint "/examples/"
-    Write-Host "  📊 Found $($afterWipe.total) items after wipe" -ForegroundColor Green
+    Write-Host "  Found $($afterWipe.total) items after wipe" -ForegroundColor Green
     
     if ($afterWipe.total -eq 0) {
-        Write-Host "  ✅ Database successfully wiped" -ForegroundColor Green
+        Write-Host "  [OK] Database successfully wiped" -ForegroundColor Green
     } else {
-        Write-Host "  ⚠️  Warning: Database not empty ($($afterWipe.total) items remain)" -ForegroundColor Yellow
+        Write-Host "  Warning: Database not empty ($($afterWipe.total) items remain)" -ForegroundColor Yellow
     }
 } catch {
-    Write-Host "  ℹ️  Database appears empty (expected)" -ForegroundColor Cyan
+    Write-Host "  Database appears empty (expected)" -ForegroundColor Cyan
 }
 
 # Step 6: Restore from backup
 Write-Host ""
-Write-Host "♻️  Step 6: Restoring from backup..." -ForegroundColor Yellow
-Write-Host "  📂 Restoring: $backupFilename" -ForegroundColor Cyan
+Write-Host "Step 6: Restoring from backup..." -ForegroundColor Yellow
+Write-Host "  Restoring: $backupFilename" -ForegroundColor Cyan
 $restore = Invoke-ApiCall -Method POST -Endpoint "/backup/restore/$backupFilename"
-Write-Host "  ✅ $($restore.message)" -ForegroundColor Green
+Write-Host "  [OK] $($restore.message)" -ForegroundColor Green
 
 # Step 7: Verify data is restored
 Write-Host ""
-Write-Host "🔍 Step 7: Verifying data is restored..." -ForegroundColor Yellow
+Write-Host "Step 7: Verifying data is restored..." -ForegroundColor Yellow
 Start-Sleep -Seconds 2  # Give database a moment
 $afterRestore = Invoke-ApiCall -Method GET -Endpoint "/examples/"
-Write-Host "  📊 Found $($afterRestore.total) items after restore" -ForegroundColor Green
+Write-Host "  Found $($afterRestore.total) items after restore" -ForegroundColor Green
 
 # Step 8: Compare results
 Write-Host ""
-Write-Host "📊 Step 8: Comparing results..." -ForegroundColor Yellow
+Write-Host "Step 8: Comparing results..." -ForegroundColor Yellow
 Write-Host "  Before backup: $($beforeBackup.total) items" -ForegroundColor Cyan
 Write-Host "  After wipe:    0 items" -ForegroundColor Cyan
 Write-Host "  After restore: $($afterRestore.total) items" -ForegroundColor Cyan
 
 if ($beforeBackup.total -eq $afterRestore.total) {
     Write-Host ""
-    Write-Host "✅ SUCCESS! Backup and restore working correctly!" -ForegroundColor Green
+    Write-Host "SUCCESS! Backup and restore working correctly!" -ForegroundColor Green
     Write-Host "   All $($afterRestore.total) items were successfully restored." -ForegroundColor Green
 } else {
     Write-Host ""
-    Write-Host "❌ FAILURE! Data mismatch!" -ForegroundColor Red
+    Write-Host "FAILURE! Data mismatch!" -ForegroundColor Red
     Write-Host "   Expected: $($beforeBackup.total) items" -ForegroundColor Red
     Write-Host "   Got: $($afterRestore.total) items" -ForegroundColor Red
     exit 1
@@ -135,12 +135,12 @@ if ($beforeBackup.total -eq $afterRestore.total) {
 
 # Step 9: Cleanup - delete test backup
 Write-Host ""
-Write-Host "🧹 Step 9: Cleaning up test backup..." -ForegroundColor Yellow
+Write-Host "Step 9: Cleaning up test backup..." -ForegroundColor Yellow
 try {
     $delete = Invoke-ApiCall -Method DELETE -Endpoint "/backup/delete/$backupFilename"
-    Write-Host "  ✅ $($delete.message)" -ForegroundColor Green
+    Write-Host "  [OK] $($delete.message)" -ForegroundColor Green
 } catch {
-    Write-Host "  ⚠️  Could not delete backup: $_" -ForegroundColor Yellow
+    Write-Host "  Could not delete backup: $_" -ForegroundColor Yellow
 }
 
 Write-Host ""

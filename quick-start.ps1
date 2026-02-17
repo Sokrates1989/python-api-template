@@ -281,7 +281,7 @@ if (-not (Test-Path .setup-complete)) {
     Write-Host ""
     docker compose --env-file .env -f $COMPOSE_FILE up --build
 } else {
-    Write-Host "🐳 Starte Backend mit Docker Compose..." -ForegroundColor Cyan
+    Write-Host "Starting backend with Docker Compose..." -ForegroundColor Cyan
     Write-Host "Backend wird verfügbar sein auf: http://localhost:$PORT" -ForegroundColor Cyan
     Write-Host ""
 

@@ -23,6 +23,18 @@ class Settings(BaseSettings):
     DB_TYPE: Literal["neo4j", "postgresql", "mysql", "sqlite"] = "neo4j"
     DB_MODE: Literal["local", "external"] = "local"
 
+    # Authentication Provider Configuration
+    AUTH_PROVIDER: str = "cognito"
+
+    # Keycloak Configuration
+    KEYCLOAK_SERVER_URL: Optional[str] = None
+    KEYCLOAK_INTERNAL_URL: Optional[str] = None
+    KEYCLOAK_REALM: Optional[str] = None
+    KEYCLOAK_CLIENT_ID: Optional[str] = None
+    KEYCLOAK_CLIENT_SECRET: Optional[str] = None
+    KEYCLOAK_ISSUER_URL: Optional[str] = None
+    KEYCLOAK_JWKS_URL: Optional[str] = None
+
     # AWS Cognito Configuration
     AWS_REGION: Optional[str] = None
     COGNITO_USER_POOL_ID: Optional[str] = None
@@ -98,6 +110,71 @@ class Settings(BaseSettings):
         if self.AWS_SECRET_ACCESS_KEY_FILE and Path(self.AWS_SECRET_ACCESS_KEY_FILE).exists():
             return Path(self.AWS_SECRET_ACCESS_KEY_FILE).read_text().strip()
         return self.AWS_SECRET_ACCESS_KEY
+
+    def get_auth_provider(self) -> str:
+        """Return the configured authentication provider.
+
+        Falls back to provider auto-detection when AUTH_PROVIDER is unset.
+
+        Returns:
+            str: Normalized provider name (cognito, keycloak, dual, none).
+        """
+        provider = (self.AUTH_PROVIDER or "").strip().lower()
+        if provider:
+            return provider
+
+        if self.is_keycloak_configured():
+            return "keycloak"
+
+        if self.is_cognito_configured():
+            return "cognito"
+
+        return "none"
+
+    def is_cognito_configured(self) -> bool:
+        """Return True when Cognito configuration values are present."""
+        region = (self.AWS_REGION or "").strip()
+        user_pool = (self.get_cognito_user_pool_id() or "").strip()
+        return bool(region and user_pool)
+
+    def is_keycloak_configured(self) -> bool:
+        """Return True when Keycloak configuration values are present."""
+        server_url = (self.KEYCLOAK_SERVER_URL or "").strip()
+        realm = (self.KEYCLOAK_REALM or "").strip()
+        client_id = (self.KEYCLOAK_CLIENT_ID or "").strip()
+        return bool(server_url and realm and client_id)
+
+    def get_keycloak_issuer_url(self) -> Optional[str]:
+        """Return the Keycloak issuer URL for JWT validation.
+
+        Returns:
+            Optional[str]: Issuer URL or None when configuration is incomplete.
+        """
+        if self.KEYCLOAK_ISSUER_URL:
+            return self.KEYCLOAK_ISSUER_URL.strip()
+
+        server_url = (self.KEYCLOAK_SERVER_URL or "").strip()
+        realm = (self.KEYCLOAK_REALM or "").strip()
+        if not server_url or not realm:
+            return None
+
+        return f"{server_url.rstrip('/')}/realms/{realm}"
+
+    def get_keycloak_jwks_url(self) -> Optional[str]:
+        """Return the Keycloak JWKS URL used for token verification.
+
+        Returns:
+            Optional[str]: JWKS URL or None when configuration is incomplete.
+        """
+        if self.KEYCLOAK_JWKS_URL:
+            return self.KEYCLOAK_JWKS_URL.strip()
+
+        server_url = (self.KEYCLOAK_INTERNAL_URL or self.KEYCLOAK_SERVER_URL or "").strip()
+        realm = (self.KEYCLOAK_REALM or "").strip()
+        if not server_url or not realm:
+            return None
+
+        return f"{server_url.rstrip('/')}/realms/{realm}/protocol/openid-connect/certs"
     
     def get_neo4j_uri(self) -> str:
         """Resolve Neo4j Bolt URI, preferring explicit NEO4J_URL when set."""

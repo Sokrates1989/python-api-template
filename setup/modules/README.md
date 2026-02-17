@@ -32,8 +32,15 @@ The modular approach separates concerns and makes the quick-start scripts more m
 - `handle_dependency_management()` / `Start-DependencyManagement` - Opens dependency management menu
 - `handle_dependency_and_backend()` / `Start-DependencyAndBackend` - Runs dependency management then starts backend
 - `handle_python_version_test()` / `Test-PythonVersionConfiguration` - Tests Python version configuration
+- `handle_keycloak_bootstrap()` - Runs the Keycloak realm bootstrap (bash only)
 - `handle_build_production_image()` / `Build-ProductionImage` - Builds production Docker image
 - `handle_cicd_setup()` / `Start-CICDSetup` - Sets up CI/CD pipeline
+
+#### 4. `bootstrap_utils.sh` / `bootstrap_utils.ps1`
+**Purpose:** Docker-based Keycloak realm bootstrap utilities
+
+**Functions:**
+- `run_keycloak_bootstrap()` / `Invoke-KeycloakBootstrap` - Builds and runs the bootstrap container to create realms, clients, roles, and users
 
 ## Usage in Quick-Start Scripts
 

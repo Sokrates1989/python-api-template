@@ -10,6 +10,16 @@ if [ -f "$SCRIPT_DIR/browser_helpers.sh" ]; then
     source "$SCRIPT_DIR/browser_helpers.sh"
 fi
 
+# Source auth provider module
+if [ -f "$SCRIPT_DIR/auth_provider.sh" ]; then
+    source "$SCRIPT_DIR/auth_provider.sh"
+fi
+
+# Source Keycloak bootstrap utilities if available
+if [ -f "$SCRIPT_DIR/bootstrap_utils.sh" ]; then
+    source "$SCRIPT_DIR/bootstrap_utils.sh"
+fi
+
 handle_backend_start() {
     local port="$1"
     local compose_file="$2"
@@ -64,6 +74,21 @@ handle_environment_diagnostics() {
     else
         echo "❌ $diagnostics_script not found"
     fi
+}
+
+# Run the Keycloak realm bootstrap.
+#
+# Returns:
+#   0 when bootstrap succeeds, 1 otherwise.
+handle_keycloak_bootstrap() {
+    if declare -F run_keycloak_bootstrap >/dev/null; then
+        run_keycloak_bootstrap
+        return $?
+    fi
+
+    echo "⚠️  Keycloak Bootstrap Modul wurde nicht geladen."
+    echo "    Bitte stelle sicher, dass setup/modules/bootstrap_utils.sh verfügbar ist."
+    return 1
 }
 
 handle_rerun_setup_wizard() {
@@ -200,6 +225,11 @@ handle_cicd_setup() {
     fi
 }
 
+# Display the interactive quick-start menu and dispatch actions.
+#
+# Args:
+#   port: API port number.
+#   compose_file: Docker Compose file path.
 show_main_menu() {
     local port="$1"
     local compose_file="$2"
@@ -207,6 +237,11 @@ show_main_menu() {
     local has_cognito=0
     if declare -F run_cognito_setup >/dev/null; then
         has_cognito=1
+    fi
+
+    local has_keycloak_bootstrap=0
+    if declare -F run_keycloak_bootstrap >/dev/null; then
+        has_keycloak_bootstrap=1
     fi
 
     local summary_msg=""
@@ -227,7 +262,11 @@ show_main_menu() {
         local MENU_BUILD_CICD_SETUP=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
         local MENU_BUILD_BUMP_VERSION=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
 
-        local MENU_SETUP_COGNITO=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_SETUP_AUTH=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_SETUP_KEYCLOAK_BOOTSTRAP=""
+        if [ "$has_keycloak_bootstrap" -eq 1 ]; then
+            MENU_SETUP_KEYCLOAK_BOOTSTRAP=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        fi
         local MENU_SETUP_WIZARD=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
 
         local MENU_EXIT=$MENU_NEXT
@@ -251,7 +290,10 @@ show_main_menu() {
         echo "  ${MENU_BUILD_BUMP_VERSION}) Bump release version for docker image"
         echo ""
         echo "Setup:"
-        echo "  ${MENU_SETUP_COGNITO}) AWS Cognito konfigurieren"
+        echo "  ${MENU_SETUP_AUTH}) Authentication Provider konfigurieren (Cognito/Keycloak/Dual)"
+        if [ "$has_keycloak_bootstrap" -eq 1 ]; then
+            echo "  ${MENU_SETUP_KEYCLOAK_BOOTSTRAP}) Keycloak Realm Bootstrap ausführen (Docker)"
+        fi
         echo "  ${MENU_SETUP_WIZARD}) Setup-Assistent erneut ausführen"
         echo ""
         echo "  ${MENU_EXIT}) Skript beenden"
@@ -295,15 +337,24 @@ show_main_menu() {
             summary_msg="Docker/Build Diagnose gestartet"
             break
             ;;
-          ${MENU_SETUP_COGNITO})
-            if [ $has_cognito -eq 1 ]; then
-                run_cognito_setup
+          ${MENU_SETUP_AUTH})
+            if declare -F setup_auth_provider >/dev/null; then
+                setup_auth_provider
                 echo ""
-                summary_msg="AWS Cognito Setup ausgeführt"
+                summary_msg="Authentication Provider Setup ausgeführt"
             else
-                echo "⚠️  AWS Cognito Modul wurde nicht geladen."
-                echo "    Bitte stelle sicher, dass setup/modules/cognito_setup.sh eingebunden ist."
-                summary_msg="AWS Cognito Setup konnte nicht ausgeführt werden"
+                echo "⚠️  Auth Provider Modul wurde nicht geladen."
+                echo "    Bitte stelle sicher, dass setup/modules/auth_provider.sh eingebunden ist."
+                summary_msg="Auth Provider Setup konnte nicht ausgeführt werden"
+                exit_code=1
+            fi
+            break
+            ;;
+          ${MENU_SETUP_KEYCLOAK_BOOTSTRAP})
+            if handle_keycloak_bootstrap; then
+                summary_msg="Keycloak Realm Bootstrap ausgeführt"
+            else
+                summary_msg="Keycloak Realm Bootstrap fehlgeschlagen"
                 exit_code=1
             fi
             break

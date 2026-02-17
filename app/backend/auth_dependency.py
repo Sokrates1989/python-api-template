@@ -1,87 +1,31 @@
-"""AWS Cognito JWT authentication dependency for FastAPI endpoints."""
+"""Authentication dependencies for FastAPI endpoints.
+
+Supports Cognito and Keycloak JWT validation with optional dual-provider fallback.
+"""
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Any, Dict
 
 import requests
 from fastapi import Depends, HTTPException, Request, status
-from jose import jwk, jwt
 from jose.exceptions import JWTClaimsError, JWTError, ExpiredSignatureError
-from jose.utils import base64url_decode
 
+from backend.auth_provider_utils import get_user_info_from_provider, resolve_provider_sequence
 from api.settings import settings
 
+def _extract_bearer_token(request: Request) -> str:
+    """Extract the bearer token from the Authorization header.
 
-def _get_cognito_jwks() -> Dict[str, Dict[str, str]]:
-    """Fetch the JWKS for the configured Cognito user pool."""
-    region = (settings.AWS_REGION or "").strip()
-    user_pool = (settings.get_cognito_user_pool_id() or "").strip()
+    Args:
+        request: FastAPI request object.
 
-    if not region or not user_pool:
-        raise RuntimeError("AWS Cognito configuration is missing")
+    Returns:
+        str: JWT token string.
 
-    jwks_url = (
-        f"https://cognito-idp.{region}.amazonaws.com/"
-        f"{user_pool}/.well-known/jwks.json"
-    )
-
-    response = requests.get(jwks_url, timeout=5)
-    response.raise_for_status()
-    jwks = response.json()
-
-    if "keys" not in jwks:
-        raise ValueError("Invalid JWKS payload returned by Cognito")
-
-    return jwks
-
-
-def _verify_cognito_token(token: str) -> Dict[str, str]:
-    """Verify a JWT access token issued by Cognito."""
-    jwks = _get_cognito_jwks()
-    headers = jwt.get_unverified_header(token)
-    kid = headers.get("kid")
-
-    if not kid:
-        raise ValueError("Token header missing 'kid'")
-
-    key = next((k for k in jwks["keys"] if k.get("kid") == kid), None)
-    if not key:
-        raise ValueError("Matching JWK not found for token")
-
-    public_key = jwk.construct(key)
-    message, encoded_signature = token.rsplit(".", 1)
-    decoded_signature = base64url_decode(encoded_signature.encode())
-
-    if not public_key.verify(message.encode(), decoded_signature):
-        raise ValueError("Token signature verification failed")
-
-    issuer = (
-        f"https://cognito-idp.{settings.AWS_REGION}.amazonaws.com/"
-        f"{settings.get_cognito_user_pool_id()}"
-    )
-
-    audience = settings.get_cognito_app_client_id()
-    if audience == "app_client_id_is_not_set":
-        audience = None
-
-    claims = jwt.decode(
-        token,
-        key,
-        algorithms=["RS256"],
-        audience=audience,
-        issuer=issuer,
-    )
-
-    if claims.get("token_use") != "access":
-        raise ValueError("Token is not an access token")
-
-    return claims
-
-
-async def verify_jwt_token_dependency(request: Request) -> Dict[str, str]:
-    """FastAPI dependency to validate Cognito-issued JWT tokens."""
-
+    Raises:
+        HTTPException: When the header is missing or token is empty.
+    """
     auth_header = request.headers.get("Authorization", "")
     if not auth_header:
         raise HTTPException(
@@ -95,35 +39,146 @@ async def verify_jwt_token_dependency(request: Request) -> Dict[str, str]:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="JWT token is required",
         )
+    return token
 
-    try:
-        claims = _verify_cognito_token(token)
-    except (ValueError, ExpiredSignatureError, JWTClaimsError, JWTError) as exc:
+
+def _build_debug_user_info(request: Request) -> Dict[str, Any]:
+    """Build a placeholder identity for AUTH_PROVIDER=none.
+
+    Args:
+        request: FastAPI request object.
+
+    Returns:
+        Dict[str, Any]: User info payload with a synthetic user identity.
+    """
+    user_id = request.headers.get("X-User-Id") or "local-user"
+    email = request.headers.get("X-User-Email") or "local-user@example.com"
+    username = request.headers.get("X-Username") or user_id
+    claims = {
+        "sub": user_id,
+        "email": email,
+        "preferred_username": username,
+    }
+    return {
+        "sub": user_id,
+        "user_id": user_id,
+        "email": email,
+        "username": username,
+        "claims": claims,
+        "provider": "none",
+    }
+
+
+def _raise_http_error_for_provider(provider: str, exc: Exception) -> None:
+    """Raise an HTTPException corresponding to provider verification errors.
+
+    Args:
+        provider: Provider name used for context.
+        exc: Exception raised during verification.
+
+    Raises:
+        HTTPException: Mapped to the appropriate HTTP status.
+    """
+    provider_label = provider.capitalize()
+    if isinstance(exc, RuntimeError):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"{provider_label} configuration is missing",
+        ) from exc
+    if isinstance(exc, requests.HTTPError):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to fetch {provider_label} JWKS",
+        ) from exc
+    if isinstance(exc, (ValueError, ExpiredSignatureError, JWTClaimsError, JWTError)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid JWT token: {exc}",
         ) from exc
-    except requests.HTTPError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Failed to fetch Cognito JWKS",
-        ) from exc
-    except Exception as exc:  # pragma: no cover - unexpected
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Token verification error: {exc}",
-        ) from exc
-
-    return {
-        "sub": claims.get("sub"),
-        "user_id": claims.get("sub"),
-        "email": claims.get("email"),
-        "username": claims.get("cognito:username") or claims.get("username"),
-        "claims": claims,
-    }
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail=f"Token verification error: {exc}",
+    ) from exc
 
 
-def get_user_id_from_token(user_info: Dict[str, str] = Depends(verify_jwt_token_dependency)) -> str:
+def _format_auth_error(provider: str, exc: Exception) -> str:
+    """Format provider errors for dual-auth failure messages.
+
+    Args:
+        provider: Provider name used for context.
+        exc: Exception raised during verification.
+
+    Returns:
+        str: Human-readable error message.
+    """
+    provider_label = provider.capitalize()
+    if isinstance(exc, RuntimeError):
+        return f"{provider_label} configuration missing"
+    if isinstance(exc, requests.HTTPError):
+        return f"{provider_label} JWKS fetch failed"
+    if isinstance(exc, (ValueError, ExpiredSignatureError, JWTClaimsError, JWTError)):
+        return f"{provider_label} token invalid: {exc}"
+    return f"{provider_label} error: {exc}"
+
+
+def _build_dual_auth_exception(errors: list[tuple[str, Exception]]) -> HTTPException:
+    """Build HTTPException for dual-provider authentication failures.
+
+    Args:
+        errors: List of provider/error pairs.
+
+    Returns:
+        HTTPException: Exception describing the combined failure.
+    """
+    detail = "; ".join(_format_auth_error(provider, exc) for provider, exc in errors)
+    if any(isinstance(exc, RuntimeError) for _, exc in errors):
+        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    elif any(isinstance(exc, requests.HTTPError) for _, exc in errors):
+        status_code = status.HTTP_502_BAD_GATEWAY
+    else:
+        status_code = status.HTTP_401_UNAUTHORIZED
+    return HTTPException(status_code=status_code, detail=detail)
+
+
+async def verify_auth_dependency(request: Request) -> Dict[str, Any]:
+    """Validate JWT tokens based on the configured auth provider.
+
+    Args:
+        request: FastAPI request object.
+
+    Returns:
+        Dict[str, Any]: Normalized user info payload.
+
+    Raises:
+        HTTPException: When validation fails or configuration is missing.
+    """
+    provider = settings.get_auth_provider()
+    providers = resolve_provider_sequence(provider)
+
+    if not providers:
+        return _build_debug_user_info(request)
+
+    token = _extract_bearer_token(request)
+
+    errors: list[tuple[str, Exception]] = []
+    for provider_name in providers:
+        try:
+            return get_user_info_from_provider(provider_name, token)
+        except Exception as exc:
+            if provider == "dual":
+                errors.append((provider_name, exc))
+                continue
+            _raise_http_error_for_provider(provider_name, exc)
+
+    raise _build_dual_auth_exception(errors)
+
+
+async def verify_jwt_token_dependency(request: Request) -> Dict[str, Any]:
+    """Backward-compatible alias for verify_auth_dependency."""
+    return await verify_auth_dependency(request)
+
+
+def get_user_id_from_token(user_info: Dict[str, Any] = Depends(verify_auth_dependency)) -> str:
     """Helper dependency returning the authenticated user's ID."""
 
     user_id = user_info.get("user_id") or user_info.get("sub")

@@ -6,7 +6,7 @@ Users can only access and modify their own data.
 """
 from fastapi import APIRouter, HTTPException, Depends, status
 from backend.services.sql.user_service import UserService
-from backend.auth_dependency import verify_jwt_token_dependency, get_user_id_from_token
+from backend.auth_dependency import verify_auth_dependency, get_user_id_from_token
 from api.schemas.users.requests import (
     UserCreateRequest,
     UserUpdateRequest,
@@ -29,7 +29,7 @@ def get_service() -> UserService:
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_user(
     user: UserCreateRequest,
-    user_info: dict = Depends(verify_jwt_token_dependency)
+    user_info: dict = Depends(verify_auth_dependency)
 ):
     """
     Create a new user.

@@ -8,6 +8,18 @@ if (Test-Path $BrowserHelpersPath) {
     . $BrowserHelpersPath
 }
 
+# Source auth provider module if available
+$AuthProviderPath = Join-Path $ScriptDir "auth_provider.ps1"
+if (Test-Path $AuthProviderPath) {
+    . $AuthProviderPath
+}
+
+# Source Keycloak bootstrap utilities if available
+$BootstrapUtilsPath = Join-Path $ScriptDir "bootstrap_utils.ps1"
+if (Test-Path $BootstrapUtilsPath) {
+    . $BootstrapUtilsPath
+}
+
 function Open-BrowserInIncognito {
     param(
         [string]$Port,
@@ -156,7 +168,7 @@ function Start-BackendNoCache {
     docker compose --env-file .env -f $ComposeFile up
 }
 
-function Build-ProductionImage {
+function Invoke-ProductionImageBuild {
     Write-Host "Building production Docker image..." -ForegroundColor Cyan
     Write-Host ""
     if (Test-Path build-image\docker-compose.build.yml) {
@@ -185,6 +197,8 @@ function Show-MainMenu {
     )
  
     $hasCognito = [bool](Get-Command Invoke-CognitoSetup -ErrorAction SilentlyContinue)
+    $hasAuthProvider = [bool](Get-Command Set-AuthProvider -ErrorAction SilentlyContinue)
+    $hasKeycloakBootstrap = [bool](Get-Command Invoke-KeycloakBootstrap -ErrorAction SilentlyContinue)
  
     $menuNext = 1
     $MENU_START_BACKEND = $menuNext; $menuNext++
@@ -200,6 +214,10 @@ function Show-MainMenu {
     $MENU_BUILD_BUMP_VERSION = $menuNext; $menuNext++
  
     $MENU_SETUP_COGNITO = $menuNext; $menuNext++
+    $MENU_SETUP_AUTH = $null
+    if ($hasAuthProvider) { $MENU_SETUP_AUTH = $menuNext; $menuNext++ }
+    $MENU_SETUP_KEYCLOAK_BOOTSTRAP = $null
+    if ($hasKeycloakBootstrap) { $MENU_SETUP_KEYCLOAK_BOOTSTRAP = $menuNext; $menuNext++ }
     $MENU_SETUP_WIZARD = $menuNext; $menuNext++
  
     $MENU_EXIT = $menuNext
@@ -225,6 +243,12 @@ function Show-MainMenu {
     Write-Host "" 
     Write-Host "Setup:" -ForegroundColor Yellow
     Write-Host "  $MENU_SETUP_COGNITO) Configure AWS Cognito" -ForegroundColor Gray
+    if ($hasAuthProvider) {
+        Write-Host "  $MENU_SETUP_AUTH) Configure Authentication Provider (Cognito/Keycloak/Dual)" -ForegroundColor Gray
+    }
+    if ($hasKeycloakBootstrap) {
+        Write-Host "  $MENU_SETUP_KEYCLOAK_BOOTSTRAP) Run Keycloak realm bootstrap (Docker)" -ForegroundColor Gray
+    }
     Write-Host "  $MENU_SETUP_WIZARD) Re-run setup wizard" -ForegroundColor Gray
     Write-Host "" 
     Write-Host "  $MENU_EXIT) Exit" -ForegroundColor Gray
@@ -272,8 +296,37 @@ function Show-MainMenu {
                  $exitCode = 1
              }
          }
+        "$MENU_SETUP_AUTH" {
+            if ($hasAuthProvider) {
+                Set-AuthProvider
+                if (Get-Command Show-AuthStatus -ErrorAction SilentlyContinue) {
+                    Show-AuthStatus
+                }
+                $summary = "Authentication provider setup executed"
+            } else {
+                Write-Host "Auth provider module not loaded." -ForegroundColor Yellow
+                Write-Host "Ensure setup/modules/auth_provider.ps1 is available." -ForegroundColor Yellow
+                $summary = "Auth provider setup could not run"
+                $exitCode = 1
+            }
+        }
+        "$MENU_SETUP_KEYCLOAK_BOOTSTRAP" {
+            if ($hasKeycloakBootstrap) {
+                if (Invoke-KeycloakBootstrap) {
+                    $summary = "Keycloak realm bootstrap executed"
+                } else {
+                    $summary = "Keycloak realm bootstrap failed"
+                    $exitCode = 1
+                }
+            } else {
+                Write-Host "Keycloak bootstrap module not loaded." -ForegroundColor Yellow
+                Write-Host "Ensure setup/modules/bootstrap_utils.ps1 is available." -ForegroundColor Yellow
+                $summary = "Keycloak realm bootstrap could not run"
+                $exitCode = 1
+            }
+        }
         "$MENU_BUILD_PROD_IMAGE" {
-             Build-ProductionImage
+             Invoke-ProductionImageBuild
              $summary = "Production Docker image build triggered"
          }
         "$MENU_BUILD_CICD_SETUP" {

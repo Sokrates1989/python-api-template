@@ -66,6 +66,30 @@ The script will:
 - ✅ Detect database type (PostgreSQL/Neo4j) and mode (local/external)
 - ✅ Start the correct containers automatically
 
+### 🔐 Keycloak Bootstrap (Optional)
+
+If you plan to use Keycloak authentication, you can bootstrap a ready-to-use realm
+with default clients, roles, and users via Docker.
+
+**Steps:**
+1. Ensure your Keycloak server is running (default URL: `http://localhost:9090`).
+2. Run the quick-start script and choose **"Run Keycloak realm bootstrap (Docker)"** from the Setup menu.
+3. Adjust the bootstrap environment variables in `.env` if needed (see `setup/.env.template`).
+
+**Defaults used by the bootstrap script:**
+- Realm: `python-api-template`
+- Backend client: `python-api-template-backend`
+- Frontend client: `python-api-template-frontend`
+- Frontend root URL: `http://localhost:3000`
+- API root URL: `http://localhost:8000`
+
+**Useful bootstrap variables (optional):**
+- `KEYCLOAK_BOOTSTRAP_URL` (override the Keycloak URL used by the bootstrap container)
+- `KEYCLOAK_ADMIN` / `KEYCLOAK_ADMIN_PASSWORD`
+- `KEYCLOAK_FRONTEND_CLIENT_ID` / `KEYCLOAK_BACKEND_CLIENT_ID`
+- `KEYCLOAK_ROLES` (semicolon-separated)
+- `KEYCLOAK_USERS` (semicolon-separated `username:password:role1,role2` specs)
+
 ### Option 1: Quick Start with PostgreSQL (Manual)
 
 **Windows:**

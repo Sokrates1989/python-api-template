@@ -170,5 +170,5 @@ Invoke-ComposeBuild -ComposeFile "local-deployment/docker-compose.yml" -Descript
 Invoke-ComposeBuild -ComposeFile "local-deployment/docker-compose.postgres.yml" -Description "PostgreSQL stack"
 Invoke-ComposeBuild -ComposeFile "local-deployment/docker-compose.neo4j.yml" -Description "Neo4j stack"
 
-Write-ColorOutput "🎉 Docker build diagnostics completed successfully!" "Green"
+Write-ColorOutput "Docker build diagnostics completed successfully!" "Green"
 Write-ColorOutput "===============================================" "Green"
