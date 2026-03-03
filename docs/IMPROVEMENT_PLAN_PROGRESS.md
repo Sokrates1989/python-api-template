@@ -8,7 +8,7 @@ Last updated: 2026-03-03
 - Parallel hardening: Phase 6 / Step 2 startup probes and structured diagnostics (completed).
 - Parallel hardening: Phase 6 / Step 3 release checklist and safe verification flow (completed).
 - Parallel hardening: Phase 6 / Step 4 deprecation cleanup and release polish (completed).
-- Parallel hardening: Phase 6 / Step 5 release-candidate closeout and commit grouping (in progress).
+- Parallel hardening: Phase 6 / Step 5 release-candidate closeout and commit grouping (completed).
 
 ## Phase Status
 
