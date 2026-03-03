@@ -72,7 +72,7 @@ Falls die automatisch erstellte `.env` nicht ausreicht, kannst du:
 - 📧 Bei fehlender Berechtigung: Administrator um Zugang zum Tresor `FASTAPI-REDIS-API-TEST` bitten
 
 ### 4. API verwenden
-- **Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Swagger UI:** [http://localhost:8081/docs](http://localhost:8081/docs)
 - **API-Endpunkte:** Port aus deiner `.env` (Standard: 8000)
 
 ## 🔧 Dependency Management
@@ -201,13 +201,13 @@ docker compose up --build --force-recreate
 ### Erstes Setup (einmalig)
 1. **Projekt clonen:** `git clone ...`
 2. **Quick Start:** `./quick-start.sh` (läuft automatisch alles durch)
-3. **API testen:** [http://localhost:8000/docs](http://localhost:8000/docs)
+3. **API testen:** [http://localhost:8081/docs](http://localhost:8081/docs)
 
 ### Tägliche Entwicklung
 1. **Backend starten:** `./quick-start.sh` (mit Auswahlmenü)
 2. **Code ändern:** Automatisches Reload in Docker
 3. **Pakete hinzufügen:** `./manage-python-project-dependencies.sh` → `pdm add <package>`
-4. **API testen:** [http://localhost:8000/docs](http://localhost:8000/docs)
+4. **API testen:** [http://localhost:8081/docs](http://localhost:8081/docs)
 
 ### Deployment
 ```bash
@@ -296,3 +296,4 @@ uvicorn main:app --reload
 ```
 
 </details>
+

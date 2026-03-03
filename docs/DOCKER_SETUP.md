@@ -14,7 +14,7 @@ cp .env.postgres.example .env
 docker-compose -f docker-compose.postgres.yml up --build
 
 # 3. Test the API
-curl http://localhost:8000/test/db-test
+curl http://localhost:8081/test/db-test
 ```
 
 ### Option 2: Neo4j Setup
@@ -27,7 +27,7 @@ cp .env.neo4j.example .env
 docker-compose -f docker-compose.neo4j.yml up --build
 
 # 3. Test the API
-curl http://localhost:8000/test/db-test
+curl http://localhost:8081/test/db-test
 ```
 
 ## Detailed Setup
@@ -44,11 +44,11 @@ cp .env.postgres.example .env
 The `.env` file will contain:
 ```bash
 DB_TYPE=postgresql
-DATABASE_URL=postgresql://postgres:postgres@postgres:5432/apidb
+DATABASE_URL=postgresql://postgres:postgres@postgres:5433/apidb
 DB_NAME=apidb
 DB_USER=postgres
 DB_PASSWORD=postgres
-DB_PORT=5432
+DB_PORT=5433
 PORT=8000
 DEBUG=true
 REDIS_URL=redis://redis:6379
@@ -86,16 +86,16 @@ docker-compose -f docker-compose.postgres.yml exec postgres psql -U postgres -d 
 
 ```bash
 # Test database connection
-curl http://localhost:8000/test/db-test
+curl http://localhost:8081/test/db-test
 
 # Get database info
-curl http://localhost:8000/test/db-info
+curl http://localhost:8081/test/db-info
 
 # Execute sample query
-curl http://localhost:8000/test/db-sample-query
+curl http://localhost:8081/test/db-sample-query
 
 # View Swagger UI
-open http://localhost:8000/docs
+open http://localhost:8081/docs
 ```
 
 ### Neo4j Setup
@@ -161,16 +161,16 @@ MATCH (n) RETURN n LIMIT 10;
 
 ```bash
 # Test database connection
-curl http://localhost:8000/test/db-test
+curl http://localhost:8081/test/db-test
 
 # Get database info
-curl http://localhost:8000/test/db-info
+curl http://localhost:8081/test/db-info
 
 # Execute sample query
-curl http://localhost:8000/test/db-sample-query
+curl http://localhost:8081/test/db-sample-query
 
 # View Swagger UI
-open http://localhost:8000/docs
+open http://localhost:8081/docs
 ```
 
 ## Docker Compose Files
@@ -262,15 +262,15 @@ docker-compose -f docker-compose.postgres.yml down -v --rmi all
 
 ### API Endpoints
 
-- **API**: http://localhost:8000
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
+- **API**: http://localhost:8081
+- **Swagger UI**: http://localhost:8081/docs
+- **ReDoc**: http://localhost:8081/redoc
 
 ### Database Access
 
 **PostgreSQL:**
 - **Host**: localhost
-- **Port**: 5432
+- **Port**: 5433
 - **Database**: apidb
 - **User**: postgres
 - **Password**: postgres
@@ -327,26 +327,29 @@ echo "Testing API..."
 
 # Test health
 echo -e "\n1. Health Check:"
-curl -s http://localhost:8000/health | jq
+curl -s http://localhost:8081/health | jq
 
 # Test database connection
 echo -e "\n2. Database Connection:"
-curl -s http://localhost:8000/test/db-test | jq
+curl -s http://localhost:8081/test/db-test | jq
 
 # Test database info
 echo -e "\n3. Database Info:"
-curl -s http://localhost:8000/test/db-info | jq
+curl -s http://localhost:8081/test/db-info | jq
 
 # Test sample query
 echo -e "\n4. Sample Query:"
-curl -s http://localhost:8000/test/db-sample-query | jq
+curl -s http://localhost:8081/test/db-sample-query | jq
 
 # Test file endpoints
 echo -e "\n5. File Count:"
-curl -s http://localhost:8000/files/file-count | jq
+curl -s http://localhost:8081/files/file-count | jq
 
 echo -e "\nAll tests completed!"
 ```
+
+The `/health` response now includes startup diagnostics:
+`status`, `database_type`, `provider_profile`, `startup_probe_status`.
 
 Run it:
 ```bash
@@ -358,7 +361,7 @@ chmod +x test_api.sh
 
 **Test Database Connection:**
 ```bash
-curl http://localhost:8000/test/db-test
+curl http://localhost:8081/test/db-test
 ```
 
 Expected response:
@@ -372,12 +375,12 @@ Expected response:
 
 **Test Database Info:**
 ```bash
-curl http://localhost:8000/test/db-info
+curl http://localhost:8081/test/db-info
 ```
 
 **Test Sample Query:**
 ```bash
-curl http://localhost:8000/test/db-sample-query
+curl http://localhost:8081/test/db-sample-query
 ```
 
 ## Troubleshooting
@@ -489,20 +492,21 @@ healthcheck:
 ```bash
 cp .env.postgres.example .env
 docker-compose -f docker-compose.postgres.yml up -d
-curl http://localhost:8000/test/db-test
+curl http://localhost:8081/test/db-test
 ```
 
 ### Neo4j Setup
 ```bash
 cp .env.neo4j.example .env
 docker-compose -f docker-compose.neo4j.yml up -d
-curl http://localhost:8000/test/db-test
+curl http://localhost:8081/test/db-test
 ```
 
 ### Access Points
-- **API**: http://localhost:8000/docs
-- **PostgreSQL**: localhost:5432
+- **API**: http://localhost:8081/docs
+- **PostgreSQL**: localhost:5433
 - **Neo4j Browser**: http://localhost:7474
 - **Redis**: localhost:6379
 
 The setup is now ready for testing! 🚀
+

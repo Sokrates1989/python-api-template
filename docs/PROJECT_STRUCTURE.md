@@ -36,7 +36,7 @@ python-api-template/
 │   │
 │   ├── models/                       # 📊 Data Models
 │   │   ├── __init__.py
-│   │   └── example_sql_models.py    # SQLAlchemy models
+│   │   └── sql/example_sql_models.py    # SQLAlchemy models
 │   │
 │   ├── mounted_data/                 # Example data
 │   └── main.py                       # 🚀 Application entry point
@@ -205,7 +205,7 @@ The database layer automatically handles Neo4j vs SQL based on `.env` configurat
 
 ```bash
 # .env
-DB_TYPE=neo4j  # or postgresql, mysql, sqlite
+DB_TYPE=neo4j  # official: neo4j, postgresql/postgres, mongodb
 ```
 
 ### Usage in Services
@@ -233,7 +233,7 @@ DatabaseService (app/backend/services/database_service.py)
 DatabaseFactory (app/backend/database/factory.py)
     ↓
     ├─→ Neo4jHandler (if DB_TYPE=neo4j)
-    └─→ SQLHandler (if DB_TYPE=postgresql/mysql/sqlite)
+    └─→ SQLHandler (if DB_TYPE=postgresql/postgres)
 ```
 
 ## File Organization Best Practices
@@ -346,7 +346,7 @@ tests/
 
 ```bash
 # Database
-DB_TYPE=neo4j
+DB_TYPE=neo4j  # official: neo4j, postgresql/postgres, mongodb
 NEO4J_URL=bolt://localhost:7687
 DB_USER=neo4j
 DB_PASSWORD=password

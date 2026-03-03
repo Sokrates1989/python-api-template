@@ -93,7 +93,7 @@ postgres:
    ```env
    DB_USER=myuser
    DB_PASSWORD=mystrongpassword
-   DATABASE_URL=postgresql://myuser:mystrongpassword@postgres:5432/apidb
+   DATABASE_URL=postgresql://myuser:mystrongpassword@postgres:5433/apidb
    ```
 2. Delete existing data: `rm -rf .docker/postgres-data/`
 3. Restart: `docker compose -f docker-compose.postgres.yml up --build`
@@ -275,7 +275,7 @@ docker compose -f docker-compose.neo4j.yml up --build
 ```env
 DB_USER=myuser
 DB_PASSWORD=mypass
-DATABASE_URL=postgresql://myuser:mypass@postgres:5432/apidb
+DATABASE_URL=postgresql://myuser:mypass@postgres:5433/apidb
                         # ^^^^^^  ^^^^^^ must match
 ```
 

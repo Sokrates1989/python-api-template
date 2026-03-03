@@ -33,7 +33,31 @@ app/backend/database/
 - Consistent interface across all handlers
 - Testable and maintainable
 
-### 3. Clean Code Organization
+### 3. Domain Ports and Provider Adapters
+
+The template now introduces domain-level ports so routes can stay database-agnostic.
+
+```
+app/backend/
+|-- ports/
+|   |-- user_repository.py              # Provider-agnostic user contract
+|   |-- example_repository.py           # Provider-agnostic example contract
+|   |-- provider_capabilities.py        # Cross-provider capability contract
+|   `-- backup_capability.py            # Backup adapter contract (reuses provider capabilities)
+|-- adapters/
+|   |-- user_repository_factory.py      # Registry/factory + provider adapters
+|   |-- example_repository_factory.py   # Registry/factory + provider adapters
+|   |-- provider_capability_factory.py  # Capability profile resolver by DB type
+|   `-- backup_capability_factory.py    # Registry/factory + provider adapters
+`-- services/
+    |-- user_service.py                 # Facade bound to the active adapter
+    |-- example_service.py              # Facade bound to the active adapter
+    `-- backup_service.py               # Facade bound to the active adapter
+```
+
+This is the pattern to follow for next domains (`sync`) to reduce route-level branching.
+
+### 4. Clean Code Organization
 
 #### API Layer (`app/api/`)
 
@@ -72,7 +96,7 @@ backend/
 ```
 models/
 ├── __init__.py
-└── example_sql_models.py  # SQLAlchemy models (for SQL databases)
+└── sql/example_sql_models.py  # SQLAlchemy models (for SQL databases)
 ```
 
 **Responsibilities:**
@@ -196,7 +220,7 @@ All configuration is managed through environment variables:
 ```python
 # app/api/settings.py
 class Settings(BaseSettings):
-    DB_TYPE: Literal["neo4j", "postgresql", "mysql", "sqlite"]
+    DB_TYPE: Literal["neo4j", "postgresql", "postgres", "mongodb"]
     NEO4J_URL: str
     DATABASE_URL: str
     # ...
@@ -385,9 +409,9 @@ Different configurations for different environments:
 Structured logging throughout the application:
 
 ```python
-print(f"🔧 Initializing {settings.DB_TYPE} database...")
-print(f"✅ {result['message']}")
-print(f"❌ {result['message']}")
+log_event(logger, logging.INFO, "startup.begin", db_type=settings.normalized_db_type())
+log_event(logger, logging.INFO, "startup.provider_probe_ok", probe=startup_probe)
+log_event(logger, logging.ERROR, "startup.provider_probe_failed", probe=startup_probe)
 ```
 
 ### Health Checks
@@ -397,9 +421,15 @@ Health check endpoint for monitoring:
 ```python
 @app.get("/health")
 def check_health():
-    return {"status": "OK"}
+    return {
+        "status": "OK",
+        "database_type": database_type,
+        "provider_profile": provider_profile,
+        "startup_probe_status": startup_probe_status,
+    }
 ```
 
+See `docs/STARTUP_PROBES.md` for provider-specific startup probe details.
 ### Database Connection Test
 
 Dedicated endpoint for database testing:
@@ -434,3 +464,4 @@ This architecture provides:
 - ✅ **Performance**: Optimized database operations
 
 The modular design allows the template to grow with your needs while maintaining code quality and organization.
+

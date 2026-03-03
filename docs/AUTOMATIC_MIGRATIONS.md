@@ -9,17 +9,16 @@ This template **automatically runs database migrations** when the application st
 ### 1. **Startup Sequence**
 
 ```python
-# app/main.py
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database and run migrations on startup."""
-    
-    # Step 1: Initialize database connection
+# app/api/config/lifecycle.py
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+
+@asynccontextmanager
+async def app_lifespan(app: FastAPI):
+    """Initialize database and run migrations during app startup."""
     await init_database()
-    
-    # Step 2: Run migrations automatically (SQL databases only)
-    from backend.database.migrations import run_migrations
     run_migrations()
+    yield
 ```
 
 ### 2. **What Gets Executed**
@@ -245,15 +244,18 @@ docker compose exec postgres psql -U postgres -d apidb -c "\dt"
 If you prefer manual control, comment out the migration call:
 
 ```python
-# app/main.py
-@app.on_event("startup")
-async def startup_event():
+# app/api/config/lifecycle.py
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+
+@asynccontextmanager
+async def app_lifespan(app: FastAPI):
     """Initialize database on startup."""
     await init_database()
-    
+
     # Disable automatic migrations
-    # from backend.database.migrations import run_migrations
     # run_migrations()
+    yield
 ```
 
 Then run migrations manually:

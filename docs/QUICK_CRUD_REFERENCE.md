@@ -271,26 +271,26 @@ count = result.scalar()
 
 ```bash
 # Initialize table
-curl -X POST http://localhost:8000/examples/initialize
+curl -X POST http://localhost:8081/examples/initialize
 
 # Create
-curl -X POST http://localhost:8000/examples/ \
+curl -X POST http://localhost:8081/examples/ \
   -H "Content-Type: application/json" \
   -d '{"name": "Test", "description": "Description"}'
 
 # List
-curl http://localhost:8000/examples/
+curl http://localhost:8081/examples/
 
 # Get by ID
-curl http://localhost:8000/examples/{id}
+curl http://localhost:8081/examples/{id}
 
 # Update
-curl -X PUT http://localhost:8000/examples/{id} \
+curl -X PUT http://localhost:8081/examples/{id} \
   -H "Content-Type: application/json" \
   -d '{"name": "Updated Name"}'
 
 # Delete
-curl -X DELETE http://localhost:8000/examples/{id}
+curl -X DELETE http://localhost:8081/examples/{id}
 ```
 
 ---
@@ -352,3 +352,4 @@ class Role(Base):
 - [CRUD_EXAMPLE.md](./CRUD_EXAMPLE.md) - Full detailed guide
 - [DATABASE.md](./DATABASE.md) - Database configuration
 - [ARCHITECTURE.md](./ARCHITECTURE.md) - Project structure
+

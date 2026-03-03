@@ -44,17 +44,17 @@ DB_TYPE=postgresql
 DB_MODE=local
 
 # Docker service names (not localhost!)
-DATABASE_URL=postgresql://postgres:postgres@postgres:5432/apidb
+DATABASE_URL=postgresql://postgres:postgres@postgres:5433/apidb
 DB_NAME=apidb
 DB_USER=postgres
 DB_PASSWORD=postgres
-DB_PORT=5432
+DB_PORT=5433
 ```
 
 **Docker Compose:** `docker-compose.postgres.yml`
 - Starts PostgreSQL 16 container
 - Data: `.docker/postgres-data/`
-- Access: localhost:5432
+- Access: localhost:5433
 
 #### Local Neo4j
 
@@ -195,8 +195,8 @@ cp .env.postgres.example .env
 ./quick-start.sh
 
 # 3. Access
-# API: http://localhost:8000/docs
-# PostgreSQL: localhost:5432
+# API: http://localhost:8081/docs
+# PostgreSQL: localhost:5433
 ```
 
 ### Example 2: External Production Database
@@ -213,7 +213,7 @@ nano .env
 ./quick-start.sh
 
 # 4. Access
-# API: http://localhost:8000/docs
+# API: http://localhost:8081/docs
 # Database: Your external server
 ```
 
@@ -230,7 +230,7 @@ start-neo4j.bat  # Windows
 ./quick-start.sh  # Linux/Mac
 
 # 3. Access
-# API: http://localhost:8000/docs
+# API: http://localhost:8081/docs
 # Neo4j Browser: http://localhost:7474
 ```
 
@@ -258,7 +258,7 @@ docker-compose -f docker-compose.external.yml down
 
 # 2. Update .env
 DB_MODE=local
-DATABASE_URL=postgresql://postgres:postgres@postgres:5432/apidb
+DATABASE_URL=postgresql://postgres:postgres@postgres:5433/apidb
 
 # 3. Restart
 ./quick-start.sh
@@ -280,6 +280,7 @@ DATABASE_URL=postgresql://postgres:postgres@postgres:5432/apidb
 docker-compose.yml               # Basic (app + redis) - for external databases
 docker-compose.postgres.yml      # Local PostgreSQL + Redis + App
 docker-compose.neo4j.yml         # Local Neo4j + Redis + App
+docker-compose.mongodb.yml       # Local MongoDB + Redis + App
 ```
 
 ## Automatic Detection
@@ -288,13 +289,12 @@ The `quick-start.sh` (Linux/Mac) or `quick-start.ps1` (Windows) script automatic
 
 ```bash
 # Reads from .env:
-DB_TYPE=postgresql  # or neo4j, mysql, sqlite
+DB_TYPE=postgresql  # official: postgresql/postgres, neo4j, mongodb
 DB_MODE=local       # or external
-
 # Selects compose file:
-# - DB_MODE=external → docker-compose.yml
 # - DB_TYPE=neo4j + DB_MODE=local → docker-compose.neo4j.yml
 # - DB_TYPE=postgresql + DB_MODE=local → docker-compose.postgres.yml
+# - DB_TYPE=mongodb + DB_MODE=local → docker-compose.mongodb.yml
 ```
 
 ## Troubleshooting
@@ -359,3 +359,12 @@ cypher-shell -a bolt://neo4j.example.com:7687 -u neo4j  # Neo4j
 - **Flexible**: Easy to switch between modes by changing `.env`
 
 Choose the mode that fits your use case and let the system handle the rest! 🚀
+
+
+
+
+
+
+
+
+

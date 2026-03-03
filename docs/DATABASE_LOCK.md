@@ -69,6 +69,35 @@ Headers: X-Admin-Key: your-admin-key
 }
 ```
 
+### Discover Provider Info
+
+```http
+GET /database/provider-info
+Headers: X-Admin-Key: your-admin-key
+```
+
+**Response:**
+```json
+{
+  "database_type": "sql",
+  "provider_profile": "sql",
+  "capabilities": {
+    "supports_transactions": true,
+    "supports_migrations": true,
+    "supports_optimistic_locking": true,
+    "supports_sync_api": true,
+    "supports_user_repository": true,
+    "supports_example_repository": true,
+    "supports_backup_download": true,
+    "supports_restore_upload": true,
+    "supports_restore_status": true,
+    "supports_stats": true
+  },
+  "is_locked": false,
+  "lock_operation": null
+}
+```
+
 ## Middleware Behavior
 
 When the database is locked:
@@ -96,16 +125,17 @@ When the database is locked:
 
 ## Security
 
-- **Requires Admin Authentication**: All lock endpoints require the `X-Admin-Key` header
+- **Requires Admin Authentication**: Lock endpoints accept either `X-Admin-Key` or `Authorization: Bearer <token>`
 - **File-Based Lock**: Uses a file-based locking mechanism shared across API instances
 - **Timeout Protection**: Locks automatically expire after 2 hours (7200 seconds)
-- **Fail-Open**: If the lock check fails, requests are allowed to proceed
+- **Fail-Closed by Default**: If lock status cannot be checked, write requests are blocked (503)
+- **Configurable**: Set `DB_LOCK_FAIL_CLOSED=false` only for temporary troubleshooting
 
 ## Usage with backup-restore Service
 
 The `backup-restore` service automatically manages database locks when you provide:
 
-1. `target_api_url`: URL of the API to lock (e.g., `http://localhost:8000`)
+1. `target_api_url`: URL of the API to lock (e.g., `http://localhost:8081`)
 2. `target_api_key`: Admin API key for the target API
 
 Example restore with automatic locking:
@@ -116,7 +146,7 @@ curl -X POST "http://backup-service:8000/backup/sql/restore-upload" \
   -F "file=@backup.sql.gz" \
   -F "db_type=postgresql" \
   -F "db_host=production-db" \
-  -F "db_port=5432" \
+  -F "db_port=5433" \
   -F "db_name=mydb" \
   -F "db_user=postgres" \
   -F "db_password=password" \
@@ -125,6 +155,7 @@ curl -X POST "http://backup-service:8000/backup/sql/restore-upload" \
 ```
 
 The backup-restore service will:
+0. Verify target provider compatibility via `GET /database/provider-info`
 1. Lock the target API before starting the restore
 2. Perform the database restore
 3. Automatically unlock the API when complete (even if restore fails)
@@ -158,13 +189,13 @@ If a lock remains after a failed restore operation:
 
 1. **Check lock status**:
    ```bash
-   curl -X GET "http://localhost:8000/database/lock-status" \
+   curl -X GET "http://localhost:8081/database/lock-status" \
      -H "X-Admin-Key: your-admin-key"
    ```
 
 2. **Manually unlock**:
    ```bash
-   curl -X POST "http://localhost:8000/database/unlock" \
+   curl -X POST "http://localhost:8081/database/unlock" \
      -H "X-Admin-Key: your-admin-key"
    ```
 
@@ -172,13 +203,16 @@ If a lock remains after a failed restore operation:
 
 ### Lock Check Fails
 
-If the middleware can't check the lock status, it fails open (allows requests) to prevent blocking normal operations. Check logs for warnings:
+If the middleware cannot check lock status, write requests are blocked by default to avoid corruption.
+You can temporarily set `DB_LOCK_FAIL_CLOSED=false` to allow fail-open behavior while investigating.
+Check logs for warnings:
 
 ```
-Warning: Failed to check database lock: <error message>
+Warning: Failed to check database lock (fail-open enabled): <error message>
 ```
 
 ## See Also
 
 - [backup-restore Service README](../../backup-restore/README.md)
 - [API Security Documentation](./API_SECURITY.md)
+

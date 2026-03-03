@@ -95,11 +95,15 @@ Migrations run **automatically on application startup**. No manual steps require
 ### Startup Sequence
 
 ```python
-# app/main.py
-@app.on_event("startup")
-async def startup_event():
+# app/api/config/lifecycle.py
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+
+@asynccontextmanager
+async def app_lifespan(app: FastAPI):
     await initialize_database()  # 1. Connect to database
     run_migrations()             # 2. Run pending migrations
+    yield
 ```
 
 ### What You'll See

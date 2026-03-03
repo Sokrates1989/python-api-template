@@ -23,7 +23,8 @@ cd python-api-template
 cp .env.template .env
 
 # Edit .env and set your database type
-# Options: neo4j, postgresql, mysql, sqlite
+# Official options: neo4j, postgresql (or postgres), mongodb
+# Legacy compatibility values: mysql, sqlite
 ```
 
 ### 3. Choose Your Database
@@ -50,23 +51,24 @@ docker run -d -p 7687:7687 -p 7474:7474 \
 ```bash
 # .env
 DB_TYPE=postgresql
-DATABASE_URL=postgresql://postgres:password@localhost:5432/mydb
+DATABASE_URL=postgresql://postgres:password@localhost:5433/mydb
 ```
 
 Start PostgreSQL:
 ```bash
-docker run -d -p 5432:5432 \
+docker run -d -p 5433:5432 \
   -e POSTGRES_PASSWORD=password \
   -e POSTGRES_DB=mydb \
   postgres:latest
 ```
 
-#### Option C: SQLite (No setup needed)
+#### Option C: MongoDB
 
 ```bash
 # .env
-DB_TYPE=sqlite
-DATABASE_URL=sqlite:///./database.db
+DB_TYPE=mongodb
+MONGODB_URL=mongodb://mongo:mongo@localhost:27017
+MONGODB_DB_NAME=apidb
 ```
 
 ### 4. Start the Application
@@ -83,14 +85,17 @@ uvicorn app.main:app --reload
 
 ```bash
 # Health check
-curl http://localhost:8000/health
+curl http://localhost:8081/health
 
 # Database test
-curl http://localhost:8000/test/db-test
+curl http://localhost:8081/test/db-test
 
 # API documentation
-open http://localhost:8000/docs
+open http://localhost:8081/docs
 ```
+
+Expected health response includes provider diagnostics:
+`status`, `database_type`, `provider_profile`, `startup_probe_status`.
 
 ## Project Structure
 
@@ -109,7 +114,7 @@ python-api-template/
 │   │       ├── init_db.py     # Initialization
 │   │       └── queries.py     # Query helpers
 │   ├── models/                # Data models
-│   │   └── example_sql_models.py
+│   │   └── sql/example_sql_models.py
 │   └── main.py               # Application entry point
 ├── docs/                      # Documentation
 │   ├── DATABASE.md           # Database guide
@@ -162,5 +167,6 @@ docker-compose up --build
 ## Getting Help
 
 - Check `docs/DATABASE.md` for database-specific help
-- Review API docs at `http://localhost:8000/docs`
+- Review API docs at `http://localhost:8081/docs`
 - Check logs: `docker-compose logs`
+

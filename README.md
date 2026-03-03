@@ -46,7 +46,7 @@ This template is a clean and extensible FastAPI project with:
 On first run, the quick-start scripts will launch an **interactive setup wizard** that helps you configure:
 - Docker image name and version
 - Python version
-- Database type (PostgreSQL or Neo4j)
+- Database type (PostgreSQL, Neo4j, or MongoDB)
 - Database mode (local Docker or external)
 - API settings (port, debug mode)
 
@@ -63,7 +63,7 @@ On first run, the quick-start scripts will launch an **interactive setup wizard*
 The script will:
 - ✅ Check Docker installation
 - ✅ Create `.env` from template
-- ✅ Detect database type (PostgreSQL/Neo4j) and mode (local/external)
+- ✅ Detect database type (PostgreSQL/Neo4j/MongoDB) and mode (local/external)
 - ✅ Start the correct containers automatically
 
 ### 🔐 Keycloak Bootstrap (Optional)
@@ -81,7 +81,7 @@ with default clients, roles, and users via Docker.
 - Backend client: `python-api-template-backend`
 - Frontend client: `python-api-template-frontend`
 - Frontend root URL: `http://localhost:3000`
-- API root URL: `http://localhost:8000`
+- API root URL: `http://localhost:8081`
 
 **Useful bootstrap variables (optional):**
 - `KEYCLOAK_BOOTSTRAP_URL` (override the Keycloak URL used by the bootstrap container)
@@ -109,8 +109,8 @@ docker-compose -f docker-compose.postgres.yml up --build
 ```
 
 **Access:**
-- **API**: http://localhost:8000/docs
-- **PostgreSQL**: localhost:5432 (user: postgres, password: postgres)
+- **API**: http://localhost:8081/docs
+- **PostgreSQL**: localhost:5433 (user: postgres, password: postgres)
 
 ### Option 2: Quick Start with Neo4j (Manual)
 
@@ -131,7 +131,7 @@ docker-compose -f docker-compose.neo4j.yml up --build
 ```
 
 **Access:**
-- **API**: http://localhost:8000/docs
+- **API**: http://localhost:8081/docs
 - **Neo4j Browser**: http://localhost:7474 (user: neo4j, password: password)
 
 ### Test the API
@@ -143,9 +143,9 @@ test-api.bat
 
 **Linux/Mac:**
 ```bash
-curl http://localhost:8000/test/db-test
-curl http://localhost:8000/test/db-info
-curl http://localhost:8000/test/db-sample-query
+curl http://localhost:8081/test/db-test
+curl http://localhost:8081/test/db-info
+curl http://localhost:8081/test/db-sample-query
 ```
 
 ### Detailed Setup
@@ -222,7 +222,7 @@ python-api-template/
 │   │       ├── init_db.py       # Initialization
 │   │       └── queries.py       # Query helpers
 │   ├── models/                   # Data models
-│   │   └── example_sql_models.py
+│   │   └── sql/example_sql_models.py
 │   ├── mounted_data/             # Example data for volume mounts
 │   └── main.py                   # FastAPI application entrypoint
 ├── docs/                         # Documentation
@@ -250,7 +250,10 @@ python-api-template/
 | `NEO4J_URL` | Neo4j connection (if DB_TYPE=neo4j) | - |
 | `DB_USER` | Database user (Neo4j) | - |
 | `DB_PASSWORD` | Database password (Neo4j) | - |
-| `DATABASE_URL` | SQL database URL (if DB_TYPE=postgresql/mysql/sqlite) | - |
+| `DATABASE_URL` | SQL database URL (if DB_TYPE=postgresql/postgres) | - |
+
+Official stability matrix: `postgresql/postgres`, `neo4j`, `mongodb`.  
+See [docs/SUPPORT_MATRIX.md](docs/SUPPORT_MATRIX.md) for details.
 
 ### Example .env (Neo4j)
 ```env
@@ -267,7 +270,7 @@ DB_PASSWORD=password
 PORT=8000
 REDIS_URL=redis://redis:6379
 DB_TYPE=postgresql
-DATABASE_URL=postgresql://user:password@localhost:5432/mydb
+DATABASE_URL=postgresql://user:password@localhost:5433/mydb
 ```
 
 ## 🧪 API Tests
@@ -309,13 +312,13 @@ docker compose up --build --force-recreate
 ### First Setup (one-time)
 1. **Clone project:** `git clone ...`
 2. **Quick Start:** `./quick-start.sh` (runs everything automatically)
-3. **Test API:** [http://localhost:8000/docs](http://localhost:8000/docs)
+3. **Test API:** [http://localhost:8081/docs](http://localhost:8081/docs)
 
 ### Daily Development
 1. **Start backend:** `./quick-start.sh` (with selection menu)
 2. **Change code:** Automatic reload in Docker
 3. **Add packages:** `./manage-python-project-dependencies.sh` → `pdm add <package>`
-4. **Test API:** [http://localhost:8000/docs](http://localhost:8000/docs)
+4. **Test API:** [http://localhost:8081/docs](http://localhost:8081/docs)
 
 ### Deployment
 ```bash
@@ -361,14 +364,16 @@ docker buildx build --platform linux/amd64 --build-arg IMAGE_TAG=$IMAGE_TAG \
 This template supports multiple database backends:
 - **Neo4j**: Graph database for connected data
 - **PostgreSQL**: Powerful relational database
-- **MySQL**: Popular relational database
-- **SQLite**: Lightweight file-based database
+- **MongoDB**: Document database
+- **MySQL**: Legacy compatibility backend
+- **SQLite**: Legacy compatibility backend
 
 See `docs/DATABASE.md` for detailed database configuration and usage.
 
 ### Documentation
 
-- **Database Backup & Restore**: `docs/DATABASE_BACKUP.md` - Complete backup/restore via API ⭐ **NEW**
+- **Database Lock Coordination**: `docs/DATABASE_LOCK.md` - Lock/unlock API for external backup-restore orchestration
+- **External Backup/Restore Integration**: `docs/DATABASE_BACKUP.md` - Use the standalone backup-restore service
 - **Migration Guide**: `docs/MIGRATION_GUIDE.md` - Real-world schema changes (add tables, columns, relationships) ⭐ **NEW**
 - **Database Examples**: `docs/DATABASE_EXAMPLES.md` - SQL vs Neo4j CRUD examples ⭐ **NEW**
 - **Database Migrations**: `docs/DATABASE_MIGRATIONS.md` - Production-ready schema management ⭐
@@ -431,3 +436,5 @@ uvicorn main:app --reload
 ```
 
 </details>
+
+

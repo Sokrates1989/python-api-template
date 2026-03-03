@@ -43,8 +43,8 @@ Make sure your database is configured in `.env`:
 
 ```bash
 # PostgreSQL Configuration
-DATABASE_TYPE=postgresql
-DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/dbname
+DB_TYPE=postgresql
+DATABASE_URL=postgresql+asyncpg://user:password@postgres:5433/dbname
 ```
 
 ### 2. Start the Application
@@ -62,13 +62,13 @@ docker-compose up
 Call the initialization endpoint once:
 
 ```bash
-curl -X POST http://localhost:8000/examples/initialize
+curl -X POST http://localhost:8081/examples/initialize
 ```
 
 ### 4. Create Your First Example
 
 ```bash
-curl -X POST http://localhost:8000/examples/ \
+curl -X POST http://localhost:8081/examples/ \
   -H "Content-Type: application/json" \
   -d '{
     "name": "My First Example",
@@ -482,26 +482,26 @@ DELETE /examples/{example_id}
 
 ```bash
 # 1. Initialize table
-curl -X POST http://localhost:8000/examples/initialize
+curl -X POST http://localhost:8081/examples/initialize
 
 # 2. Create an example
-curl -X POST http://localhost:8000/examples/ \
+curl -X POST http://localhost:8081/examples/ \
   -H "Content-Type: application/json" \
   -d '{"name": "Test Example", "description": "Testing CRUD"}'
 
 # 3. List all examples
-curl http://localhost:8000/examples/
+curl http://localhost:8081/examples/
 
 # 4. Get specific example (replace {id} with actual ID)
-curl http://localhost:8000/examples/{id}
+curl http://localhost:8081/examples/{id}
 
 # 5. Update example
-curl -X PUT http://localhost:8000/examples/{id} \
+curl -X PUT http://localhost:8081/examples/{id} \
   -H "Content-Type: application/json" \
   -d '{"name": "Updated Name"}'
 
 # 6. Delete example
-curl -X DELETE http://localhost:8000/examples/{id}
+curl -X DELETE http://localhost:8081/examples/{id}
 ```
 
 ### Using Python Requests
@@ -509,7 +509,7 @@ curl -X DELETE http://localhost:8000/examples/{id}
 ```python
 import requests
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:8081"
 
 # Initialize table
 response = requests.post(f"{BASE_URL}/examples/initialize")
@@ -541,7 +541,7 @@ print(response.json())
 ### Using FastAPI Swagger UI
 
 1. Start the application
-2. Open browser: `http://localhost:8000/docs`
+2. Open browser: `http://localhost:8081/docs`
 3. Expand the `/examples` endpoints
 4. Click "Try it out" on any endpoint
 5. Fill in the parameters and click "Execute"
@@ -654,3 +654,4 @@ All database operations must use `async`/`await` with the async session.
 For more information, see:
 - [DATABASE.md](./DATABASE.md) - Database configuration
 - [ARCHITECTURE.md](./ARCHITECTURE.md) - Project architecture
+

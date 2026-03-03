@@ -198,16 +198,16 @@ app.include_router(products.router)
 
 ```bash
 # Get all products
-curl http://localhost:8000/products/
+curl http://localhost:8081/products/
 
 # Get specific product
-curl http://localhost:8000/products/1
+curl http://localhost:8081/products/1
 
 # Search products
-curl http://localhost:8000/products/search?q=laptop
+curl http://localhost:8081/products/search?q=laptop
 
 # View in Swagger UI
-open http://localhost:8000/docs
+open http://localhost:8081/docs
 ```
 
 ## Using Database in Your Service
@@ -318,7 +318,7 @@ async def get_users(self):
 1. **Create service** in `app/backend/services/your_service.py`
 2. **Create route** in `app/api/routes/your_route.py`
 3. **Register route** in `app/main.py`
-4. **Test** at `http://localhost:8000/docs`
+4. **Test** at `http://localhost:8081/docs`
 
 That's it! The structure keeps everything clean and maintainable.
 
@@ -342,3 +342,4 @@ class YourService:
 ```
 
 You don't need to worry about which database is being used - it's handled automatically!
+

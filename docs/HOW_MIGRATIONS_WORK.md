@@ -160,14 +160,15 @@ def downgrade():
 Migrations run **automatically** on startup with detailed status reporting:
 
 ```python
-# app/main.py
-@app.on_event("startup")
-async def startup_event():
+# app/api/config/lifecycle.py
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+
+@asynccontextmanager
+async def app_lifespan(app: FastAPI):
     # ... database initialization ...
-    
-    # Run migrations automatically
-    from backend.database.migrations import run_migrations
     run_migrations()
+    yield
 ```
 
 **What you'll see:**

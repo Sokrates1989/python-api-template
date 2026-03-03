@@ -24,7 +24,7 @@ backend/database/
 Configure your database in `.env` file:
 
 ```bash
-# Database Type (neo4j, postgresql, mysql, sqlite)
+# Database Type (neo4j, postgresql/postgres, mongodb)
 DB_TYPE=neo4j
 
 # Neo4j Configuration (when DB_TYPE=neo4j)
@@ -32,16 +32,18 @@ NEO4J_URL=bolt://localhost:7687
 DB_USER=neo4j
 DB_PASSWORD=password
 
-# SQL Configuration (when DB_TYPE=postgresql, mysql, or sqlite)
-DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+# SQL Configuration (when DB_TYPE=postgresql/postgres)
+DATABASE_URL=postgresql://user:password@localhost:5433/dbname
+# MongoDB Configuration (when DB_TYPE=mongodb)
+MONGODB_URL=mongodb://mongo:mongo@localhost:27017
+MONGODB_DB_NAME=apidb
 ```
 
 ### 2. Supported Database Types
 
 - **neo4j**: Neo4j graph database
 - **postgresql**: PostgreSQL relational database
-- **mysql**: MySQL relational database
-- **sqlite**: SQLite file-based database
+- **mongodb**: MongoDB document database
 
 ## Usage
 
@@ -216,7 +218,8 @@ If you're migrating from the old `backend/Neo4jHandler.py`:
 Test your database connection:
 
 ```bash
-curl http://localhost:8000/test/db-test
+curl http://localhost:8081/test/db-test
 ```
 
 This will return connection status and basic query results.
+
