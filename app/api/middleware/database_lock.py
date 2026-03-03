@@ -1,7 +1,12 @@
 """Database lock middleware to prevent writes during restore operations."""
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from api.settings import settings
+from backend.observability import log_event
+
+logger = logging.getLogger("api.middleware.database_lock")
 
 
 async def block_writes_during_restore(request: Request, call_next):
@@ -48,8 +53,37 @@ async def block_writes_during_restore(request: Request, call_next):
                     }
                 )
         except Exception as e:
-            # If we can't check the lock, allow the request (fail open)
-            print(f"Warning: Failed to check database lock: {e}")
+            if settings.DB_LOCK_FAIL_CLOSED:
+                log_event(
+                    logger,
+                    logging.ERROR,
+                    "database_lock.status_check_failed_fail_closed",
+                    path=request.url.path,
+                    method=request.method,
+                    error=str(e),
+                )
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "error": "Service temporarily unavailable",
+                        "detail": (
+                            "Database lock status check failed. "
+                            "Write operations are blocked until lock status is available."
+                        ),
+                        "database_type": settings.DB_TYPE,
+                        "retry_after": "Poll GET /database/lock-status to check lock status",
+                    },
+                )
+
+            # Explicit legacy fallback if fail-closed is disabled.
+            log_event(
+                logger,
+                logging.WARNING,
+                "database_lock.status_check_failed_fail_open",
+                path=request.url.path,
+                method=request.method,
+                error=str(e),
+            )
     
     return await call_next(request)
 

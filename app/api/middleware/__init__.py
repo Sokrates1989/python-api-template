@@ -10,7 +10,7 @@ def setup_middleware(app: FastAPI) -> None:
     
     Middleware are applied in the order they are called:
     1. Database lock middleware (blocks writes during restore)
-    2. Logging middleware (debug only)
+    2. Logging middleware (explicit opt-in debug logging)
     
     Args:
         app: The FastAPI application instance

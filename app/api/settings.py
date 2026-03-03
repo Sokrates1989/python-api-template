@@ -1,5 +1,5 @@
 # Configuration using pydantic-settings
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Literal, Optional
 from pathlib import Path
 
@@ -10,6 +10,11 @@ class Settings(BaseSettings):
     IMAGE_TAG: str = "local non docker"
     REDIS_URL: str = "redis://localhost:6379"
     DEBUG: bool = False
+    ENABLE_HTTP_DEBUG_LOGGING: bool = False
+    LOG_REQUEST_HEADERS: bool = False
+    LOG_REQUEST_BODY: bool = False
+    LOG_RESPONSE_HEADERS: bool = False
+    LOG_RESPONSE_BODY: bool = False
     
     # Security Settings - Tiered API Keys
     ADMIN_API_KEY: str = ""  # Level 1: Read-only admin operations
@@ -20,7 +25,9 @@ class Settings(BaseSettings):
     BACKUP_DELETE_API_KEY_FILE: str = ""  # Path to file containing delete API key
     
     # Database Type Configuration
-    DB_TYPE: Literal["neo4j", "postgresql", "mysql", "sqlite"] = "neo4j"
+    # Official stability matrix: neo4j, postgresql/postgres, mongodb
+    # Legacy compatibility types: mysql, sqlite
+    DB_TYPE: Literal["neo4j", "postgresql", "postgres", "mysql", "sqlite", "mongodb", "mongo"] = "neo4j"
     DB_MODE: Literal["local", "external"] = "local"
 
     # Authentication Provider Configuration
@@ -56,12 +63,17 @@ class Settings(BaseSettings):
     DATABASE_URL: str = ""  # Full connection string (for external databases)
     DB_HOST: str = "localhost"
     DB_NAME: str = ""
-    DB_PORT: int = 5432
+    DB_PORT: int = 5433
+    MONGODB_URL: str = ""
+    MONGODB_DB_NAME: str = "apidb"
+    MONGODB_ROOT_USER: str = ""
+    MONGODB_ROOT_PASSWORD: str = ""
+    MONGODB_PORT: int = 27017
     # Database lock configuration (for /database/lock endpoints)
     DB_LOCK_TIMEOUT_SECONDS: int = 3600
+    DB_LOCK_FAIL_CLOSED: bool = True
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(env_file=".env")
     
     def get_admin_api_key(self) -> str:
         """Get admin API key from file or environment variable"""
@@ -181,6 +193,38 @@ class Settings(BaseSettings):
         if self.NEO4J_URL:
             return self.NEO4J_URL
         return f"bolt://{self.DB_HOST}:{self.DB_PORT}"
+
+    def normalized_db_type(self) -> str:
+        """Return normalized database type."""
+        db_type = (self.DB_TYPE or "").strip().lower()
+        if db_type == "mongo":
+            return "mongodb"
+        return db_type
+
+    def is_sql_database(self) -> bool:
+        """Return True for SQL database backends."""
+        return self.normalized_db_type() in {"postgresql", "postgres", "mysql", "sqlite"}
+
+    def is_legacy_sql_database(self) -> bool:
+        """Return True when running a legacy SQL compatibility backend."""
+        return self.normalized_db_type() in {"mysql", "sqlite"}
+
+    def is_mongodb(self) -> bool:
+        """Return True when MongoDB is configured."""
+        return self.normalized_db_type() == "mongodb"
+
+    def get_mongodb_url(self) -> str:
+        """Resolve MongoDB URI from explicit URL or host/port settings."""
+        if self.MONGODB_URL:
+            return self.MONGODB_URL
+
+        credentials = ""
+        user = (self.MONGODB_ROOT_USER or "").strip()
+        password = (self.MONGODB_ROOT_PASSWORD or "").strip()
+        if user:
+            credentials = f"{user}:{password}@"
+
+        return f"mongodb://{credentials}{self.DB_HOST}:{self.MONGODB_PORT}"
     
     def get_database_url(self) -> str:
         """Build database URL for SQL databases"""
@@ -190,13 +234,18 @@ class Settings(BaseSettings):
         
         # Build URL from components (for local databases)
         password = self.get_db_password()
-        if self.DB_TYPE == "postgresql":
+        db_type = self.normalized_db_type()
+        if db_type in {"postgresql", "postgres"}:
             return f"postgresql://{self.DB_USER}:{password}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
-        elif self.DB_TYPE == "mysql":
+        elif db_type == "mysql":
             return f"mysql://{self.DB_USER}:{password}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
-        elif self.DB_TYPE == "sqlite":
+        elif db_type == "sqlite":
             return f"sqlite:///{self.DB_NAME}"
         return ""
+
+    def is_http_debug_logging_enabled(self) -> bool:
+        """Return True when HTTP debug logging should be enabled."""
+        return bool(self.DEBUG and self.ENABLE_HTTP_DEBUG_LOGGING)
 
 
 settings = Settings()
