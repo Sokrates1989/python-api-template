@@ -4,7 +4,7 @@ This directory contains **Pydantic models** for Neo4j graph database.
 
 ## What's Here
 
-- `example_node.py` - Example Pydantic model for Neo4j nodes
+- `example.py` - Example Pydantic model for Neo4j nodes
 
 ## Characteristics
 
@@ -22,7 +22,7 @@ This directory contains **Pydantic models** for Neo4j graph database.
 
 ## Creating Your Own Models
 
-1. Copy `example_node.py` to `your_node.py`
+1. Copy `example.py` to `your_node.py`
 2. Modify the Pydantic fields
 3. Create a service in `backend/services/neo4j/` with Cypher queries
 4. Create routes in `api/routes/neo4j/`
