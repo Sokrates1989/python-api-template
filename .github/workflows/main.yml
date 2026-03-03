@@ -1,112 +1,301 @@
-name: 🚀 CI/CD Pipeline
+name: CI-CD Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_version:
+        description: Docker image version tag override
+        required: false
+      python_version:
+        description: Python version build arg override
+        required: false
+        default: "3.13"
+
+env:
+  IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+  IMAGE_VERSION: ${{ inputs.image_version || vars.IMAGE_VERSION || github.sha }}
+  PYTHON_VERSION: ${{ inputs.python_version || vars.PYTHON_VERSION || '3.13' }}
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Syntax and import compilation check
+        run: python -m compileall app/api app/backend app/models tests
+
+  type-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install mypy
+        run: python -m pip install --upgrade pip mypy
+
+      - name: Run focused type checks
+        run: mypy --ignore-missing-imports app/backend/ports app/backend/services/user_service.py app/backend/services/example_service.py app/backend/services/backup_service.py
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: [lint, type-check]
+    strategy:
+      fail-fast: false
+      matrix:
+        db_profile:
+          - db_type: postgresql
+            compose_file: local-deployment/docker-compose.postgres.yml
+          - db_type: neo4j
+            compose_file: local-deployment/docker-compose.neo4j.yml
+          - db_type: mongodb
+            compose_file: local-deployment/docker-compose.mongodb.yml
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Prepare environment for profile
+        run: |
+          cp setup/.env.template .env
+          sed -i 's/^DB_MODE=.*/DB_MODE=local/' .env
+
+          case "${{ matrix.db_profile.db_type }}" in
+            postgresql)
+              sed -i 's/^DB_TYPE=.*/DB_TYPE=postgresql/' .env
+              sed -i 's|^DATABASE_URL=.*|DATABASE_URL=postgresql://postgres:postgres@postgres:5433/apidb|' .env
+              sed -i 's/^DB_HOST=.*/DB_HOST=postgres/' .env
+              sed -i 's/^DB_NAME=.*/DB_NAME=apidb/' .env
+              sed -i 's/^DB_USER=.*/DB_USER=postgres/' .env
+              sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=postgres/' .env
+              sed -i 's/^DB_PORT=.*/DB_PORT=5433/' .env
+              ;;
+            neo4j)
+              sed -i 's/^DB_TYPE=.*/DB_TYPE=neo4j/' .env
+              sed -i 's|^NEO4J_URL=.*|NEO4J_URL=bolt://neo4j:7687|' .env
+              sed -i 's/^DB_USER=.*/DB_USER=neo4j/' .env
+              sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=password/' .env
+              ;;
+            mongodb)
+              sed -i 's/^DB_TYPE=.*/DB_TYPE=mongodb/' .env
+              sed -i 's|^MONGODB_URL=.*|MONGODB_URL=mongodb://mongo:mongo@mongodb:27017|' .env
+              sed -i 's/^MONGODB_DB_NAME=.*/MONGODB_DB_NAME=apidb/' .env
+              sed -i 's/^MONGODB_ROOT_USER=.*/MONGODB_ROOT_USER=mongo/' .env
+              sed -i 's/^MONGODB_ROOT_PASSWORD=.*/MONGODB_ROOT_PASSWORD=mongo/' .env
+              ;;
+            *)
+              echo "Unsupported db profile"
+              exit 1
+              ;;
+          esac
+
+      - name: Build and start profile services
+        run: docker compose --env-file .env -f ${{ matrix.db_profile.compose_file }} up -d --build
+
+      - name: Verify provider contract endpoints
+        env:
+          EXPECTED_PROFILE: ${{ matrix.db_profile.db_type == 'postgresql' && 'sql' || matrix.db_profile.db_type }}
+        run: |
+          set -e
+          PROFILE=""
+          for i in $(seq 1 120); do
+            if curl -fsS http://localhost:8081/health > /tmp/health.json; then
+              PROFILE="$(python - <<'PY'
+import json
+with open('/tmp/health.json', 'r', encoding='utf-8') as f:
+    data = json.load(f)
+print(data.get('provider_profile', ''))
+PY
+)"
+              if [ "$PROFILE" = "$EXPECTED_PROFILE" ]; then
+                break
+              fi
+            fi
+            sleep 2
+          done
+
+          if [ "$PROFILE" != "$EXPECTED_PROFILE" ]; then
+            echo "Provider profile mismatch. expected=$EXPECTED_PROFILE observed=$PROFILE"
+            cat /tmp/health.json || true
+            exit 1
+          fi
+
+          ADMIN_KEY="$(grep '^ADMIN_API_KEY=' .env | cut -d '=' -f2-)"
+          if [ -z "$ADMIN_KEY" ]; then
+            echo "ADMIN_API_KEY missing in .env"
+            exit 1
+          fi
+
+          curl -fsS \
+            -H "X-Admin-Key: $ADMIN_KEY" \
+            http://localhost:8081/database/provider-info > /tmp/provider_info.json
+
+          python - <<'PY'
+import json
+import os
+expected = os.environ["EXPECTED_PROFILE"]
+with open('/tmp/provider_info.json', 'r', encoding='utf-8') as f:
+    data = json.load(f)
+observed = data.get("provider_profile")
+if observed != expected:
+    raise SystemExit(f"provider-info mismatch: expected={expected} observed={observed}")
+PY
+
+          curl -fsS -X POST \
+            -H "X-Admin-Key: $ADMIN_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"operation":"ci_drill"}' \
+            http://localhost:8081/database/lock > /tmp/lock.json
+
+          python - <<'PY'
+import json
+with open('/tmp/lock.json', 'r', encoding='utf-8') as f:
+    data = json.load(f)
+if not data.get("success") or not data.get("is_locked"):
+    raise SystemExit(f"lock contract failed: {data}")
+PY
+
+          curl -fsS -X POST \
+            -H "X-Admin-Key: $ADMIN_KEY" \
+            http://localhost:8081/database/unlock > /tmp/unlock.json
+
+          python - <<'PY'
+import json
+with open('/tmp/unlock.json', 'r', encoding='utf-8') as f:
+    data = json.load(f)
+if not data.get("success") or data.get("is_locked"):
+    raise SystemExit(f"unlock contract failed: {data}")
+PY
+
+      - name: Run test suite in app container
+        run: docker compose --env-file .env -f ${{ matrix.db_profile.compose_file }} run --rm -v "${PWD}/tests:/app/tests" app python -m unittest discover -s tests -p "test_*.py" -t . -v
+
+      - name: Run pytest unit suite in app container
+        run: |
+          docker compose --env-file .env -f ${{ matrix.db_profile.compose_file }} run --rm -v "${PWD}/qa_pytest:/app/qa_pytest" -v "${PWD}/pytest.ini:/app/pytest.ini" app sh -lc "/app/.venv/bin/python -m ensurepip && /app/.venv/bin/python -m pip install pytest && /app/.venv/bin/python -m pytest -c /app/pytest.ini /app/qa_pytest/unit -q"
+
+      - name: Run pytest shared contract suite in app container
+        run: |
+          docker compose --env-file .env -f ${{ matrix.db_profile.compose_file }} run --rm -v "${PWD}/qa_pytest:/app/qa_pytest" -v "${PWD}/pytest.ini:/app/pytest.ini" app sh -lc "/app/.venv/bin/python -m ensurepip && /app/.venv/bin/python -m pip install pytest && /app/.venv/bin/python -m pytest -c /app/pytest.ini /app/qa_pytest/contracts -m contract -q"
+
+      - name: Collect app logs on failure
+        if: failure()
+        run: docker compose --env-file .env -f ${{ matrix.db_profile.compose_file }} logs --tail 200 app
+
+      - name: Shutdown profile services
+        if: always()
+        run: docker compose --env-file .env -f ${{ matrix.db_profile.compose_file }} down -v --remove-orphans
+
   build-and-push:
     runs-on: ubuntu-latest
-    env:
-      IMAGE_NAME: ${{ vars.IMAGE_NAME }}
-
+    needs: [integration-tests]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - name: ⬇️ Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: 🧪 Load CI Environment Variables
+      - name: Validate required build configuration
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
         run: |
-          while IFS='=' read -r key value
-          do
-            echo "$key=$value" >> $GITHUB_ENV
-          done < .ci.env
-      
-      - name: 🔍 Debug ENV values
-        run: |
-          echo "IMAGE_NAME=$IMAGE_NAME"
-          echo "PYTHON_VERSION=$PYTHON_VERSION"
-          echo "IMAGE_VERSION=$IMAGE_VERSION"
-          
-      - name: 🐳 Set up Docker Buildx
+          if [ -z "$IMAGE_NAME" ]; then
+            echo "Repository variable IMAGE_NAME is required."
+            exit 1
+          fi
+          if [ -z "$DOCKER_USERNAME" ] || [ -z "$DOCKER_PASSWORD" ]; then
+            echo "Docker credentials are required via DOCKER_USERNAME/DOCKER_PASSWORD secrets."
+            exit 1
+          fi
+
+      - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 🔐 Docker Login
-        run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+      - name: Docker login
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        run: echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
 
-      - name: 🚀 Build & Push Image
+      - name: Build and push image
         run: |
           docker buildx build --load \
-            --build-arg IMAGE_TAG=$IMAGE_VERSION \
-            --build-arg PYTHON_VERSION=$PYTHON_VERSION \
-            -t $IMAGE_NAME:$IMAGE_VERSION \
+            --build-arg IMAGE_TAG="$IMAGE_VERSION" \
+            --build-arg PYTHON_VERSION="$PYTHON_VERSION" \
+            -t "$IMAGE_NAME:$IMAGE_VERSION" \
             .
-          docker push $IMAGE_NAME:$IMAGE_VERSION
+          docker push "$IMAGE_NAME:$IMAGE_VERSION"
 
-      - name: ✅ Build Summary
+      - name: Build summary
         run: |
-          echo "### 🎉 Docker Image Built Successfully!" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`$IMAGE_NAME:$IMAGE_VERSION\`" >> $GITHUB_STEP_SUMMARY
+          echo "### Docker image built and pushed" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Image: \`$IMAGE_NAME:$IMAGE_VERSION\`" >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
-    needs: build-and-push
     runs-on: ubuntu-latest
-    env:
-      IMAGE_NAME: ${{ vars.IMAGE_NAME }}
-      STACK_FILE: ${{ vars.STACK_FILE }}
-      STACK_NAME: ${{ vars.STACK_NAME }}
-      DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
-
+    needs: [build-and-push]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - name: ⬇️ Checkout Code
-        uses: actions/checkout@v4
-
-      - name: 🧪 Load CI Environment Variables
+      - name: Validate deploy configuration
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          STACK_FILE: ${{ vars.STACK_FILE }}
+          STACK_NAME: ${{ vars.STACK_NAME }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
         run: |
-          while IFS='=' read -r key value
-          do
-            echo "$key=$value" >> $GITHUB_ENV
-          done < .ci.env
+          for required in SSH_PRIVATE_KEY SSH_USER SSH_HOST SSH_PORT STACK_FILE STACK_NAME DEPLOY_PATH IMAGE_NAME IMAGE_VERSION; do
+            value="$(eval echo "\$$required")"
+            if [ -z "$value" ]; then
+              echo "Missing required deploy setting: $required"
+              exit 1
+            fi
+          done
 
-      - name: 🔍 Debug ENV values
-        run: |
-          echo "IMAGE_VERSION=$IMAGE_VERSION"
-          echo "STACK_FILE=$STACK_FILE"
-          echo "STACK_NAME=$STACK_NAME"
-          echo "DEPLOY_PATH=$DEPLOY_PATH"
-
-      - name: 🔐 Setup SSH Agent
+      - name: Setup SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: 🚀 Deploy to Server
+      - name: Deploy to server
         env:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
+          STACK_FILE: ${{ vars.STACK_FILE }}
+          STACK_NAME: ${{ vars.STACK_NAME }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
           IMAGE_VERSION: ${{ env.IMAGE_VERSION }}
         run: |
           ssh -o StrictHostKeyChecking=no -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" << EOF
             set -e
-
             cd "$DEPLOY_PATH"
-
-            echo "📝 Updating .env with image version..."
             sed -i 's/^IMAGE_VERSION=.*/IMAGE_VERSION='"$IMAGE_VERSION"'/' .env
-
-            echo "🚢 Deploying stack..."
             docker stack deploy -c <(docker-compose -f "$STACK_FILE" config) "$STACK_NAME"
-
-            echo "⏳ Waiting for stack to stabilize..."
             sleep 30
-
-            echo "🔍 Service status:"
             docker stack services "$STACK_NAME"
           EOF
 
-      - name: ✅ Deployment Summary
+      - name: Deployment summary
+        env:
+          STACK_NAME: ${{ vars.STACK_NAME }}
         run: |
-          echo "### 🎉 Deployment Successful!" >> $GITHUB_STEP_SUMMARY
-          echo "**Server:** \`${{ secrets.SSH_HOST }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Stack:** \`$STACK_NAME\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`$IMAGE_NAME:$IMAGE_VERSION\`" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment successful" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Stack: \`$STACK_NAME\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Image: \`$IMAGE_NAME:$IMAGE_VERSION\`" >> "$GITHUB_STEP_SUMMARY"
