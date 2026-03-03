@@ -2,12 +2,16 @@
 SQL database handler implementation using SQLAlchemy.
 Supports PostgreSQL, MySQL, SQLite, and other SQL databases.
 """
+import logging
 from typing import Any, Dict, List, Optional
 from sqlalchemy import create_engine, text, MetaData
-from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from backend.observability import log_event
 from .base import BaseDatabaseHandler
+from models.sql.base import Base
+
+logger = logging.getLogger("backend.database.sql_handler")
 
 
 class SQLHandler(BaseDatabaseHandler):
@@ -27,6 +31,7 @@ class SQLHandler(BaseDatabaseHandler):
         """
         self.database_url = database_url
         self.echo = echo
+        self.db_type = "sql"
         
         # Synchronous engine for migrations and simple operations
         self.engine = create_engine(database_url, echo=echo)
@@ -48,8 +53,8 @@ class SQLHandler(BaseDatabaseHandler):
             expire_on_commit=False
         )
         
-        # Base class for models
-        self.Base = declarative_base()
+        # Shared SQLAlchemy model base
+        self.Base = Base
         self.metadata = MetaData()
     
     def _get_async_url(self, url: str) -> str:
@@ -66,6 +71,8 @@ class SQLHandler(BaseDatabaseHandler):
             return url.replace("postgresql://", "postgresql+asyncpg://")
         elif url.startswith("mysql://"):
             return url.replace("mysql://", "mysql+aiomysql://")
+        elif url.startswith("mysql+pymysql://"):
+            return url.replace("mysql+pymysql://", "mysql+aiomysql://")
         elif url.startswith("sqlite://"):
             return url.replace("sqlite://", "sqlite+aiosqlite://")
         return url
@@ -99,10 +106,14 @@ class SQLHandler(BaseDatabaseHandler):
             # Print full traceback for debugging (only if DEBUG is enabled)
             if self.echo:  # echo is set to DEBUG value
                 import traceback
-                print(f"🔍 Debug - Full error traceback:")
                 traceback.print_exc()
-                print(f"🔍 Debug - Error type: {type(e).__name__}")
-                print(f"🔍 Debug - Error args: {e.args}")
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "sql.connection_test_error_debug",
+                    error_type=type(e).__name__,
+                    error_args=e.args,
+                )
             return {
                 "status": "error",
                 "message": f"SQL database connection failed: {str(e)}",

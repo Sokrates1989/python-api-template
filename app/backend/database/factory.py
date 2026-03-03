@@ -5,6 +5,7 @@ from typing import Optional
 from .base import BaseDatabaseHandler
 from .neo4j_handler import Neo4jHandler
 from .sql_handler import SQLHandler
+from .mongodb_handler import MongoDBHandler
 
 
 class DatabaseFactory:
@@ -22,7 +23,7 @@ class DatabaseFactory:
         Create a database handler based on the specified type.
         
         Args:
-            db_type: Type of database ('neo4j', 'postgresql', 'mysql', 'sqlite', etc.)
+            db_type: Type of database ('neo4j', 'postgresql', 'mongodb', etc.)
             **kwargs: Database-specific configuration parameters
             
         Returns:
@@ -39,6 +40,11 @@ class DatabaseFactory:
                 user=kwargs.get("user", ""),
                 password=kwargs.get("password", "")
             )
+        elif db_type in ["mongodb", "mongo"]:
+            return MongoDBHandler(
+                url=kwargs.get("url", ""),
+                database=kwargs.get("database", "apidb"),
+            )
         elif db_type in ["postgresql", "postgres", "mysql", "sqlite", "sql"]:
             return SQLHandler(
                 database_url=kwargs.get("database_url", ""),
@@ -47,7 +53,8 @@ class DatabaseFactory:
         else:
             raise ValueError(
                 f"Unsupported database type: {db_type}. "
-                f"Supported types: neo4j, postgresql, mysql, sqlite"
+                "Supported types: neo4j, postgresql/postgres, mongodb "
+                "(legacy compatibility: mysql, sqlite)"
             )
     
     @classmethod
