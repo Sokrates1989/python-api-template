@@ -63,12 +63,17 @@ function Get-ComposeFile {
         [string]$DbMode
     )
     
-    if ($DbMode -eq "external") {
+    $normalizedDbType = if ($null -eq $DbType) { "" } else { $DbType.ToLower().Trim() }
+    $normalizedDbMode = if ($null -eq $DbMode) { "" } else { $DbMode.ToLower().Trim() }
+
+    if ($normalizedDbMode -eq "external") {
         return "local-deployment\docker-compose.yml"
-    } elseif ($DbType -eq "neo4j") {
+    } elseif ($normalizedDbType -eq "neo4j") {
         return "local-deployment\docker-compose.neo4j.yml"
-    } elseif ($DbType -eq "postgresql" -or $DbType -eq "mysql") {
+    } elseif ($normalizedDbType -eq "postgresql" -or $normalizedDbType -eq "postgres" -or $normalizedDbType -eq "mysql") {
         return "local-deployment\docker-compose.postgres.yml"
+    } elseif ($normalizedDbType -eq "mongodb" -or $normalizedDbType -eq "mongo") {
+        return "local-deployment\docker-compose.mongodb.yml"
     } else {
         return "local-deployment\docker-compose.yml"
     }

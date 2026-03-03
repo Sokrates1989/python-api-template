@@ -59,7 +59,7 @@ if (-not (Test-Path .setup-complete)) {
     Write-Host "The setup wizard will help you configure:" -ForegroundColor Gray
     Write-Host "  - Docker image name and version" -ForegroundColor Gray
     Write-Host "  - Python version" -ForegroundColor Gray
-    Write-Host "  - Database type (PostgreSQL or Neo4j)" -ForegroundColor Gray
+    Write-Host "  - Database type (PostgreSQL, Neo4j, or MongoDB)" -ForegroundColor Gray
     Write-Host "  - Database mode (local or external)" -ForegroundColor Gray
     Write-Host "  - API configuration" -ForegroundColor Gray
     Write-Host ""
@@ -159,6 +159,8 @@ $PORT = Get-EnvVariable -VariableName "PORT" -EnvFile ".env" -DefaultValue "8000
 # Read database configuration from .env
 $DB_TYPE = Get-EnvVariable -VariableName "DB_TYPE" -EnvFile ".env" -DefaultValue "neo4j"
 $DB_MODE = Get-EnvVariable -VariableName "DB_MODE" -EnvFile ".env" -DefaultValue "local"
+$DB_TYPE = $DB_TYPE.ToLower().Trim()
+$DB_MODE = $DB_MODE.ToLower().Trim()
 
 # Determine Docker Compose file based on DB_TYPE and DB_MODE
 $COMPOSE_FILE = Get-ComposeFile -DbType $DB_TYPE -DbMode $DB_MODE
@@ -170,9 +172,16 @@ if ($DB_MODE -eq "external") {
 } elseif ($DB_TYPE -eq "neo4j") {
     Write-Host "Detected local Neo4j database" -ForegroundColor Cyan
     Write-Host "   Will start Neo4j container" -ForegroundColor Gray
-} elseif ($DB_TYPE -eq "postgresql" -or $DB_TYPE -eq "mysql") {
+} elseif ($DB_TYPE -eq "postgresql" -or $DB_TYPE -eq "postgres") {
     Write-Host "Detected local $DB_TYPE database" -ForegroundColor Cyan
     Write-Host "   Will start PostgreSQL container" -ForegroundColor Gray
+} elseif ($DB_TYPE -eq "mysql" -or $DB_TYPE -eq "sqlite") {
+    Write-Host "Detected DB_TYPE=$DB_TYPE (legacy compatibility mode)" -ForegroundColor Yellow
+    Write-Host "   Official stability matrix is: postgresql, neo4j, mongodb" -ForegroundColor Yellow
+    Write-Host "   Compose will use PostgreSQL profile for local development" -ForegroundColor Gray
+} elseif ($DB_TYPE -eq "mongodb" -or $DB_TYPE -eq "mongo") {
+    Write-Host "Detected local MongoDB database" -ForegroundColor Cyan
+    Write-Host "   Will start MongoDB container" -ForegroundColor Gray
 } else {
     Write-Host "Unknown DB_TYPE: $DB_TYPE, using default compose file" -ForegroundColor Yellow
 }

@@ -7,6 +7,7 @@ This directory contains Docker Compose files for **local development**.
 - **`docker-compose.yml`** - Base configuration (app + Redis)
 - **`docker-compose.postgres.yml`** - PostgreSQL database extension
 - **`docker-compose.neo4j.yml`** - Neo4j database extension
+- **`docker-compose.mongodb.yml`** - MongoDB database extension
 - **`docker-compose-python-dependency-management.yml`** - Python dependency management
 
 ## Usage
@@ -39,10 +40,53 @@ docker compose -f local-deployment/docker-compose.postgres.yml -f local-deployme
 docker compose -f local-deployment/docker-compose.neo4j.yml -f local-deployment/docker-compose.yml --env-file .env up
 ```
 
+#### MongoDB (Local)
+```bash
+docker compose -f local-deployment/docker-compose.mongodb.yml -f local-deployment/docker-compose.yml --env-file .env up
+```
+
 #### External Database
 ```bash
 docker compose -f local-deployment/docker-compose.yml --env-file .env up
 ```
+
+### Phase 5 Provider Drill (Postgres + Neo4j + MongoDB)
+
+Use the checked-in drill script to verify the external backup/restore contract endpoints:
+
+```powershell
+.\local-deployment\run-phase5-drill.ps1 -Profile all
+```
+
+Options:
+
+- `-Profile postgres|neo4j|mongodb|all`
+- `-TimeoutSeconds 300` (override readiness timeout)
+- `-NoBuild` (skip image rebuild during drill)
+- `-KeepLastProfileRunning` (keep final profile stack running for manual checks)
+
+The drill validates, per profile:
+
+1. `GET /health` reachable (HTTP 200)
+2. `GET /database/provider-info` matches expected provider profile
+3. `POST /database/lock` succeeds
+4. `POST /database/unlock` succeeds
+
+The script uses `.env.drill.postgres`, `.env.drill.neo4j`, and `.env.drill.mongodb`.
+
+### Release Gate (Safe Checks + Drill)
+
+Run the one-command local release gate:
+
+```powershell
+.\local-deployment\run-release-gate.ps1 -NoBuild
+```
+
+Options:
+
+- `-SkipSafeChecks` (run drill only)
+- `-SkipDrill` (safe checks only)
+- `-DrillTimeoutSeconds 300` (override drill readiness timeout)
 
 ## Volume Mounts
 
@@ -58,9 +102,10 @@ The compose files mount several directories for live development:
 Default ports (configurable via `.env`):
 
 - **API**: 8081 (or value from `PORT` in `.env`)
-- **PostgreSQL**: 5432
+- **PostgreSQL**: 5433
 - **Neo4j Bolt**: 7687
 - **Neo4j HTTP**: 7474
+- **MongoDB**: 27017
 - **Redis**: 6379
 
 ## Dependencies

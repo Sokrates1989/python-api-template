@@ -1,208 +1,224 @@
-<#
-.SYNOPSIS
-    Browser helper functions for quick-start script.
-    Provides URL polling and automatic browser opening when services are ready.
-#>
+# browser_helpers.ps1
+# PowerShell module for opening browsers
+# Uses a detached helper process so auto-open works while docker compose runs.
 
-<#
-.SYNOPSIS
-    Polls a URL until it returns a 2xx or 3xx HTTP status code.
+$script:IncognitoProfileCleaned = $false
 
-.PARAMETER Url
-    The URL to check.
-
-.PARAMETER TimeoutSeconds
-    Maximum time to wait in seconds (default: 120).
-
-.RETURNS
-    $true if URL became available, $false if timeout reached.
-#>
-function Wait-ForUrl {
+function Invoke-WebRequestCompat {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Url,
-        
-        [Parameter(Mandatory = $false)]
-        [int]$TimeoutSeconds = 120
+        [int]$TimeoutSec = 5
     )
-    
+
+    $params = @{
+        Uri         = $Url
+        Method      = "Get"
+        TimeoutSec  = $TimeoutSec
+        ErrorAction = "Stop"
+    }
+
+    $iwr = Get-Command Invoke-WebRequest -ErrorAction SilentlyContinue
+    if ($iwr -and $iwr.Parameters.ContainsKey("UseBasicParsing")) {
+        $params["UseBasicParsing"] = $true
+    }
+
+    return Invoke-WebRequest @params
+}
+
+function Wait-ForUrl {
+    <#
+    .SYNOPSIS
+    Waits for a URL to become available by polling until it returns a valid HTTP status.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Url,
+        [int]$TimeoutSeconds = 120,
+        [int]$IntervalMs = 1000
+    )
+
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    
     while ($stopwatch.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
         try {
-            $response = Invoke-WebRequest -Uri $Url -Method Head -TimeoutSec 5 -UseBasicParsing -ErrorAction SilentlyContinue
-            $statusCode = [int]$response.StatusCode
-            
-            if ($statusCode -ge 200 -and $statusCode -lt 400) {
-                $stopwatch.Stop()
+            $response = Invoke-WebRequestCompat -Url $Url -TimeoutSec 5
+            if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
                 return $true
             }
+        } catch {
+            # Treat 405 as reachable (some services reject method variants during startup).
+            try {
+                $ex = $_.Exception
+                if ($ex -and $ex.Response -and $ex.Response.StatusCode) {
+                    $status = [int]$ex.Response.StatusCode
+                    if ($status -eq 405) {
+                        return $true
+                    }
+                }
+            } catch {
+            }
         }
-        catch {
-            # Connection failed, continue polling
-        }
-        
-        Start-Sleep -Seconds 2
+
+        Start-Sleep -Milliseconds $IntervalMs
     }
-    
-    $stopwatch.Stop()
+
     return $false
 }
 
-<#
-.SYNOPSIS
-    Checks if a command exists.
-
-.PARAMETER Url
-    The command to check.
-
-.PARAMETER TimeoutSeconds
-    Maximum time to wait in seconds (default: 120).
-#>
 function Test-CommandExists {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Url,
-        
-        [Parameter(Mandatory = $false)]
-        [int]$TimeoutSeconds = 120
+        [string]$Command
     )
-    
-    # implementation of Test-CommandExists
+
+    return [bool](Get-Command $Command -ErrorAction SilentlyContinue)
 }
 
-<#
-.SYNOPSIS
-    Opens a URL in the default browser, preferring incognito/private mode.
+function Stop-IncognitoProfileProcesses {
+    <#
+    .SYNOPSIS
+    Stops running browser processes that use a specific --user-data-dir profile.
+    #>
+    param(
+        [string]$ProfileDir,
+        [string[]]$ProcessNames
+    )
 
-.PARAMETER Url
-    The URL to open.
-#>
+    if (-not $ProfileDir -or -not $ProcessNames) {
+        return
+    }
+
+    try {
+        $procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+            ($ProcessNames -contains $_.Name) -and ($_.CommandLine -like "*--user-data-dir=$ProfileDir*")
+        }
+        foreach ($proc in $procs) {
+            Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+    } catch {
+        Write-Host "[WARN] Failed to stop existing browser processes for profile $ProfileDir" -ForegroundColor Yellow
+    }
+}
+
 function Open-Url {
+    <#
+    .SYNOPSIS
+    Opens a URL in an incognito/private browser window when possible.
+    #>
     param(
         [Parameter(Mandatory = $true)]
         [string]$Url
     )
-    
-    # Detect Windows: $IsWindows only exists in PS Core 6+; fallback for Windows PowerShell 5.x
-    $isWin = $false
-    if ($null -ne $IsWindows) {
-        $isWin = $IsWindows
-    } elseif ($env:OS -match "Windows") {
-        $isWin = $true
-    }
 
-    Write-Host "[DEBUG] Open-Url: isWin=$isWin, Url=$Url" -ForegroundColor Magenta
-
-    if ($isWin) {
-        # Try Edge InPrivate first (preinstalled on Windows). Use repo-specific profile to separate taskbar groups.
-        $edgePaths = @(
-            "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
-            "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
-        )
-        
-        foreach ($edgePath in $edgePaths) {
-            if (Test-Path $edgePath) {
-                Write-Host "[DEBUG] Found Edge at: $edgePath - launching inprivate" -ForegroundColor Magenta
-                $profileDir = Join-Path $env:TEMP "edge_incog_profile_python_api_template"
-                New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
-                Stop-IncognitoProfileProcesses -ProfileDir $profileDir -ProcessNames @("msedge.exe")
-                Start-Process -FilePath $edgePath -ArgumentList "-inprivate", "--user-data-dir=$profileDir", $Url -ErrorAction SilentlyContinue
-                return
-            }
+    try {
+        $isWin = $false
+        if ($null -ne $IsWindows) {
+            $isWin = $IsWindows
+        } elseif ($env:OS -match "Windows") {
+            $isWin = $true
         }
 
-        # Then Chrome incognito
-        $chromePaths = @(
-            "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
-            "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
-            "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
-        )
-        
-        foreach ($chromePath in $chromePaths) {
-            if (Test-Path $chromePath) {
-                Write-Host "[DEBUG] Found Chrome at: $chromePath - launching incognito" -ForegroundColor Magenta
-                $profileDir = Join-Path $env:TEMP "chrome_incog_profile_python_api_template"
-                New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
-                Stop-IncognitoProfileProcesses -ProfileDir $profileDir -ProcessNames @("chrome.exe")
-                Start-Process -FilePath $chromePath -ArgumentList "--incognito", "--user-data-dir=$profileDir", $Url -ErrorAction SilentlyContinue
-                return
+        if ($isWin) {
+            $edgePaths = @(
+                "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
+                "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
+            )
+            foreach ($edgePath in $edgePaths) {
+                if (Test-Path $edgePath) {
+                    $profileDir = Join-Path $env:TEMP "edge_incog_profile_python_api_template"
+                    New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+                    if (-not $script:IncognitoProfileCleaned) {
+                        Stop-IncognitoProfileProcesses -ProfileDir $profileDir -ProcessNames @("msedge.exe")
+                        $script:IncognitoProfileCleaned = $true
+                    }
+                    Start-Process -FilePath $edgePath -ArgumentList "-inprivate", "--user-data-dir=$profileDir", $Url
+                    return
+                }
             }
-        }
-        
-        # Try Firefox in common locations
-        $firefoxPaths = @(
-            "$env:ProgramFiles\Mozilla Firefox\firefox.exe",
-            "${env:ProgramFiles(x86)}\Mozilla Firefox\firefox.exe"
-        )
-        foreach ($firefoxPath in $firefoxPaths) {
-            if (Test-Path $firefoxPath) {
-                Write-Host "[DEBUG] Found Firefox at: $firefoxPath - launching private" -ForegroundColor Magenta
-                Start-Process -FilePath $firefoxPath -ArgumentList "-private-window", $Url -ErrorAction SilentlyContinue
-                return
-            }
-        }
-        
-        Write-Host "[DEBUG] No browser found in PATH, using default handler (NOT incognito)" -ForegroundColor Yellow
-        Start-Process $Url -ErrorAction SilentlyContinue
-        return
-    }
 
-    if ($IsMacOS) {
-        if (Test-Path "/Applications/Google Chrome.app") {
-            & open -na "Google Chrome" --args --incognito $Url 2>$null
+            $chromePaths = @(
+                "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+                "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+                "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe"
+            )
+            foreach ($chromePath in $chromePaths) {
+                if (Test-Path $chromePath) {
+                    $profileDir = Join-Path $env:TEMP "chrome_incog_profile_python_api_template"
+                    New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+                    if (-not $script:IncognitoProfileCleaned) {
+                        Stop-IncognitoProfileProcesses -ProfileDir $profileDir -ProcessNames @("chrome.exe")
+                        $script:IncognitoProfileCleaned = $true
+                    }
+                    Start-Process -FilePath $chromePath -ArgumentList "--incognito", "--user-data-dir=$profileDir", $Url
+                    return
+                }
+            }
+
+            $firefoxPaths = @(
+                "$env:ProgramFiles\Mozilla Firefox\firefox.exe",
+                "${env:ProgramFiles(x86)}\Mozilla Firefox\firefox.exe"
+            )
+            foreach ($firefoxPath in $firefoxPaths) {
+                if (Test-Path $firefoxPath) {
+                    Start-Process -FilePath $firefoxPath -ArgumentList "-private-window", $Url
+                    return
+                }
+            }
+
+            Start-Process $Url | Out-Null
             return
         }
-        if (Test-Path "/Applications/Microsoft Edge.app") {
-            & open -na "Microsoft Edge" --args -inprivate $Url 2>$null
+
+        if ($IsMacOS) {
+            if (Test-Path "/Applications/Google Chrome.app") {
+                & open -na "Google Chrome" --args --incognito $Url 2>&1 | Out-Null
+                return
+            }
+            if (Test-Path "/Applications/Microsoft Edge.app") {
+                & open -na "Microsoft Edge" --args -inprivate $Url 2>&1 | Out-Null
+                return
+            }
+            if (Test-Path "/Applications/Firefox.app") {
+                & open -na "Firefox" --args -private-window $Url 2>&1 | Out-Null
+                return
+            }
+            & open $Url 2>&1 | Out-Null
             return
         }
-        & open $Url 2>$null
-        return
-    }
 
-    if ($IsLinux) {
-        $linuxChrome = Get-Command google-chrome -ErrorAction SilentlyContinue
-        if ($linuxChrome) { & $linuxChrome.Source --incognito $Url 2>$null | Out-Null; return }
-        $linuxChromium = Get-Command chromium-browser -ErrorAction SilentlyContinue
-        if ($linuxChromium) { & $linuxChromium.Source --incognito $Url 2>$null | Out-Null; return }
-        & xdg-open $Url 2>$null
-        return
+        if ($IsLinux) {
+            $linuxChrome = Get-Command google-chrome -ErrorAction SilentlyContinue
+            if ($linuxChrome) { & $linuxChrome.Source --incognito $Url 2>&1 | Out-Null; return }
+            $linuxChromium = Get-Command chromium-browser -ErrorAction SilentlyContinue
+            if ($linuxChromium) { & $linuxChromium.Source --incognito $Url 2>&1 | Out-Null; return }
+            $linuxFirefox = Get-Command firefox -ErrorAction SilentlyContinue
+            if ($linuxFirefox) { & $linuxFirefox.Source -private-window $Url 2>&1 | Out-Null; return }
+            & xdg-open $Url 2>&1 | Out-Null
+            return
+        }
+
+        Start-Process $Url | Out-Null
+    } catch {
+        Write-Host "[WARN] Could not open browser automatically. Please open manually: $Url" -ForegroundColor Yellow
     }
-    
-    # Fallback to default browser
-    Start-Process $Url -ErrorAction SilentlyContinue
 }
 
-<#
-.SYNOPSIS
-    Displays service URLs and opens browsers automatically when services become available.
-    Runs the polling and browser opening in a background job so docker compose can proceed.
-
-.PARAMETER Port
-    The port the API is running on.
-
-.PARAMETER IncludeNeo4j
-    Whether to also open Neo4j browser.
-
-.PARAMETER TimeoutSeconds
-    Maximum seconds to wait for services (default: 120).
-#>
 function Open-BrowsersDelayed {
+    <#
+    .SYNOPSIS
+    Displays service URLs and opens browser windows when services become available.
+    Runs in a detached helper process so it works during long-running compose sessions.
+    #>
     param(
         [Parameter(Mandatory = $true)]
         [int]$Port,
-        
-        [Parameter(Mandatory = $false)]
         [bool]$IncludeNeo4j = $false,
-        
-        [Parameter(Mandatory = $false)]
         [int]$TimeoutSeconds = 120
     )
-    
+
     $apiUrl = "http://localhost:$Port/docs"
     $neo4jUrl = "http://localhost:7474"
-    
+
     Write-Host ""
     Write-Host "========================================"
     Write-Host "  Services will be accessible at:"
@@ -214,82 +230,71 @@ function Open-BrowsersDelayed {
     Write-Host ""
     Write-Host "Browser will open automatically when services are ready..."
     Write-Host ""
-    
-    # Start background job to poll and open browsers
-    $scriptBlock = {
-        param($apiUrl, $neo4jUrl, $includeNeo4j, $timeout)
-        
-        # Wait-ForUrl inline function for background job
-        function Wait-ForUrlInJob {
-            param([string]$Url, [int]$TimeoutSeconds)
-            
-            $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-            
-            while ($stopwatch.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
-                try {
-                    $response = Invoke-WebRequest -Uri $Url -Method Head -TimeoutSec 5 -UseBasicParsing -ErrorAction SilentlyContinue
-                    $statusCode = [int]$response.StatusCode
-                    
-                    if ($statusCode -ge 200 -and $statusCode -lt 400) {
-                        $stopwatch.Stop()
-                        return $true
-                    }
-                }
-                catch {
-                    # Connection failed, continue polling
-                }
-                
-                Start-Sleep -Seconds 2
-            }
-            
-            $stopwatch.Stop()
-            return $false
-        }
-        
-        # Open-Url inline function for background job
-        function Open-UrlInJob {
-            param([string]$Url)
-            
-            $edgePaths = @(
-                "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
-                "$env:ProgramFiles(x86)\Microsoft\Edge\Application\msedge.exe"
-            )
-            
-            foreach ($edgePath in $edgePaths) {
-                if (Test-Path $edgePath) {
-                    Start-Process -FilePath $edgePath -ArgumentList "-inprivate", $Url -ErrorAction SilentlyContinue
-                    return
-                }
-            }
 
-            $chromePaths = @(
-                "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
-                "$env:ProgramFiles(x86)\Google\Chrome\Application\chrome.exe",
-                "$env:LocalAppData\Google\Chrome\Application\chrome.exe"
-            )
-            
-            foreach ($chromePath in $chromePaths) {
-                if (Test-Path $chromePath) {
-                    Start-Process -FilePath $chromePath -ArgumentList "--incognito", $Url -ErrorAction SilentlyContinue
-                    return
-                }
-            }
-            
-            Start-Process $Url -ErrorAction SilentlyContinue
-        }
-        
-        # Wait for API
-        if (Wait-ForUrlInJob -Url $apiUrl -TimeoutSeconds $timeout) {
-            Open-UrlInJob -Url $apiUrl
-        }
-        
-        # Wait for Neo4j if requested
-        if ($includeNeo4j) {
-            if (Wait-ForUrlInJob -Url $neo4jUrl -TimeoutSeconds $timeout) {
-                Open-UrlInJob -Url $neo4jUrl
-            }
-        }
+    $scriptPath = $PSScriptRoot
+    if (-not $scriptPath) {
+        $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Definition
     }
-    
-    Start-Job -ScriptBlock $scriptBlock -ArgumentList $apiUrl, $neo4jUrl, $IncludeNeo4j, $TimeoutSeconds | Out-Null
+    $browserHelpersFile = Join-Path $scriptPath "browser_helpers.ps1"
+
+    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $tempScript = Join-Path $env:TEMP "python_api_template_browser_open_$([guid]::NewGuid().ToString('N').Substring(0,8)).ps1"
+    $logFile = Join-Path $env:TEMP "python_api_template_browser_open_$timestamp.log"
+
+    $scriptContent = @"
+`$ErrorActionPreference = 'Continue'
+. '$browserHelpersFile'
+
+`$logFile = '$logFile'
+try { Add-Content -Path `$logFile -Value ("[{0}] Browser helper started. API={1} Neo4j={2}" -f (Get-Date), '$apiUrl', '$IncludeNeo4j') -Encoding UTF8 } catch {}
+
+try {
+    `$apiReady = Wait-ForUrl -Url '$apiUrl' -TimeoutSeconds $TimeoutSeconds -IntervalMs 1000
+    Add-Content -Path `$logFile -Value ("[{0}] API ready={1}" -f (Get-Date), `$apiReady) -Encoding UTF8
+    if (`$apiReady) { Open-Url '$apiUrl' }
+} catch {
+    try { Add-Content -Path `$logFile -Value ("[{0}] ERROR waiting/opening API: {1}" -f (Get-Date), `$_.Exception.Message) -Encoding UTF8 } catch {}
+}
+
+`$includeNeo4j = '$IncludeNeo4j'
+if (`$includeNeo4j -match '^(?i:true)$') {
+    try {
+        `$neo4jReady = Wait-ForUrl -Url '$neo4jUrl' -TimeoutSeconds $TimeoutSeconds -IntervalMs 1000
+        Add-Content -Path `$logFile -Value ("[{0}] Neo4j ready={1}" -f (Get-Date), `$neo4jReady) -Encoding UTF8
+        if (`$neo4jReady) { Open-Url '$neo4jUrl' }
+    } catch {
+        try { Add-Content -Path `$logFile -Value ("[{0}] ERROR waiting/opening Neo4j: {1}" -f (Get-Date), `$_.Exception.Message) -Encoding UTF8 } catch {}
+    }
+}
+
+Remove-Item -Path '$tempScript' -Force -ErrorAction SilentlyContinue
+"@
+
+    Set-Content -Path $tempScript -Value $scriptContent -Encoding UTF8
+
+    $psExe = $null
+    try {
+        $psExe = (Get-Command powershell -ErrorAction SilentlyContinue).Source
+        if (-not $psExe) {
+            $psExe = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+        }
+    } catch {
+        $psExe = $null
+    }
+    if (-not $psExe) {
+        $psExe = "powershell"
+    }
+
+    Write-Host "[WEB] Browser helper log: $logFile" -ForegroundColor Gray
+    Write-Host "[WEB] Browser helper started in background" -ForegroundColor Gray
+
+    Start-Process -FilePath $psExe -ArgumentList @(
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-WindowStyle",
+        "Hidden",
+        "-File",
+        $tempScript
+    ) -WindowStyle Hidden
 }

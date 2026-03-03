@@ -47,13 +47,19 @@ read_env_variable() {
 determine_compose_file() {
     local db_type="$1"
     local db_mode="$2"
+    local normalized_db_type
+    local normalized_db_mode
+    normalized_db_type=$(printf '%s' "$db_type" | tr '[:upper:]' '[:lower:]')
+    normalized_db_mode=$(printf '%s' "$db_mode" | tr '[:upper:]' '[:lower:]')
     
-    if [ "$db_mode" = "external" ]; then
+    if [ "$normalized_db_mode" = "external" ]; then
         echo "local-deployment/docker-compose.yml"
-    elif [ "$db_type" = "neo4j" ]; then
+    elif [ "$normalized_db_type" = "neo4j" ]; then
         echo "local-deployment/docker-compose.neo4j.yml"
-    elif [ "$db_type" = "postgresql" ] || [ "$db_type" = "mysql" ]; then
+    elif [ "$normalized_db_type" = "postgresql" ] || [ "$normalized_db_type" = "postgres" ] || [ "$normalized_db_type" = "mysql" ]; then
         echo "local-deployment/docker-compose.postgres.yml"
+    elif [ "$normalized_db_type" = "mongodb" ] || [ "$normalized_db_type" = "mongo" ]; then
+        echo "local-deployment/docker-compose.mongodb.yml"
     else
         echo "local-deployment/docker-compose.yml"
     fi

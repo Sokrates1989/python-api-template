@@ -48,7 +48,7 @@ if [ ! -f .setup-complete ]; then
     echo "Der Setup-Assistent hilft dir bei der Konfiguration von:"
     echo "  • Docker Image-Name und Version"
     echo "  • Python-Version"
-    echo "  • Datenbanktyp (PostgreSQL oder Neo4j)"
+    echo "  • Datenbanktyp (PostgreSQL, Neo4j oder MongoDB)"
     echo "  • Datenbankmodus (lokal oder extern)"
     echo "  • API-Konfiguration"
     echo ""
@@ -126,6 +126,8 @@ PORT=$(read_env_variable "PORT" ".env" "8000")
 # Database configuration aus .env lesen
 DB_TYPE=$(read_env_variable "DB_TYPE" ".env" "neo4j")
 DB_MODE=$(read_env_variable "DB_MODE" ".env" "local")
+DB_TYPE=$(printf '%s' "$DB_TYPE" | tr '[:upper:]' '[:lower:]')
+DB_MODE=$(printf '%s' "$DB_MODE" | tr '[:upper:]' '[:lower:]')
 
 # Docker Compose Datei basierend auf DB_TYPE und DB_MODE bestimmen
 COMPOSE_FILE=$(determine_compose_file "$DB_TYPE" "$DB_MODE")
@@ -137,9 +139,16 @@ if [ "$DB_MODE" = "external" ]; then
 elif [ "$DB_TYPE" = "neo4j" ]; then
     echo "🗄️  Detected local Neo4j database"
     echo "   Will start Neo4j container"
-elif [ "$DB_TYPE" = "postgresql" ] || [ "$DB_TYPE" = "mysql" ]; then
+elif [ "$DB_TYPE" = "postgresql" ] || [ "$DB_TYPE" = "postgres" ]; then
     echo "🗄️  Detected local $DB_TYPE database"
     echo "   Will start PostgreSQL container"
+elif [ "$DB_TYPE" = "mysql" ] || [ "$DB_TYPE" = "sqlite" ]; then
+    echo "⚠️  Detected DB_TYPE=$DB_TYPE (legacy compatibility mode)"
+    echo "   Official stability matrix is: postgresql, neo4j, mongodb"
+    echo "   Compose will use PostgreSQL profile for local development"
+elif [ "$DB_TYPE" = "mongodb" ] || [ "$DB_TYPE" = "mongo" ]; then
+    echo "🗄️  Detected local MongoDB database"
+    echo "   Will start MongoDB container"
 else
     echo "⚠️  Unknown DB_TYPE: $DB_TYPE, using default compose file"
 fi

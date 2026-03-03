@@ -1,0 +1,16 @@
+* text=auto
+
+# Keep shell scripts executable and LF-normalized.
+*.sh text eol=lf
+
+# Keep PowerShell scripts Windows-friendly.
+*.ps1 text eol=crlf
+
+# Source and config defaults.
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.ini text eol=lf
+*.md text eol=lf

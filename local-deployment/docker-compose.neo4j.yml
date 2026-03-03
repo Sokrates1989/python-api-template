@@ -46,12 +46,12 @@ services:
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_dbms_security_procedures_unrestricted: apoc.*
     ports:
-      - "7474:7474"  # HTTP
-      - "7687:7687"  # Bolt
+      - "${NEO4J_HTTP_PORT:-7474}:7474"  # HTTP
+      - "${NEO4J_BOLT_PORT:-7687}:7687"  # Bolt
     volumes:
       # Map Neo4j data and logs to local directories (NOT named volumes)
-      - ../.docker/neo4j-data:/data
-      - ../.docker/neo4j-logs:/logs
+      - ${NEO4J_DATA_DIR:-../.docker/neo4j-data}:/data
+      - ${NEO4J_LOGS_DIR:-../.docker/neo4j-logs}:/logs
     healthcheck:
       test: ["CMD-SHELL", "cypher-shell -u ${DB_USER:-neo4j} -p ${DB_PASSWORD:-password} 'RETURN 1'"]
       interval: 10s
@@ -61,7 +61,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
