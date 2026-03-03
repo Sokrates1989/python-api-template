@@ -1,7 +1,7 @@
 """Response models for Neo4j example routes."""
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class ExampleNodeResponse(BaseModel):
@@ -13,8 +13,8 @@ class ExampleNodeResponse(BaseModel):
     created_at: str
     updated_at: Optional[str]
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "550e8400-e29b-41d4-a716-446655440000",
                 "name": "Sample Node",
@@ -23,6 +23,7 @@ class ExampleNodeResponse(BaseModel):
                 "updated_at": None,
             }
         }
+    )
 
 
 class ExampleNodeListResponse(BaseModel):

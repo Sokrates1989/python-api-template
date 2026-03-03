@@ -2,6 +2,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
+from dataclasses import asdict
 import json
 import tempfile
 from pathlib import Path
@@ -9,6 +10,11 @@ import time
 
 from api.security import verify_admin_key
 from api.settings import settings
+from backend.adapters.provider_capability_factory import (
+    get_provider_capabilities_for_db_type,
+    normalize_provider_db_type,
+)
+from backend.database import get_database_handler
 
 
 router = APIRouter(
@@ -26,6 +32,16 @@ class LockResponse(BaseModel):
     """Response model for lock operations."""
     success: bool
     message: str
+    is_locked: bool
+    lock_operation: Optional[str] = None
+
+
+class ProviderInfoResponse(BaseModel):
+    """Response model for target API provider/capability discovery."""
+
+    database_type: str
+    provider_profile: str
+    capabilities: dict[str, bool]
     is_locked: bool
     lock_operation: Optional[str] = None
 
@@ -74,6 +90,28 @@ def _release_lock():
             LOCK_FILE.unlink()
     except Exception:
         pass
+
+
+def _resolve_provider_info() -> tuple[str, str, dict[str, bool]]:
+    """
+    Resolve active database type + provider capability profile.
+
+    Falls back to settings-based DB type when handler lookup is unavailable.
+    """
+    database_type = settings.normalized_db_type()
+
+    try:
+        handler = get_database_handler()
+        handler_db_type = (getattr(handler, "db_type", "") or "").strip().lower()
+        if handler_db_type:
+            database_type = handler_db_type
+    except Exception:
+        # Startup or tests may inspect this route before handler initialization.
+        pass
+
+    provider_profile = normalize_provider_db_type(database_type)
+    capabilities = asdict(get_provider_capabilities_for_db_type(database_type))
+    return database_type, provider_profile, capabilities
 
 
 @router.post("/lock", response_model=LockResponse)
@@ -131,6 +169,28 @@ async def lock_database(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lock operation failed: {str(e)}")
+
+
+@router.get("/provider-info", response_model=ProviderInfoResponse)
+async def get_provider_info(_: str = Depends(verify_admin_key)):
+    """
+    Return active database provider profile and capability flags.
+
+    Used by external backup/restore orchestration services to verify
+    they are targeting the expected backend type before lock/restore.
+    """
+    try:
+        database_type, provider_profile, capabilities = _resolve_provider_info()
+        current_lock = _check_lock()
+        return ProviderInfoResponse(
+            database_type=database_type,
+            provider_profile=provider_profile,
+            capabilities=capabilities,
+            is_locked=bool(current_lock),
+            lock_operation=current_lock,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to resolve provider info: {str(exc)}")
 
 
 @router.post("/unlock", response_model=LockResponse)

@@ -1,7 +1,7 @@
 """Request models for Neo4j example routes."""
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ExampleNodeCreateRequest(BaseModel):
@@ -10,13 +10,14 @@ class ExampleNodeCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Node name")
     description: Optional[str] = Field(None, description="Optional description")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "name": "Sample Node",
                 "description": "This is a sample Neo4j node",
             }
         }
+    )
 
 
 class ExampleNodeUpdateRequest(BaseModel):
@@ -25,10 +26,11 @@ class ExampleNodeUpdateRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255, description="New name")
     description: Optional[str] = Field(None, description="New description")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "name": "Updated Node Name",
                 "description": "Updated description",
             }
         }
+    )

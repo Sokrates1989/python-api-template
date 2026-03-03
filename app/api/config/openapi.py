@@ -22,30 +22,38 @@ def setup_openapi(app: FastAPI) -> None:
         )
         
         # Define security schemes that will appear in Swagger UI "Authorize" button
-        openapi_schema["components"]["securitySchemes"] = {
+        security_schemes = openapi_schema.setdefault("components", {}).setdefault("securitySchemes", {})
+        security_schemes.update({
             "X-Admin-Key": {
                 "type": "apiKey",
                 "in": "header",
                 "name": "X-Admin-Key",
-                "description": "Admin API Key for backup operations (download backups)"
+                "description": "Admin API Key for protected operations"
             },
             "X-Restore-Key": {
                 "type": "apiKey",
                 "in": "header",
                 "name": "X-Restore-Key",
-                "description": "Restore API Key for restore operations (overwrites database)"
-            }
-        }
-        
-        # Add security requirements to backup, packages, and stats endpoints
+                "description": "Restore API Key for destructive restore operations"
+            },
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": "Bearer token alternative for external backup-restore lock orchestration."
+            },
+        })
+
+        # Add security requirements to packages, lock, and stats endpoints
         for path, path_item in openapi_schema.get("paths", {}).items():
-            if path.startswith("/backup/") or path.startswith("/packages/"):
+            if path.startswith("/packages/"):
                 for method, operation in path_item.items():
                     if method in ["get", "post", "delete", "put", "patch"]:
-                        if "restore" in path:
-                            operation["security"] = [{"X-Restore-Key": []}]
-                        else:
-                            operation["security"] = [{"X-Admin-Key": []}]
+                        operation["security"] = [{"X-Admin-Key": []}]
+            if path.startswith("/database/"):
+                for method, operation in path_item.items():
+                    if method in ["get", "post", "delete", "put", "patch"]:
+                        operation["security"] = [{"X-Admin-Key": []}, {"BearerAuth": []}]
             if path == "/stats":
                 for method, operation in path_item.items():
                     if method in ["get"]:

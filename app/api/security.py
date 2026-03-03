@@ -2,15 +2,26 @@
 Security utilities for API authentication.
 """
 from fastapi import Security, HTTPException, status
-from fastapi.security import APIKeyHeader
+from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 from api.settings import settings
 
 # Define the API key headers
 admin_key_header = APIKeyHeader(name="X-Admin-Key", auto_error=False)
 restore_key_header = APIKeyHeader(name="X-Restore-Key", auto_error=False)
+bearer_token = HTTPBearer(auto_error=False)
 
 
-async def verify_admin_key(admin_key: str = Security(admin_key_header)) -> str:
+def _extract_bearer_value(credentials: HTTPAuthorizationCredentials | None) -> str:
+    """Extract raw bearer credential value."""
+    if credentials is None:
+        return ""
+    return (credentials.credentials or "").strip()
+
+
+async def verify_admin_key(
+    admin_key: str = Security(admin_key_header),
+    bearer: HTTPAuthorizationCredentials | None = Security(bearer_token),
+) -> str:
     """
     Verify the admin API key provided in the X-Admin-Key header.
     
@@ -37,10 +48,13 @@ async def verify_admin_key(admin_key: str = Security(admin_key_header)) -> str:
     
     # Check if API key was provided
     if not admin_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing API key. This endpoint requires 'X-Admin-Key' header. Use the 'Authorize' button in Swagger UI to provide your admin key."
-        )
+        bearer_value = _extract_bearer_value(bearer)
+        if not bearer_value:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing credentials. Provide either 'X-Admin-Key' or 'Authorization: Bearer <token>'."
+            )
+        admin_key = bearer_value
     
     # Verify the API key
     if admin_key != configured_admin_key:
@@ -52,7 +66,10 @@ async def verify_admin_key(admin_key: str = Security(admin_key_header)) -> str:
     return admin_key
 
 
-async def verify_restore_key(restore_key: str = Security(restore_key_header)) -> str:
+async def verify_restore_key(
+    restore_key: str = Security(restore_key_header),
+    bearer: HTTPAuthorizationCredentials | None = Security(bearer_token),
+) -> str:
     """
     Verify the restore API key provided in the X-Restore-Key header.
     
@@ -79,10 +96,13 @@ async def verify_restore_key(restore_key: str = Security(restore_key_header)) ->
     
     # Check if API key was provided
     if not restore_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing API key. This endpoint requires 'X-Restore-Key' header. Use the 'Authorize' button in Swagger UI to provide your restore key."
-        )
+        bearer_value = _extract_bearer_value(bearer)
+        if not bearer_value:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing credentials. Provide either 'X-Restore-Key' or 'Authorization: Bearer <token>'."
+            )
+        restore_key = bearer_value
     
     # Verify the API key
     if restore_key != configured_restore_key:
