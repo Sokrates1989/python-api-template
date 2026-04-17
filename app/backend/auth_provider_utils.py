@@ -265,16 +265,21 @@ def _verify_keycloak_token(token: str) -> Dict[str, Any]:
     if not issuer:
         raise RuntimeError("Keycloak configuration is missing")
 
+    verify_audience = bool(getattr(settings, "KEYCLOAK_ENFORCE_AUDIENCE", False))
     audience = (settings.KEYCLOAK_CLIENT_ID or "").strip() or None
 
-    claims = jwt.decode(
-        token,
-        key,
-        algorithms=["RS256"],
-        audience=audience,
-        issuer=issuer,
-        options={"verify_aud": bool(audience)},
-    )
+    if verify_audience and not audience:
+        raise RuntimeError("Keycloak audience enforcement is enabled but KEYCLOAK_CLIENT_ID is missing")
+
+    decode_kwargs = {
+        "algorithms": ["RS256"],
+        "issuer": issuer,
+        "options": {"verify_aud": verify_audience},
+    }
+    if verify_audience and audience:
+        decode_kwargs["audience"] = audience
+
+    claims = jwt.decode(token, key, **decode_kwargs)
 
     return claims
 

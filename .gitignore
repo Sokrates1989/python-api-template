@@ -39,5 +39,6 @@ build/
 .DS_Store
 
 # Dependency Management
-python-dependency-management/config.env
+.pdm-manager/
+tools/core-pdm-manager/config/config.env
 "pyproject 2.toml"

@@ -66,7 +66,20 @@ function Start-Backend {
 
 function Start-DependencyManagement {
     Write-Host "Opening Dependency Management..." -ForegroundColor Cyan
-    & .\python-dependency-management\scripts\manage-python-project-dependencies.ps1
+
+    $coreMenuScript = ".\tools\core-pdm-manager\menu\menu.ps1"
+    if (Test-Path $coreMenuScript) {
+        & $coreMenuScript -ProjectRoot .
+    } else {
+        Write-Host "core-pdm-manager menu not found. Falling back to root dependency wrapper." -ForegroundColor Yellow
+        Write-Host "To fix: git submodule update --init --recursive" -ForegroundColor Yellow
+        if (Test-Path .\manage-python-project-dependencies.ps1) {
+            & .\manage-python-project-dependencies.ps1
+        } else {
+            Write-Host ".\manage-python-project-dependencies.ps1 not found" -ForegroundColor Yellow
+        }
+    }
+
     Write-Host ""
     Write-Host "Dependency Management completed." -ForegroundColor Gray
 }
@@ -78,7 +91,20 @@ function Start-DependencyAndBackend {
     )
     
     Write-Host "Opening Dependency Management first..." -ForegroundColor Cyan
-    & .\python-dependency-management\scripts\manage-python-project-dependencies.ps1
+
+    $coreMenuScript = ".\tools\core-pdm-manager\menu\menu.ps1"
+    if (Test-Path $coreMenuScript) {
+        & $coreMenuScript -ProjectRoot . -Action dependency-management
+    } else {
+        Write-Host "core-pdm-manager menu not found. Falling back to root dependency wrapper." -ForegroundColor Yellow
+        Write-Host "To fix: git submodule update --init --recursive" -ForegroundColor Yellow
+        if (Test-Path .\manage-python-project-dependencies.ps1) {
+            & .\manage-python-project-dependencies.ps1
+        } else {
+            Write-Host ".\manage-python-project-dependencies.ps1 not found" -ForegroundColor Yellow
+        }
+    }
+
     Write-Host ""
     Write-Host "Starting backend now..." -ForegroundColor Cyan
     
@@ -93,16 +119,23 @@ function Start-DependencyAndBackend {
 
 function Invoke-EnvironmentDiagnostics {
     Write-Host "Running Docker/build diagnostics..." -ForegroundColor Yellow
-    $diagnosticsScript = "python-dependency-management\scripts\run-docker-build-diagnostics.ps1"
-    if (Test-Path $diagnosticsScript) {
-        Write-Host "Gathering diagnostic information..." -ForegroundColor Gray
-        try {
-            & .\$diagnosticsScript
-        } catch {
-            Write-Host "Diagnostics encountered an error: $_" -ForegroundColor Red
-        }
+
+    $coreMenuScript = ".\tools\core-pdm-manager\menu\menu.ps1"
+    if (Test-Path $coreMenuScript) {
+        & $coreMenuScript -ProjectRoot . -Action diagnostics
     } else {
-        Write-Host "$diagnosticsScript not found" -ForegroundColor Yellow
+        $diagnosticsScript = "run-docker-build-diagnostics.ps1"
+        if (Test-Path $diagnosticsScript) {
+            Write-Host "core-pdm-manager diagnostics unavailable. Using root diagnostics wrapper." -ForegroundColor Yellow
+            Write-Host "Gathering diagnostic information..." -ForegroundColor Gray
+            try {
+                & .\$diagnosticsScript
+            } catch {
+                Write-Host "Diagnostics encountered an error: $_" -ForegroundColor Red
+            }
+        } else {
+            Write-Host "$diagnosticsScript not found" -ForegroundColor Yellow
+        }
     }
 }
 

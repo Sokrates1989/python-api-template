@@ -14,7 +14,7 @@ services:
     ports:
       - "${PORT}:8000"
     env_file:
-      - ../.env
+      - ${APP_ENV_FILE:-../.env}
     environment:
       DB_TYPE: ${DB_TYPE}
       NEO4J_URL: ${NEO4J_URL}
@@ -40,23 +40,20 @@ services:
         condition: service_started
 
   neo4j:
-    image: neo4j:5-community
+    image: neo4j:5.26
+    ports:
+      - "${NEO4J_HTTP_PORT:-7474}:7474"
+      - "${DB_PORT:-7687}:7687"
     environment:
       NEO4J_AUTH: ${DB_USER:-neo4j}/${DB_PASSWORD:-password}
-      NEO4J_PLUGINS: '["apoc"]'
-      NEO4J_dbms_security_procedures_unrestricted: apoc.*
-    ports:
-      - "${NEO4J_HTTP_PORT:-7474}:7474"  # HTTP
-      - "${NEO4J_BOLT_PORT:-7687}:7687"  # Bolt
     volumes:
-      # Map Neo4j data and logs to local directories (NOT named volumes)
-      - ${NEO4J_DATA_DIR:-../.docker/neo4j-data}:/data
-      - ${NEO4J_LOGS_DIR:-../.docker/neo4j-logs}:/logs
+      - ../.docker/neo4j-data:/data
+      - ../.docker/neo4j-logs:/logs
     healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u ${DB_USER:-neo4j} -p ${DB_PASSWORD:-password} 'RETURN 1'"]
-      interval: 10s
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 >/dev/null 2>&1 || exit 1"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 20
 
   redis:
     image: redis:7-alpine

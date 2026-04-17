@@ -206,7 +206,7 @@ if (-not (Test-Path .setup-complete)) {
         Write-Host ""
         
         # Run diagnostics to validate Docker/build configuration first
-        $diagnosticsScript = "python-dependency-management\scripts\run-docker-build-diagnostics.ps1"
+        $diagnosticsScript = "run-docker-build-diagnostics.ps1"
         if (Test-Path $diagnosticsScript) {
             Write-Host "Running Docker/Build diagnostics..." -ForegroundColor Yellow
             Write-Host "Collecting diagnostic information..." -ForegroundColor Gray
@@ -240,17 +240,17 @@ if (-not (Test-Path .setup-complete)) {
         
         Write-Host ""
         
-        # Run Dependency Management in initial-run mode
-        if (Test-Path python-dependency-management\scripts\manage-python-project-dependencies.ps1) {
+        # Run dependency management in initial-run mode
+        if (Test-Path .\manage-python-project-dependencies.ps1) {
             Write-Host "Starting Dependency Management for initial setup..." -ForegroundColor Cyan
             try {
-                & .\python-dependency-management\scripts\manage-python-project-dependencies.ps1 -InitialRun
+                & .\manage-python-project-dependencies.ps1 -InitialRun
             } catch {
                 Write-Host "Error running dependency management: $_" -ForegroundColor Red
                 Write-Host "Dependencies will be installed when Docker builds the container" -ForegroundColor Yellow
             }
         } else {
-            Write-Host "python-dependency-management\scripts\manage-python-project-dependencies.ps1 not found - skipping" -ForegroundColor Yellow
+            Write-Host "manage-python-project-dependencies.ps1 not found - skipping" -ForegroundColor Yellow
             Write-Host "Dependencies will be installed when Docker builds the container" -ForegroundColor Yellow
         }
     } else {

@@ -173,10 +173,10 @@ if [ ! -f ".setup-complete" ]; then
         
         # Run diagnostics to validate Docker/build configuration first
         echo "🔍 Running Docker/Build diagnostics..."
-        DIAGNOSTICS_SCRIPT="python-dependency-management/scripts/run-docker-build-diagnostics.sh"
+        DIAGNOSTICS_SCRIPT="run-docker-build-diagnostics.sh"
         if [ -f "$DIAGNOSTICS_SCRIPT" ]; then
             echo "Collecting diagnostic information..."
-            if ./$DIAGNOSTICS_SCRIPT; then
+            if bash "$DIAGNOSTICS_SCRIPT"; then
                 echo "✅ Diagnostics completed successfully"
             else
                 echo ""
@@ -203,8 +203,8 @@ if [ ! -f ".setup-complete" ]; then
         echo ""
         echo "📦 Starte Dependency Management für initiales Setup..."
         
-        # Führe das Dependency Management im initial-run Modus aus
-        ./python-dependency-management/scripts/manage-python-project-dependencies.sh initial-run
+        # Run dependency management in initial-run mode
+        ./manage-python-project-dependencies.sh initial-run
     else
         echo ""
         echo "Skipping diagnostics and dependency checks."

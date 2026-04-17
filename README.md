@@ -164,6 +164,9 @@ Initial dependency management is executed automatically:
 - 📦 Runs `pdm install` in container
 - ⚡ Non-interactive, runs in background
 
+> Internally this now delegates to the reusable submodule at
+> `tools/core-pdm-manager`.
+
 ### Interactive Dependency Management
 For manual package management:
 ```bash
@@ -229,13 +232,15 @@ python-api-template/
 │   ├── DATABASE.md              # Database guide
 │   ├── QUICK_START.md           # Quick start guide
 │   └── README-DE.md             # German README
-├── python-dependency-management/ # Dockerized dependency management tools
+├── tools/
+│   └── core-pdm-manager/        # Reusable dependency manager submodule
 ├── .env.template                # Environment variable template
 ├── docker-compose.yml           # Docker services configuration
 ├── Dockerfile                   # Docker build file
 ├── pyproject.toml              # Project metadata and dependencies
 ├── quick-start.sh              # Smart onboarding script
-└── manage-python-project-dependencies.sh # Dependency management
+├── manage-python-project-dependencies.sh # Dependency management wrapper
+└── run-docker-build-diagnostics.sh # Dependency diagnostics wrapper
 ```
 
 ## ⚙️ Configuration

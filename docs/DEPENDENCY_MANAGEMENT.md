@@ -107,7 +107,9 @@ $response.packages | Format-Table
 Compare with PDM in dependency management container:
 
 ```bash
-docker compose -f docker-compose-python-dependency-management.yml run --rm dev pdm list
+PDM_MANAGER_PROJECT_ROOT=$(pwd) docker compose \
+  -f tools/core-pdm-manager/docker/docker-compose.pdm-manager.yml \
+  run --rm dev pdm list
 ```
 
 Versions should match exactly.

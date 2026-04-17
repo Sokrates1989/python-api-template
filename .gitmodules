@@ -1,0 +1,3 @@
+[submodule "tools/core-pdm-manager"]
+	path = tools/core-pdm-manager
+	url = ../core-pdm-manager

@@ -251,7 +251,8 @@ Get-Content .env
 ### PDM commands not found in container
 ```powershell
 # Rebuild the dependency management container:
-docker compose -f docker-compose-python-dependency-management.yml build --no-cache
+$env:PDM_MANAGER_PROJECT_ROOT = (Get-Location).Path
+docker compose -f tools/core-pdm-manager/docker/docker-compose.pdm-manager.yml build --no-cache
 
 # Try again:
 .\manage-python-project-dependencies.ps1
@@ -260,7 +261,7 @@ docker compose -f docker-compose-python-dependency-management.yml build --no-cac
 ## 📚 Additional Resources
 
 - **Main README:** `README.md`
-- **Dependency Management Details:** `python-dependency-management/README.md`
+- **Dependency Management Details:** `tools/core-pdm-manager/docs/HOST_INTEGRATION_GUIDE.md`
 - **Database Configuration:** `docs/DATABASE.md`
 - **Architecture Overview:** `docs/ARCHITECTURE.md`
 

@@ -136,7 +136,8 @@ fastapi-redis-api-test/
 │   ├── backend/                  # Business logic
 │   ├── mounted_data/             # Example data for volume mounts
 │   └── main.py                   # FastAPI application entrypoint
-├── python-dependency-management/ # Dockerized dependency management tools
+├── tools/
+│   └── core-pdm-manager/         # Wiederverwendbares Dependency-Management-Submodul
 ├── .env.template               # Environment variable template
 ├── .gitignore                  # Git ignore file
 ├── docker-compose.yml           # Docker services configuration
@@ -144,7 +145,8 @@ fastapi-redis-api-test/
 ├── pdm.lock                      # PDM lock file
 ├── pyproject.toml              # Project metadata and dependencies (PDM)
 ├── quick-start.sh              # Smart onboarding script
-└── manage-python-project-dependencies.sh # Dependency management script
+├── manage-python-project-dependencies.sh # Dependency-Management-Wrapper
+└── run-docker-build-diagnostics.sh # Dependency-Diagnose-Wrapper
 ```
 
 ## ⚙️ Konfiguration

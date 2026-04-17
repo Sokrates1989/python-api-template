@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     KEYCLOAK_CLIENT_SECRET: Optional[str] = None
     KEYCLOAK_ISSUER_URL: Optional[str] = None
     KEYCLOAK_JWKS_URL: Optional[str] = None
+    KEYCLOAK_ENFORCE_AUDIENCE: bool = False
 
     # AWS Cognito Configuration
     AWS_REGION: Optional[str] = None

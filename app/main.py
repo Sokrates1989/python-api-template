@@ -1,4 +1,4 @@
-# Entry point for the FastAPI app
+﻿# Entry point for the FastAPI app
 import logging
 
 import uvicorn
@@ -6,7 +6,7 @@ import redis
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 from api.settings import settings
-from api.routes import test, files, packages, database_lock, users, examples
+from api.routes import test, files, packages, database_lock, users, examples, wellness
 from api.routes.sql import sync
 from api.security import verify_admin_key
 from api.middleware import setup_middleware
@@ -40,13 +40,14 @@ app.include_router(packages.router)
 app.include_router(database_lock.router)
 app.include_router(users.router)
 app.include_router(examples.router)
+app.include_router(wellness.router)
 app.include_router(sync.router)
 
 log_event(
     logger,
     logging.INFO,
     "app.routers.registered",
-    routers=["/users", "/database/*", "/examples", "/v1/sync/*"],
+    routers=["/users", "/database/*", "/examples", "/v1/wellness/*", "/v1/sync/*"],
     db_type=settings.DB_TYPE,
 )
 
@@ -119,3 +120,4 @@ async def get_database_stats(_: str = Depends(verify_admin_key)):
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to get database stats: {str(exc)}")
+

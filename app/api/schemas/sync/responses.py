@@ -1,4 +1,4 @@
-"""Response schemas for hybrid sync endpoints."""
+﻿"""Response schemas for hybrid sync endpoints."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
-SyncResultStatus = Literal["applied", "conflict", "rejected", "retryable_error"]
+SyncResultStatus = Literal["applied", "merged", "conflict", "rejected", "retryable_error"]
 
 
 class SyncConflictPayload(BaseModel):

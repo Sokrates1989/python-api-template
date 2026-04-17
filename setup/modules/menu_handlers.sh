@@ -40,7 +40,20 @@ handle_backend_start() {
 
 handle_dependency_management() {
     echo "📦 Öffne Dependency Management..."
-    ./python-dependency-management/scripts/manage-python-project-dependencies.sh
+
+    local core_menu_script="./tools/core-pdm-manager/menu/menu.sh"
+    if [ -x "$core_menu_script" ]; then
+        "$core_menu_script" --project-root .
+    else
+        echo "⚠️  core-pdm-manager menu not found. Falling back to root dependency wrapper."
+        echo "    To fix: git submodule update --init --recursive"
+        if [ -f "./manage-python-project-dependencies.sh" ]; then
+            bash ./manage-python-project-dependencies.sh
+        else
+            echo "❌ ./manage-python-project-dependencies.sh not found"
+        fi
+    fi
+
     echo ""
     echo "ℹ️  Dependency Management beendet."
 }
@@ -50,7 +63,20 @@ handle_dependency_and_backend() {
     local compose_file="$2"
     
     echo "📦 Öffne zuerst Dependency Management..."
-    ./python-dependency-management/scripts/manage-python-project-dependencies.sh
+
+    local core_menu_script="./tools/core-pdm-manager/menu/menu.sh"
+    if [ -x "$core_menu_script" ]; then
+        "$core_menu_script" --project-root . --action dependency-management
+    else
+        echo "⚠️  core-pdm-manager menu not found. Falling back to root dependency wrapper."
+        echo "    To fix: git submodule update --init --recursive"
+        if [ -f "./manage-python-project-dependencies.sh" ]; then
+            bash ./manage-python-project-dependencies.sh
+        else
+            echo "❌ ./manage-python-project-dependencies.sh not found"
+        fi
+    fi
+
     echo ""
     echo "🚀 Starte nun das Backend..."
     
@@ -68,11 +94,18 @@ handle_dependency_and_backend() {
 
 handle_environment_diagnostics() {
     echo "🔍 Starte Systemdiagnose für Docker-Setup..."
-    local diagnostics_script="python-dependency-management/scripts/run-docker-build-diagnostics.sh"
-    if [ -f "$diagnostics_script" ]; then
-        ./"$diagnostics_script"
+
+    local core_menu_script="./tools/core-pdm-manager/menu/menu.sh"
+    if [ -x "$core_menu_script" ]; then
+        "$core_menu_script" --project-root . --action diagnostics
     else
-        echo "❌ $diagnostics_script not found"
+        local diagnostics_script="run-docker-build-diagnostics.sh"
+        if [ -f "$diagnostics_script" ]; then
+            echo "⚠️  core-pdm-manager diagnostics unavailable. Using root diagnostics wrapper."
+            bash "$diagnostics_script"
+        else
+            echo "❌ ./$diagnostics_script not found"
+        fi
     fi
 }
 

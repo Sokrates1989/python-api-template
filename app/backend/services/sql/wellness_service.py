@@ -1,0 +1,320 @@
+"""SQL-backed wellness content service for dashboard, activities, diary, and check-ins."""
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta, timezone
+from typing import Dict, List, Optional
+from uuid import uuid4
+
+from sqlalchemy import and_, delete, select
+
+from backend.database import get_database_handler
+from backend.database.sql_handler import SQLHandler
+from models.sql.sync_conflict_log import SyncConflictLog
+from models.sql.sync_operation_log import SyncOperationLog
+from models.sql.user import User
+from models.sql.wellness import WellnessActivity, WellnessCheckIn, WellnessDiaryEntry
+
+
+class WellnessService:
+    _WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    _CATEGORY_DEFINITIONS = {
+        "calm": {
+            "title_key": "app_shell.activities.category_calm",
+            "description_key": "app_shell.activities.category_calm_desc",
+        },
+        "focus": {
+            "title_key": "app_shell.activities.category_focus",
+            "description_key": "app_shell.activities.category_focus_desc",
+        },
+        "energy": {
+            "title_key": "app_shell.activities.category_energy",
+            "description_key": "app_shell.activities.category_energy_desc",
+        },
+    }
+
+    def __init__(self) -> None:
+        handler = get_database_handler()
+        if not isinstance(handler, SQLHandler):
+            raise ValueError("SQL WellnessService requires SQL database")
+        self.handler = handler
+
+    @staticmethod
+    def _now_utc() -> datetime:
+        return datetime.now(timezone.utc)
+
+    @staticmethod
+    def _normalize_dt(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    @classmethod
+    def _iso(cls, value: datetime) -> str:
+        return cls._normalize_dt(value).isoformat().replace("+00:00", "Z")
+
+    @classmethod
+    def _parse_iso(cls, value: str) -> datetime:
+        return cls._normalize_dt(datetime.fromisoformat(value.replace("Z", "+00:00")))
+
+    @classmethod
+    def _metric_state_key(cls, metric: str, score: int) -> str:
+        if metric == "mood":
+            if score <= 3:
+                return "very_unhappy"
+            if score <= 5:
+                return "uneasy"
+            if score <= 7:
+                return "steady"
+            return "happy"
+        if metric == "stress":
+            if score <= 3:
+                return "calm"
+            if score <= 5:
+                return "balanced"
+            if score <= 7:
+                return "tense"
+            return "overloaded"
+        if score <= 3:
+            return "drained"
+        if score <= 5:
+            return "low"
+        if score <= 7:
+            return "alert"
+        return "energized"
+
+    @staticmethod
+    def _normalize_tag_keys(tag_keys: List[str]) -> List[str]:
+        normalized: List[str] = []
+        for raw_tag in tag_keys:
+            cleaned = str(raw_tag).strip().lower().replace(" ", "_")
+            if not cleaned:
+                continue
+            if cleaned not in normalized:
+                normalized.append(cleaned)
+            if len(normalized) >= 6:
+                break
+        return normalized
+
+    async def _ensure_user_exists(self, session, user_id: str) -> None:
+        result = await session.execute(select(User.id).where(User.id == user_id))
+        if result.scalar_one_or_none() is None:
+            raise ValueError("User not found")
+
+    def _starter_activities(self, user_id: str) -> List[WellnessActivity]:
+        now = self._now_utc().replace(hour=9, minute=0, second=0, microsecond=0)
+        payloads = [
+            {"id": "breathe-reset", "icon_key": "air", "title_key": "app_shell.activities.seed_breathe_title", "summary_key": "app_shell.activities.seed_breathe_summary", "duration_minutes": 1, "favorite": True, "category_keys": ["calm", "focus"], "energy_impact": "reset"},
+            {"id": "clarity-journal", "icon_key": "book", "title_key": "app_shell.activities.seed_journal_title", "summary_key": "app_shell.activities.seed_journal_summary", "duration_minutes": 8, "favorite": True, "category_keys": ["focus"], "energy_impact": "grounding"},
+            {"id": "soft-stretch", "icon_key": "self_improvement", "title_key": "app_shell.activities.seed_stretch_title", "summary_key": "app_shell.activities.seed_stretch_summary", "duration_minutes": 6, "favorite": False, "category_keys": ["energy", "calm"], "energy_impact": "lift"},
+            {"id": "focus-walk", "icon_key": "directions_walk", "title_key": "app_shell.activities.seed_walk_title", "summary_key": "app_shell.activities.seed_walk_summary", "duration_minutes": 12, "favorite": False, "category_keys": ["energy", "focus"], "energy_impact": "lift"},
+            {"id": "pause-and-tea", "icon_key": "local_cafe", "title_key": "app_shell.activities.seed_tea_title", "summary_key": "app_shell.activities.seed_tea_summary", "duration_minutes": 10, "favorite": False, "category_keys": ["calm"], "energy_impact": "ease"},
+        ]
+        activities: List[WellnessActivity] = []
+        for item in payloads:
+            activity = WellnessActivity(
+                user_id=user_id,
+                id=item["id"],
+                icon_key=item["icon_key"],
+                title_key=item["title_key"],
+                title=None,
+                summary_key=item["summary_key"],
+                summary=None,
+                duration_minutes=item["duration_minutes"],
+                favorite=item["favorite"],
+                energy_impact=item["energy_impact"],
+                created_at=now,
+                updated_at=now,
+            )
+            activity.category_keys = list(item["category_keys"])
+            activities.append(activity)
+        return activities
+
+    async def _ensure_seed_data(self, user_id: str) -> None:
+        async with self.handler.AsyncSessionLocal() as session:
+            await self._ensure_user_exists(session, user_id)
+            existing = await session.execute(select(WellnessActivity.pk).where(WellnessActivity.user_id == user_id).limit(1))
+            if existing.scalar_one_or_none() is not None:
+                return
+            session.add_all(self._starter_activities(user_id))
+            await session.commit()
+
+    async def _find_activity(self, session, user_id: str, activity_id: Optional[str]) -> Optional[WellnessActivity]:
+        if not activity_id:
+            return None
+        result = await session.execute(select(WellnessActivity).where(and_(WellnessActivity.user_id == user_id, WellnessActivity.id == activity_id)))
+        return result.scalar_one_or_none()
+
+    async def _build_diary_item(self, session, user_id: str, entry: WellnessDiaryEntry) -> Dict[str, object]:
+        item = entry.to_dict()
+        related_activity = await self._find_activity(session, user_id, item.get("related_activity_id"))
+        item["related_activity_title_key"] = related_activity.title_key if related_activity else None
+        item["related_activity_title"] = related_activity.title if related_activity else None
+        return item
+
+    async def _build_sync_change(self, *, session, user_id: str, entity_type: str, payload) -> Dict[str, object]:
+        normalized = payload.to_dict()
+        if entity_type == "wellness_diary_entry":
+            normalized = await self._build_diary_item(session, user_id, payload)
+        return {
+            "entity_type": entity_type,
+            "entity_id": normalized.get("id", ""),
+            "action": "upsert",
+            "updated_at": normalized.get("updated_at") or normalized.get("created_at"),
+            "payload": normalized,
+        }
+
+    async def reset_user_data(self, user_id: str, *, keep_activity_catalog: bool = True) -> Dict[str, object]:
+        try:
+            async with self.handler.AsyncSessionLocal() as session:
+                await self._ensure_user_exists(session, user_id)
+                diary_result = await session.execute(delete(WellnessDiaryEntry).where(WellnessDiaryEntry.user_id == user_id))
+                checkin_result = await session.execute(delete(WellnessCheckIn).where(WellnessCheckIn.user_id == user_id))
+                operation_log_result = await session.execute(delete(SyncOperationLog).where(SyncOperationLog.user_id == user_id))
+                conflict_log_result = await session.execute(delete(SyncConflictLog).where(SyncConflictLog.user_id == user_id))
+                await session.execute(delete(WellnessActivity).where(WellnessActivity.user_id == user_id))
+                await session.commit()
+            activity_count = 0
+            if keep_activity_catalog:
+                await self._ensure_seed_data(user_id)
+                async with self.handler.AsyncSessionLocal() as session:
+                    count_result = await session.execute(select(WellnessActivity).where(WellnessActivity.user_id == user_id))
+                    activity_count = len(count_result.scalars().all())
+            return {"status": "success", "message": "Wellness data reset successfully", "data": {"activities": activity_count, "deleted_diary_entries": int(diary_result.rowcount or 0), "deleted_checkins": int(checkin_result.rowcount or 0), "deleted_sync_operation_logs": int(operation_log_result.rowcount or 0), "deleted_sync_conflicts": int(conflict_log_result.rowcount or 0)}}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error resetting wellness data: {str(exc)}", "data": None}
+
+    async def get_dashboard(self, user_id: str) -> Dict[str, object]:
+        try:
+            await self._ensure_seed_data(user_id)
+            async with self.handler.AsyncSessionLocal() as session:
+                latest_result = await session.execute(select(WellnessCheckIn).where(WellnessCheckIn.user_id == user_id).order_by(WellnessCheckIn.recorded_at.desc()).limit(1))
+                latest = latest_result.scalar_one_or_none()
+                trend_result = await session.execute(select(WellnessCheckIn).where(WellnessCheckIn.user_id == user_id).order_by(WellnessCheckIn.recorded_at.desc()).limit(90))
+                trend_docs = trend_result.scalars().all()
+                trend_by_date: Dict[date, List[int]] = {}
+                for item in trend_docs:
+                    recorded_at = self._normalize_dt(item.recorded_at).date()
+                    trend_by_date.setdefault(recorded_at, []).append(int(item.mood_score or 0))
+                today = self._now_utc().date()
+                weekly_trend = []
+                for offset in range(6, -1, -1):
+                    target_day = today - timedelta(days=offset)
+                    mood_values = trend_by_date.get(target_day, [])
+                    value = round(sum(mood_values) / len(mood_values), 1) if mood_values else None
+                    weekly_trend.append({"day_key": self._WEEKDAY_KEYS[target_day.weekday()], "value": value})
+                latest_payload = None
+                if latest is not None:
+                    latest_payload = {"recorded_at": self._iso(latest.recorded_at), "mood": {"state_key": self._metric_state_key("mood", int(latest.mood_score or 0)), "score": int(latest.mood_score or 0)}, "stress": {"state_key": self._metric_state_key("stress", int(latest.stress_score or 0)), "score": int(latest.stress_score or 0)}, "energy": {"state_key": self._metric_state_key("energy", int(latest.energy_score or 0)), "score": int(latest.energy_score or 0)}, "note": latest.note}
+                return {"status": "success", "data": {"latest_checkin": latest_payload, "weekly_trend": weekly_trend}}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error loading dashboard: {str(exc)}", "data": None}
+
+    async def list_activities(self, user_id: str) -> Dict[str, object]:
+        try:
+            await self._ensure_seed_data(user_id)
+            async with self.handler.AsyncSessionLocal() as session:
+                result = await session.execute(select(WellnessActivity).where(WellnessActivity.user_id == user_id).order_by(WellnessActivity.favorite.desc(), WellnessActivity.duration_minutes.asc(), WellnessActivity.title_key.asc()))
+                activities = [item.to_dict() for item in result.scalars().all()]
+                categories = []
+                for category_key, definition in self._CATEGORY_DEFINITIONS.items():
+                    count = sum(1 for item in activities if category_key in item.get("category_keys", []))
+                    categories.append({"key": category_key, "title_key": definition["title_key"], "description_key": definition["description_key"], "item_count": count})
+                return {"status": "success", "data": {"categories": categories, "items": activities}}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error loading activities: {str(exc)}", "data": None}
+
+    async def get_sync_bootstrap(self, user_id: str, diary_limit: int = 50, checkin_limit: int = 50) -> Dict[str, object]:
+        try:
+            await self._ensure_seed_data(user_id)
+            async with self.handler.AsyncSessionLocal() as session:
+                activity_result = await session.execute(select(WellnessActivity).where(WellnessActivity.user_id == user_id).order_by(WellnessActivity.favorite.desc(), WellnessActivity.duration_minutes.asc(), WellnessActivity.title_key.asc()))
+                activities = [item.to_dict() for item in activity_result.scalars().all()]
+                diary_result = await session.execute(select(WellnessDiaryEntry).where(WellnessDiaryEntry.user_id == user_id).order_by(WellnessDiaryEntry.created_at.desc()).limit(diary_limit))
+                diary_entries = [await self._build_diary_item(session, user_id, entry) for entry in diary_result.scalars().all()]
+                checkin_result = await session.execute(select(WellnessCheckIn).where(WellnessCheckIn.user_id == user_id).order_by(WellnessCheckIn.recorded_at.desc()).limit(checkin_limit))
+                checkins = [item.to_dict() for item in checkin_result.scalars().all()]
+                return {"status": "success", "data": {"server_timestamp": self._iso(self._now_utc()), "activities": activities, "diary_entries": diary_entries, "checkins": checkins}}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error loading sync bootstrap: {str(exc)}", "data": None}
+
+    async def get_sync_changes(self, user_id: str, cursor: Optional[str] = None, limit: int = 100, entity_type: Optional[str] = None) -> Dict[str, object]:
+        try:
+            await self._ensure_seed_data(user_id)
+            allowed_entity_types = {"wellness_activity": WellnessActivity, "wellness_diary_entry": WellnessDiaryEntry, "wellness_checkin": WellnessCheckIn}
+            if entity_type and entity_type not in allowed_entity_types:
+                return {"status": "error", "message": f"Unsupported entity_type: {entity_type}", "data": None}
+            cursor_dt = self._parse_iso(cursor) if cursor else None
+            selected_types = [entity_type] if entity_type else list(allowed_entity_types.keys())
+            query_limit = max(limit * 2, 100)
+            changes: List[Dict[str, object]] = []
+            async with self.handler.AsyncSessionLocal() as session:
+                for selected_type in selected_types:
+                    model = allowed_entity_types[selected_type]
+                    filters = [model.user_id == user_id]
+                    if cursor_dt is not None:
+                        filters.append(model.updated_at > cursor_dt)
+                    result = await session.execute(select(model).where(and_(*filters)).order_by(model.updated_at.asc(), model.id.asc()).limit(query_limit))
+                    for item in result.scalars().all():
+                        changes.append(await self._build_sync_change(session=session, user_id=user_id, entity_type=selected_type, payload=item))
+            changes.sort(key=lambda item: (item.get("updated_at") or "", item.get("entity_type") or "", item.get("entity_id") or ""))
+            selected_changes = changes[:limit]
+            next_cursor = selected_changes[-1]["updated_at"] if selected_changes else cursor
+            return {"status": "success", "data": {"server_timestamp": self._iso(self._now_utc()), "changes": selected_changes, "next_cursor": next_cursor, "has_more": len(changes) > limit}}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error loading sync changes: {str(exc)}", "data": None}
+
+    async def update_activity(self, user_id: str, activity_id: str, favorite: Optional[bool] = None) -> Dict[str, object]:
+        try:
+            await self._ensure_seed_data(user_id)
+            async with self.handler.AsyncSessionLocal() as session:
+                activity = await self._find_activity(session, user_id, activity_id)
+                if activity is None:
+                    return {"status": "error", "message": "Activity not found", "data": None}
+                if favorite is not None:
+                    activity.favorite = favorite
+                activity.updated_at = self._now_utc()
+                await session.commit()
+                await session.refresh(activity)
+                return {"status": "success", "message": "Activity updated successfully", "data": activity.to_dict()}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error updating activity: {str(exc)}", "data": None}
+
+    async def create_checkin(self, user_id: str, mood_score: int, stress_score: int, energy_score: int, note: Optional[str] = None) -> Dict[str, object]:
+        try:
+            await self._ensure_seed_data(user_id)
+            async with self.handler.AsyncSessionLocal() as session:
+                now = self._now_utc()
+                checkin = WellnessCheckIn(user_id=user_id, id=str(uuid4()), recorded_at=now, mood_score=mood_score, stress_score=stress_score, energy_score=energy_score, note=note.strip() if isinstance(note, str) and note.strip() else None, created_at=now, updated_at=now)
+                session.add(checkin)
+                await session.commit()
+                latest_payload = {"recorded_at": self._iso(checkin.recorded_at), "mood": {"state_key": self._metric_state_key("mood", mood_score), "score": mood_score}, "stress": {"state_key": self._metric_state_key("stress", stress_score), "score": stress_score}, "energy": {"state_key": self._metric_state_key("energy", energy_score), "score": energy_score}, "note": checkin.note}
+                return {"status": "success", "message": "Check-in created successfully", "data": latest_payload}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error creating check-in: {str(exc)}", "data": None}
+
+    async def list_diary_entries(self, user_id: str, limit: int = 20) -> Dict[str, object]:
+        try:
+            await self._ensure_seed_data(user_id)
+            async with self.handler.AsyncSessionLocal() as session:
+                result = await session.execute(select(WellnessDiaryEntry).where(WellnessDiaryEntry.user_id == user_id).order_by(WellnessDiaryEntry.created_at.desc()).limit(limit))
+                items = [await self._build_diary_item(session, user_id, entry) for entry in result.scalars().all()]
+                return {"status": "success", "data": {"items": items}}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error loading diary entries: {str(exc)}", "data": None}
+
+    async def create_diary_entry(self, user_id: str, title: str, summary: str, mood_score: int, tag_keys: List[str], related_activity_id: Optional[str] = None) -> Dict[str, object]:
+        try:
+            await self._ensure_seed_data(user_id)
+            async with self.handler.AsyncSessionLocal() as session:
+                related_activity = await self._find_activity(session, user_id, related_activity_id)
+                if related_activity_id and related_activity is None:
+                    return {"status": "error", "message": "Related activity not found", "data": None}
+                now = self._now_utc()
+                entry = WellnessDiaryEntry(user_id=user_id, id=str(uuid4()), title_key=None, title=title.strip(), summary_key=None, summary=summary.strip(), mood_state_key=self._metric_state_key("mood", mood_score), mood_score=mood_score, related_activity_id=related_activity_id, created_at=now, updated_at=now)
+                entry.tag_keys = self._normalize_tag_keys(tag_keys)
+                session.add(entry)
+                await session.commit()
+                payload = await self._build_diary_item(session, user_id, entry)
+                return {"status": "success", "message": "Diary entry created successfully", "data": payload}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error creating diary entry: {str(exc)}", "data": None}

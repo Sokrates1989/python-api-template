@@ -8,7 +8,7 @@ This directory contains Docker Compose files for **local development**.
 - **`docker-compose.postgres.yml`** - PostgreSQL database extension
 - **`docker-compose.neo4j.yml`** - Neo4j database extension
 - **`docker-compose.mongodb.yml`** - MongoDB database extension
-- **`docker-compose-python-dependency-management.yml`** - Python dependency management
+- **`../tools/core-pdm-manager/docker/docker-compose.pdm-manager.yml`** - Python dependency management (recommended)
 
 ## Usage
 
