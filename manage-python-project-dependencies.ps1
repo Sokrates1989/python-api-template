@@ -19,11 +19,23 @@ $coreScript = ".\tools\core-pdm-manager\scripts\pdm-manager.ps1"
 if (Test-Path $coreScript) {
     if ($InitialRun.IsPresent) {
         & $coreScript -ProjectRoot . -InitialRun -NonInteractive @RemainingArgs
-        exit $LASTEXITCODE
+        if ($?) {
+            exit 0
+        }
+        if ($null -ne $LASTEXITCODE) {
+            exit $LASTEXITCODE
+        }
+        exit 1
     }
 
     & $coreScript -ProjectRoot . @RemainingArgs
-    exit $LASTEXITCODE
+    if ($?) {
+        exit 0
+    }
+    if ($null -ne $LASTEXITCODE) {
+        exit $LASTEXITCODE
+    }
+    exit 1
 }
 
 Write-Host "[ERROR] Missing dependency manager entrypoint: $coreScript" -ForegroundColor Red
