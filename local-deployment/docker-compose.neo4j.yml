@@ -47,8 +47,8 @@ services:
     environment:
       NEO4J_AUTH: ${DB_USER:-neo4j}/${DB_PASSWORD:-password}
     volumes:
-      - ../.docker/neo4j-data:/data
-      - ../.docker/neo4j-logs:/logs
+      - ${NEO4J_DATA_DIR:-../.docker/neo4j-data}:/data
+      - ${NEO4J_LOGS_DIR:-../.docker/neo4j-logs}:/logs
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:7474 >/dev/null 2>&1 || exit 1"]
       interval: 5s

@@ -111,6 +111,23 @@ async def reset_current_user_wellness_data(
     if result.get("status") != "success":
         _raise_result_error(result)
     return result
+
+
+@router.post("/recovery/reset-backend-state")
+async def reset_backend_state_for_recovery(
+    current_user_id: str = Depends(get_user_id_from_token),
+):
+    """Reset the authenticated user's backend wellness state for destructive recovery."""
+    service = get_service()
+    result = await service.reset_user_data(
+        current_user_id,
+        keep_activity_catalog=True,
+    )
+    if result.get("status") != "success":
+        _raise_result_error(result)
+    return result
+
+
 @router.patch("/activities/{activity_id}")
 async def update_activity(
     activity_id: str,

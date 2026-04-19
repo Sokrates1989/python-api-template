@@ -1,4 +1,4 @@
-﻿"""Backend-aware sync service facade."""
+"""Backend-aware sync service facade."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from api.schemas.sync.requests import SyncConflictResolveRequest, SyncOperationRequest
 from api.settings import settings
 from backend.services.mongodb.sync_service import SyncService as MongoSyncService
+from backend.services.neo4j.sync_service import SyncService as Neo4jSyncService
 from backend.services.sql.sync_service import SyncService as SQLSyncService
 
 
@@ -16,8 +17,11 @@ class SyncService:
     USER_PROFILE_ENTITY = SQLSyncService.USER_PROFILE_ENTITY
 
     def __init__(self) -> None:
+        normalized_db_type = settings.normalized_db_type()
         if settings.is_sql_database():
             self._delegate = SQLSyncService()
+        elif normalized_db_type == "neo4j":
+            self._delegate = Neo4jSyncService()
         else:
             self._delegate = MongoSyncService()
 
