@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "fastapi-python-api-template"
-version = "1.0.4"
+version = "1.0.5"
 description = "A reusable FastAPI template with Docker and Poetry support"
 authors = ["Your Name <you@example.com>"]
 readme = "README.md"
@@ -38,7 +38,7 @@ distribution = false
 
 [project]
 name = "fastapi-redis-api-test"
-version = "1.0.4"
+version = "1.0.5"
 description = "Default template for PDM package"
 authors = [
     {name = "pmichiels", email = "pmichiels@engaige.tech"},
@@ -67,5 +67,6 @@ dependencies = [
 requires-python = ">=3.13,<3.14"
 readme = "README.md"
 license = {text = "MIT"}
+
 
 

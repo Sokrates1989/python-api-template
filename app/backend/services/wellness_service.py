@@ -12,6 +12,7 @@ class WellnessService:
     """Dispatch wellness operations to the configured database backend adapter."""
 
     def __init__(self):
+        """Bind the facade to the active backend-specific wellness repository."""
         handler = get_database_handler()
         db_type = getattr(handler, "db_type", "").strip().lower()
         self._repository: WellnessRepository = create_wellness_repository(db_type)
@@ -23,9 +24,25 @@ class WellnessService:
         return self._db_type
 
     async def get_dashboard(self, user_id: str) -> Dict[str, Any]:
+        """Return the dashboard payload for one user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+
+        Returns:
+            Dict[str, Any]: Backend-specific dashboard response.
+        """
         return await self._repository.get_dashboard(user_id=user_id)
 
     async def list_activities(self, user_id: str) -> Dict[str, Any]:
+        """Return the activity catalog for one user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+
+        Returns:
+            Dict[str, Any]: Backend-specific activity list response.
+        """
         return await self._repository.list_activities(user_id=user_id)
 
     async def get_sync_bootstrap(
@@ -34,6 +51,16 @@ class WellnessService:
         diary_limit: int = 50,
         checkin_limit: int = 50,
     ) -> Dict[str, Any]:
+        """Return the initial sync bootstrap payload.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            diary_limit (int): Maximum diary entries to include.
+            checkin_limit (int): Maximum check-ins to include.
+
+        Returns:
+            Dict[str, Any]: Backend-specific sync bootstrap response.
+        """
         return await self._repository.get_sync_bootstrap(
             user_id=user_id,
             diary_limit=diary_limit,
@@ -47,6 +74,17 @@ class WellnessService:
         limit: int = 100,
         entity_type: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """Return incremental sync changes for one user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            cursor (Optional[str]): Incremental sync cursor.
+            limit (int): Maximum number of changes to return.
+            entity_type (Optional[str]): Optional entity type filter.
+
+        Returns:
+            Dict[str, Any]: Backend-specific incremental sync response.
+        """
         return await self._repository.get_sync_changes(
             user_id=user_id,
             cursor=cursor,
@@ -60,6 +98,16 @@ class WellnessService:
         activity_id: str,
         favorite: Optional[bool] = None,
     ) -> Dict[str, Any]:
+        """Update one activity record for the user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            activity_id (str): Activity identifier.
+            favorite (Optional[bool]): Updated favorite state.
+
+        Returns:
+            Dict[str, Any]: Backend-specific activity update response.
+        """
         return await self._repository.update_activity(
             user_id=user_id,
             activity_id=activity_id,
@@ -67,6 +115,15 @@ class WellnessService:
         )
 
     async def list_diary_entries(self, user_id: str, limit: int = 20) -> Dict[str, Any]:
+        """Return diary entries for one user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            limit (int): Maximum number of diary entries to return.
+
+        Returns:
+            Dict[str, Any]: Backend-specific diary list response.
+        """
         return await self._repository.list_diary_entries(user_id=user_id, limit=limit)
 
     async def create_diary_entry(
@@ -78,6 +135,19 @@ class WellnessService:
         tag_keys: List[str],
         related_activity_id: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """Create a diary entry for one user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            title (str): Diary entry title.
+            summary (str): Diary entry summary.
+            mood_score (int): Mood score linked to the entry.
+            tag_keys (List[str]): Tag keys for the entry.
+            related_activity_id (Optional[str]): Optional related activity identifier.
+
+        Returns:
+            Dict[str, Any]: Backend-specific diary creation response.
+        """
         return await self._repository.create_diary_entry(
             user_id=user_id,
             title=title,
@@ -95,6 +165,18 @@ class WellnessService:
         energy_score: int,
         note: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """Create a check-in for one user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            mood_score (int): Mood score to record.
+            stress_score (int): Stress score to record.
+            energy_score (int): Energy score to record.
+            note (Optional[str]): Optional note.
+
+        Returns:
+            Dict[str, Any]: Backend-specific check-in creation response.
+        """
         return await self._repository.create_checkin(
             user_id=user_id,
             mood_score=mood_score,
@@ -109,6 +191,15 @@ class WellnessService:
         *,
         keep_activity_catalog: bool = True,
     ) -> Dict[str, Any]:
+        """Reset wellness data for one user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            keep_activity_catalog (bool): Whether starter activities should be restored.
+
+        Returns:
+            Dict[str, Any]: Backend-specific reset response.
+        """
         return await self._repository.reset_user_data(
             user_id=user_id,
             keep_activity_catalog=keep_activity_catalog,
