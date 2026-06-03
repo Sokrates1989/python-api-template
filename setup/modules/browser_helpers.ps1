@@ -47,11 +47,12 @@ function Wait-ForUrl {
             }
         } catch {
             # Treat 405 as reachable (some services reject method variants during startup).
+            # Treat 401 as reachable (service is up but requires auth; browser will handle login).
             try {
                 $ex = $_.Exception
                 if ($ex -and $ex.Response -and $ex.Response.StatusCode) {
                     $status = [int]$ex.Response.StatusCode
-                    if ($status -eq 405) {
+                    if ($status -eq 405 -or $status -eq 401) {
                         return $true
                     }
                 }
@@ -203,6 +204,35 @@ function Open-Url {
     }
 }
 
+function Get-ConfiguredBrowserTargets {
+    <#
+    .SYNOPSIS
+    Reads additional browser targets from the active backend browser target list.
+    #>
+    $targets = @()
+    if ([string]::IsNullOrWhiteSpace($env:ACTIVE_BACKEND_BROWSER_TARGETS)) {
+        return $targets
+    }
+
+    foreach ($line in ($env:ACTIVE_BACKEND_BROWSER_TARGETS -split "`r?`n")) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+
+        $parts = $line -split "\|", 2
+        if ($parts.Count -lt 2) {
+            continue
+        }
+
+        $targets += [PSCustomObject]@{
+            Label = $parts[0]
+            Url = $parts[1]
+        }
+    }
+
+    return $targets
+}
+
 function Open-BrowsersDelayed {
     <#
     .SYNOPSIS
@@ -213,11 +243,13 @@ function Open-BrowsersDelayed {
         [Parameter(Mandatory = $true)]
         [int]$Port,
         [bool]$IncludeNeo4j = $false,
-        [int]$TimeoutSeconds = 120
+        [int]$TimeoutSeconds = 120,
+        [array]$AdditionalTargets = @()
     )
 
     $apiUrl = "http://localhost:$Port/docs"
     $neo4jUrl = "http://localhost:7474"
+    $additionalTargets = if ($AdditionalTargets.Count -gt 0) { $AdditionalTargets } else { Get-ConfiguredBrowserTargets }
 
     Write-Host ""
     Write-Host "========================================"
@@ -226,8 +258,22 @@ function Open-BrowsersDelayed {
     if ($IncludeNeo4j) {
         Write-Host "  * Neo4j Browser: $neo4jUrl"
     }
+    foreach ($target in $additionalTargets) {
+        Write-Host ("  * {0}: {1}" -f $target.Label, $target.Url)
+    }
     Write-Host "========================================"
     Write-Host ""
+    if ($additionalTargets.Count -gt 0) {
+        Write-Host "Monitoring UI credentials:"
+        foreach ($target in $additionalTargets) {
+            if ($target.Label -eq "pgAdmin") {
+                Write-Host "  * pgAdmin: $env:PGADMIN_EMAIL / $env:PGADMIN_PASSWORD"
+            } elseif ($target.Label -eq "Mongo Express") {
+                Write-Host "  * Mongo Express: $env:MONGO_EXPRESS_USERNAME / $env:MONGO_EXPRESS_PASSWORD"
+            }
+        }
+        Write-Host ""
+    }
     Write-Host "Browser will open automatically when services are ready..."
     Write-Host ""
 
@@ -264,6 +310,28 @@ if (`$includeNeo4j -match '^(?i:true)$') {
         if (`$neo4jReady) { Open-Url '$neo4jUrl' }
     } catch {
         try { Add-Content -Path `$logFile -Value ("[{0}] ERROR waiting/opening Neo4j: {1}" -f (Get-Date), `$_.Exception.Message) -Encoding UTF8 } catch {}
+    }
+}
+
+try { Add-Content -Path `$logFile -Value ("[{0}] DEBUG: Processing additional targets..." -f (Get-Date)) -Encoding UTF8 } catch {}
+`$targetsJsonBase64 = '$([Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes(($additionalTargets | ConvertTo-Json -Compress -ErrorAction SilentlyContinue))))'
+try { Add-Content -Path `$logFile -Value ("[{0}] DEBUG: Base64 length={1}" -f (Get-Date), `$targetsJsonBase64.Length) -Encoding UTF8 } catch {}
+`$targetsJson = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(`$targetsJsonBase64))
+try { Add-Content -Path `$logFile -Value ("[{0}] DEBUG: Decoded JSON={1}" -f (Get-Date), `$targetsJson) -Encoding UTF8 } catch {}
+if ([string]::IsNullOrWhiteSpace(`$targetsJson) -or `$targetsJson -eq 'null') { `$targetsJson = '[]' }
+`$parsedTargets = `$targetsJson | ConvertFrom-Json
+# Ensure we always have an array to iterate over (handles single object vs array)
+if (`$parsedTargets -isnot [array]) { `$parsedTargets = @(`$parsedTargets) }
+if (-not `$parsedTargets) { `$parsedTargets = @() }
+try { Add-Content -Path `$logFile -Value ("[{0}] DEBUG: Target count={1}" -f (Get-Date), `$parsedTargets.Count) -Encoding UTF8 } catch {}
+foreach (`$target in `$parsedTargets) {
+    try {
+        try { Add-Content -Path `$logFile -Value ("[{0}] DEBUG: Checking {1} at {2}" -f (Get-Date), `$target.Label, `$target.Url) -Encoding UTF8 } catch {}
+        `$targetReady = Wait-ForUrl -Url `$target.Url -TimeoutSeconds $TimeoutSeconds -IntervalMs 1000
+        Add-Content -Path `$logFile -Value ("[{0}] {1} ready={2}" -f (Get-Date), `$target.Label, `$targetReady) -Encoding UTF8
+        if (`$targetReady) { Open-Url `$target.Url }
+    } catch {
+        try { Add-Content -Path `$logFile -Value ("[{0}] ERROR waiting/opening {1}: {2}" -f (Get-Date), `$target.Label, `$_.Exception.Message) -Encoding UTF8 } catch {}
     }
 }
 

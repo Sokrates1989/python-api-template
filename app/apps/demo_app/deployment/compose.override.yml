@@ -1,0 +1,10 @@
+# App-specific Docker Compose overrides for demo_app.
+
+services:
+  api:
+    environment:
+      APP_PROFILE: demo_app
+
+  mongodb:
+    volumes:
+      - ../../.docker/apps/demo_app/mongodb-data:/data/db

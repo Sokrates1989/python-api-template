@@ -8,7 +8,6 @@ from fastapi import FastAPI
 
 from api.settings import settings
 from backend.database import close_database, get_database_handler, initialize_database
-from backend.database.migrations import run_migrations
 from backend.database.startup_probe import run_provider_startup_probe
 from backend.observability import log_event
 
@@ -63,6 +62,7 @@ def create_lifespan_handler():
         )
 
         if settings.is_sql_database():
+            from backend.database.migrations import run_migrations
             run_migrations(fail_on_error=True)
             log_event(
                 logger,

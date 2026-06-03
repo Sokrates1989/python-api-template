@@ -3,13 +3,13 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from sqlalchemy import text
-
 from backend.adapters.provider_capability_factory import normalize_provider_db_type
 
 
 async def _probe_sql(handler: Any) -> Dict[str, Any]:
     """Run SQL provider probe."""
+    from sqlalchemy import text
+
     async with handler.AsyncSessionLocal() as session:
         await session.execute(text("SELECT 1"))
 

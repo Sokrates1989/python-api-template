@@ -6,21 +6,22 @@ import redis
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 from api.settings import settings
-from api.routes import test, files, packages, database_lock, users, examples, wellness
-from api.routes.sql import sync
-from api.security import verify_admin_key
+from api.shared_dependencies.security import verify_admin_key
+from api.shared_routes import test, files, packages, database_lock, users, examples
 from api.middleware import setup_middleware
 from api.config import setup_openapi, create_lifespan_handler
 from backend.adapters.provider_capability_factory import normalize_provider_db_type
 from backend.observability import log_event
-from backend.services.backup_service import BackupService
+from backend.shared_services.backup_service import BackupService
 
 logger = logging.getLogger("app.main")
+app_profile = settings.normalized_app_profile()
+selected_backend_app = settings.get_backend_app_definition()
 
-# Initialize FastAPI application
+# Initialize FastAPI application with app-specific branding
 app = FastAPI(
-    title="Python API Template",
-    description="A flexible API template with SQL, Neo4j, and MongoDB support",
+    title=settings.APP_NAME,
+    description=settings.APP_DESCRIPTION,
     version=settings.IMAGE_TAG,
     lifespan=create_lifespan_handler(),
 )
@@ -40,15 +41,22 @@ app.include_router(packages.router)
 app.include_router(database_lock.router)
 app.include_router(users.router)
 app.include_router(examples.router)
-app.include_router(wellness.router)
-app.include_router(sync.router)
+
+registered_routers = ["/users", "/database/*", "/examples"]
+for route_registration in selected_backend_app.route_registrations:
+    app.include_router(
+        route_registration.router,
+        prefix=route_registration.external_prefix,
+    )
+    registered_routers.append(f"{route_registration.resolved_public_prefix()}/*")
 
 log_event(
     logger,
     logging.INFO,
     "app.routers.registered",
-    routers=["/users", "/database/*", "/examples", "/v1/wellness/*", "/v1/sync/*"],
+    routers=registered_routers,
     db_type=settings.DB_TYPE,
+    app_profile=app_profile,
 )
 
 
@@ -86,10 +94,16 @@ def set_cache(key: str, value: str):
 def check_health():
     database_type = getattr(app.state, "database_type", settings.normalized_db_type())
     startup_probe = getattr(app.state, "startup_probe", None)
+    wellness_route_prefix = selected_backend_app.find_route_prefix("wellness")
     return {
         "status": "OK",
+        "app_profile": app_profile,
+        "backend_app": selected_backend_app.display_name,
+        "backend_data_profile": selected_backend_app.backend_data_profile,
         "database_type": database_type,
         "provider_profile": normalize_provider_db_type(database_type),
+        "wellness_route_prefix": wellness_route_prefix,
+        "sync_routes_enabled": selected_backend_app.exposes_sync_routes,
         "startup_probe_status": (
             startup_probe.get("status", "unknown")
             if isinstance(startup_probe, dict)

@@ -206,8 +206,14 @@ function Test-RemoteImage {
 }
 
 function Update-ImageVersion {
-    $envFile = '.env'
-    $ciEnvFile = '.ci.env'
+    param(
+        [string]$EnvFile = '.env',
+        [string]$CiEnvFile = '.ci.env',
+        [string]$ImageNameOverride = ''
+    )
+
+    $envFile = $EnvFile
+    $ciEnvFile = $CiEnvFile
 
     $currentEnvVersion = $null
     if (Test-Path $envFile) {
@@ -218,7 +224,7 @@ function Update-ImageVersion {
     }
 
     $currentCiVersion = $null
-    if (Test-Path $ciEnvFile) {
+    if (-not [string]::IsNullOrWhiteSpace($ciEnvFile) -and (Test-Path $ciEnvFile)) {
         $ciLine = Get-Content $ciEnvFile | Where-Object { $_ -match '^IMAGE_VERSION=' } | Select-Object -First 1
         if ($ciLine) {
             $currentCiVersion = ($ciLine -split '=', 2)[1].Trim().Trim('"')
@@ -229,10 +235,10 @@ function Update-ImageVersion {
                   elseif (-not [string]::IsNullOrWhiteSpace($currentCiVersion)) { $currentCiVersion }
                   else { '0.1.0' }
 
-    $imageName = $null
+    $imageName = $ImageNameOverride
     if (Test-Path $envFile) {
         $nameLine = Get-Content $envFile | Where-Object { $_ -match '^IMAGE_NAME=' } | Select-Object -First 1
-        if ($nameLine) {
+        if ([string]::IsNullOrWhiteSpace($imageName) -and $nameLine) {
             $imageName = ($nameLine -split '=', 2)[1].Trim().Trim('"')
         }
     }
@@ -242,8 +248,10 @@ function Update-ImageVersion {
 
     Write-Host ''
     Write-Host 'Current IMAGE_VERSION values:' -ForegroundColor Cyan
-    Write-Host ("  - .env    : {0}{1}" -f $displayEnv, (Build-VersionAnnotation -ImageName $imageName -Version $currentEnvVersion)) -ForegroundColor Gray
-    Write-Host ("  - .ci.env : {0}{1}" -f $displayCi, (Build-VersionAnnotation -ImageName $imageName -Version $currentCiVersion)) -ForegroundColor Gray
+    Write-Host ("  - {0} : {1}{2}" -f $envFile, $displayEnv, (Build-VersionAnnotation -ImageName $imageName -Version $currentEnvVersion)) -ForegroundColor Gray
+    if (-not [string]::IsNullOrWhiteSpace($ciEnvFile)) {
+        Write-Host ("  - {0} : {1}{2}" -f $ciEnvFile, $displayCi, (Build-VersionAnnotation -ImageName $imageName -Version $currentCiVersion)) -ForegroundColor Gray
+    }
     Write-Host ''
 
     if ($imageName -and $baseVersion) {
@@ -310,7 +318,9 @@ function Update-ImageVersion {
 
     Write-Host ''
     Update-ImageVersionInFile -Path $envFile -NewVersion $newVersion
-    Update-ImageVersionInFile -Path $ciEnvFile -NewVersion $newVersion
+    if (-not [string]::IsNullOrWhiteSpace($ciEnvFile)) {
+        Update-ImageVersionInFile -Path $ciEnvFile -NewVersion $newVersion
+    }
     Write-Host ''
     Write-Host ("IMAGE_VERSION updated to {0}" -f $newVersion) -ForegroundColor Green
 }

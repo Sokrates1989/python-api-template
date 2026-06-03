@@ -7,12 +7,13 @@ set -o nounset
 set -o pipefail
 
 CORE_SCRIPT="./tools/core-pdm-manager/scripts/pdm-manager.sh"
+PROJECT_ROOT="${PDM_MANAGER_PROJECT_ROOT:-.}"
 
 if [ -x "$CORE_SCRIPT" ]; then
     if [ "${1:-}" = "initial-run" ]; then
-        exec "$CORE_SCRIPT" --project-root . --initial-run --non-interactive "${@:2}"
+        exec "$CORE_SCRIPT" --project-root "$PROJECT_ROOT" --initial-run --non-interactive "${@:2}"
     fi
-    exec "$CORE_SCRIPT" --project-root . "$@"
+    exec "$CORE_SCRIPT" --project-root "$PROJECT_ROOT" "$@"
 fi
 
 echo "[ERROR] Missing dependency manager entrypoint: $CORE_SCRIPT"

@@ -38,7 +38,7 @@ async def block_writes_during_restore(request: Request, call_next):
     if request.method in ["POST", "PUT", "PATCH", "DELETE"]:
         try:
             # Check lock status using the database_lock module
-            from api.routes.database_lock import _check_lock
+            from api.shared_routes.database_lock import _check_lock
             lock_operation = _check_lock()
             
             if lock_operation:

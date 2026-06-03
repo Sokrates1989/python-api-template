@@ -1,0 +1,41 @@
+# Shared Docker Compose fragment for MongoDB-backed app stacks.
+
+services:
+  api:
+    environment:
+      MONGODB_URL: ${MONGODB_URL}
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME}
+      MONGODB_ROOT_USER: ${MONGODB_ROOT_USER}
+      MONGODB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  mongodb:
+    image: mongo:7
+    command: ["--quiet", "--logpath", "/proc/1/fd/1", "--logappend"]
+    ports:
+      - "${MONGODB_PORT:-27017}:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ROOT_USER:-mongo}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD:-mongo}
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet -u ${MONGODB_ROOT_USER:-mongo} -p ${MONGODB_ROOT_PASSWORD:-mongo} --authenticationDatabase admin --eval \"db.adminCommand({ ping: 1 }).ok\" | grep 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  mongo-express:
+    image: mongo-express:latest
+    environment:
+      # MongoDB connection (auto-connects to the mongodb container)
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGODB_ROOT_USER:-mongo}:${MONGODB_ROOT_PASSWORD:-mongo}@mongodb:27017/?authSource=admin
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
+      # Disable basic auth for local development (auto-authenticate)
+      ME_CONFIG_BASICAUTH: "false"
+    ports:
+      - "${MONGO_EXPRESS_PORT:-8081}:8081"
+    depends_on:
+      mongodb:
+        condition: service_healthy

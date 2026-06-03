@@ -105,6 +105,17 @@ open_url() {
     fi
 }
 
+# get_configured_browser_targets
+# Reads additional browser targets from ACTIVE_BACKEND_BROWSER_TARGETS.
+#
+# Returns:
+#   Writes newline-delimited entries in the format label|url to stdout.
+get_configured_browser_targets() {
+    if [ -n "${ACTIVE_BACKEND_BROWSER_TARGETS:-}" ]; then
+        printf '%s\n' "${ACTIVE_BACKEND_BROWSER_TARGETS}"
+    fi
+}
+
 # open_browsers_delayed
 # Displays service URLs and opens browsers automatically when services become available.
 # Runs the polling and browser opening in the background so docker compose can proceed.
@@ -123,6 +134,9 @@ open_browsers_delayed() {
     
     local api_url="http://localhost:$port/docs"
     local neo4j_url="http://localhost:7474"
+    local target_line
+    local target_label
+    local target_url
     
     echo ""
     echo "========================================"
@@ -131,8 +145,26 @@ open_browsers_delayed() {
     if [ "$include_neo4j" = "true" ]; then
         echo "  • Neo4j Browser: $neo4j_url"
     fi
+    while IFS= read -r target_line || [ -n "$target_line" ]; do
+        target_line="${target_line%$'\r'}"
+        [ -z "$target_line" ] && continue
+        target_label="${target_line%%|*}"
+        target_url="${target_line#*|}"
+        [ -z "$target_url" ] && continue
+        echo "  • ${target_label}: ${target_url}"
+    done < <(get_configured_browser_targets)
     echo "========================================"
     echo ""
+    if [ -n "${PGADMIN_EMAIL:-}" ] || [ -n "${MONGO_EXPRESS_USERNAME:-}" ]; then
+        echo "Monitoring UI credentials:"
+        if [ -n "${PGADMIN_EMAIL:-}" ]; then
+            echo "  • pgAdmin: ${PGADMIN_EMAIL} / ${PGADMIN_PASSWORD:-admin}"
+        fi
+        if [ -n "${MONGO_EXPRESS_USERNAME:-}" ]; then
+            echo "  • Mongo Express: ${MONGO_EXPRESS_USERNAME} / ${MONGO_EXPRESS_PASSWORD:-admin}"
+        fi
+        echo ""
+    fi
     echo "🌐 Browser will open automatically when services are ready..."
     echo ""
     
@@ -153,5 +185,21 @@ open_browsers_delayed() {
                 echo "⚠️  Timeout waiting for Neo4j at $neo4j_url"
             fi
         fi
+
+        while IFS= read -r target_line || [ -n "$target_line" ]; do
+            target_line="${target_line%$'\r'}"
+            [ -z "$target_line" ] && continue
+            target_label="${target_line%%|*}"
+            target_url="${target_line#*|}"
+            if [ -z "$target_url" ]; then
+                continue
+            fi
+
+            if wait_for_url "$target_url" "$timeout"; then
+                open_url "$target_url"
+            else
+                echo "⚠️  Timeout waiting for ${target_label} at ${target_url}"
+            fi
+        done < <(get_configured_browser_targets)
     ) &
 }

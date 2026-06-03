@@ -57,6 +57,35 @@ function Get-EnvVariable {
     return $DefaultValue
 }
 
+function Update-EnvVariable {
+    param(
+        [string]$VariableName,
+        [string]$VariableValue,
+        [string]$EnvFile = ".env"
+    )
+
+    if (-not (Test-Path $EnvFile)) {
+        "$VariableName=$VariableValue" | Out-File -FilePath $EnvFile -Encoding utf8
+        return
+    }
+
+    $content = Get-Content $EnvFile
+    $updated = $false
+    for ($i = 0; $i -lt $content.Length; $i++) {
+        if ($content[$i] -match "^$VariableName=") {
+            $content[$i] = "$VariableName=$VariableValue"
+            $updated = $true
+            break
+        }
+    }
+
+    if (-not $updated) {
+        $content += "$VariableName=$VariableValue"
+    }
+
+    $content | Out-File -FilePath $EnvFile -Encoding utf8
+}
+
 function Get-ComposeFile {
     param(
         [string]$DbType,
@@ -73,7 +102,7 @@ function Get-ComposeFile {
     } elseif ($normalizedDbType -eq "postgresql" -or $normalizedDbType -eq "postgres" -or $normalizedDbType -eq "mysql") {
         return "local-deployment\docker-compose.postgres.yml"
     } elseif ($normalizedDbType -eq "mongodb" -or $normalizedDbType -eq "mongo") {
-        return "local-deployment\docker-compose.mongodb.yml"
+        return "local-deployment\docker-compose.mongodb.named-volume.yml"
     } else {
         return "local-deployment\docker-compose.yml"
     }

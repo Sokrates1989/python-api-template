@@ -6,23 +6,25 @@ This directory contains everything needed to build production-ready Docker image
 
 ### Local Build (Recommended)
 
-Build a production image locally using the quick-start scripts:
+Build and push an app-specific API image locally using the quick-start scripts:
 
 **Windows (PowerShell):**
 ```powershell
 .\quick-start.ps1
-# Select option 5: Build Production Docker Image
+# Select: Build & Push API Docker Image
 ```
 
 **Linux/macOS (Bash):**
 ```bash
 ./quick-start.sh
-# Select option 5: Production Docker Image bauen
+# Select: Build & Push API Docker Image
 ```
 
 ### Direct Build
 
-You can also build directly using Docker Compose:
+You can also run the legacy containerized builder directly. The quick-start
+menu now uses an app-aware build/push flow instead, because it must derive the
+image name and version from the selected backend app.
 
 ```bash
 docker compose -f build-image/docker-compose.build.yml run --rm build-image
@@ -32,25 +34,30 @@ docker compose -f build-image/docker-compose.build.yml run --rm build-image
 
 ### 1. Configure Image Name and Version
 
-Edit your `.env` file and set:
+Each backend app keeps its committed release version in its own
+`pyproject.toml`, for example `app/apps/postgres_template/pyproject.toml`:
 
-```env
-# Docker image name (e.g., sokrates1989/python-api-template or ghcr.io/sokrates1989/python-api-template)
-IMAGE_NAME=your-username/your-api-name
-
-# Docker image version (will be prompted during build if you want to update)
-IMAGE_VERSION=1.0.0
+```toml
+[project]
+name = "postgres_template"
+version = "1.0.0"
 ```
+
+The Docker image name is derived from the selected backend app:
+`sokrates1989/python-api-<app-name>`.
+
+App `.env` files stay focused on local runtime settings and secret-bearing
+values. They are intentionally not used as the release version source of truth.
 
 ### 2. Build Process
 
 The build script will:
-1. Load configuration from `.env`
-2. Prompt you to enter/update the image version
-3. Update the `IMAGE_VERSION` in `.env` automatically
-4. Build the Docker image with the specified version
-5. Tag the image as both `IMAGE_NAME:VERSION` and `IMAGE_NAME:latest`
-6. Optionally push the image to Docker registry
+1. Use the active backend app selected in quick-start
+2. Read the current version from that app's committed `pyproject.toml`
+3. Prompt for patch, minor, major, manual, or current version
+4. Build the API image for `linux/amd64` with the selected app build args
+5. Push `IMAGE_NAME:VERSION`
+6. Tag and push `IMAGE_NAME:latest`
 
 ## 🏗️ Build System Architecture
 
@@ -87,7 +94,9 @@ docker compose -f build-image/docker-compose.build.yml run --rm build-image
    ```bash
    echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
    ```
-3. Set `IMAGE_NAME=ghcr.io/sokrates1989/python-api-template` in `.env`
+3. For the app-aware quick-start flow, use the canonical Docker Hub name
+   `sokrates1989/python-api-<app-name>`. The legacy direct builder still reads
+   custom registry names from `.env`.
 4. Build and push
 
 ### GitLab Container Registry
@@ -96,7 +105,9 @@ docker compose -f build-image/docker-compose.build.yml run --rm build-image
    ```bash
    docker login registry.gitlab.com
    ```
-2. Set `IMAGE_NAME=registry.gitlab.com/username/project/api-name` in `.env`
+2. For the app-aware quick-start flow, use the canonical Docker Hub name
+   `sokrates1989/python-api-<app-name>`. The legacy direct builder still reads
+   custom registry names from `.env`.
 3. Build and push
 
 ## 🧪 Testing the Built Image
@@ -208,9 +219,10 @@ docker buildx build \
 
 ## 🆘 Troubleshooting
 
-### "IMAGE_NAME not set in .env"
+### Legacy builder: "IMAGE_NAME not set in .env"
 
-Add `IMAGE_NAME=your-username/your-api-name` to your `.env` file.
+The app-aware quick-start build derives its image name from the selected app.
+Only the legacy direct builder requires `IMAGE_NAME` in `.env`.
 
 ### "Docker login failed"
 

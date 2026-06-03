@@ -1,0 +1,69 @@
+# IMPORTANT:
+# Set a unique Compose project name per repo. Otherwise Docker Compose can derive the project name
+# from the folder name (e.g. "local-deployment"), leading to cross-repo collisions (containers,
+# networks, volumes like "<project>-app-1").
+name: python-api-template
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION}
+        BACKEND_APP_ID: ${ACTIVE_BACKEND_APP_ID:-demo_app}
+        BACKEND_DATA_PROFILE: ${DB_TYPE}
+    ports:
+      - "${PORT}:8000"
+    env_file:
+      - ${APP_ENV_FILE:-../.env}
+    environment:
+      DB_TYPE: ${DB_TYPE}
+      MONGODB_URL: ${MONGODB_URL}
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME}
+      MONGODB_ROOT_USER: ${MONGODB_ROOT_USER}
+      MONGODB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD}
+      REDIS_URL: ${REDIS_URL}
+      DEBUG: ${DEBUG}
+    volumes:
+      - ../app/main.py:/app/main.py
+      - ../app/api:/app/api
+      - ../app/backend:/app/backend
+      - ../app/models:/app/models
+      - ../app/mounted_data:/mnt/data
+      - ../backups:/app/backups
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  mongodb:
+    image: mongo:7
+    command: ["--quiet", "--logpath", "/proc/1/fd/1", "--logappend"]
+    ports:
+      - "${MONGODB_PORT:-27017}:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ROOT_USER:-mongo}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD:-mongo}
+    volumes:
+      - mongodb-data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet -u ${MONGODB_ROOT_USER:-mongo} -p ${MONGODB_ROOT_PASSWORD:-mongo} --authenticationDatabase admin --eval \"db.adminCommand({ ping: 1 }).ok\" | grep 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  mongodb-data:

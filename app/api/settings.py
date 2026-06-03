@@ -1,7 +1,11 @@
 # Configuration using pydantic-settings
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Literal, Optional
 from pathlib import Path
+from typing import TYPE_CHECKING, Literal, Optional
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+if TYPE_CHECKING:
+    from apps.contracts import BackendAppDefinition
 
 
 class Settings(BaseSettings):
@@ -32,6 +36,11 @@ class Settings(BaseSettings):
 
     # Authentication Provider Configuration
     AUTH_PROVIDER: str = "cognito"
+
+    # App profile configuration
+    APP_PROFILE: str = "demo_app"
+    APP_NAME: str = "Python API Template"
+    APP_DESCRIPTION: str = "A flexible API template with SQL, Neo4j, and MongoDB support"
 
     # Keycloak Configuration
     KEYCLOAK_SERVER_URL: Optional[str] = None
@@ -194,6 +203,18 @@ class Settings(BaseSettings):
         if self.NEO4J_URL:
             return self.NEO4J_URL
         return f"bolt://{self.DB_HOST}:{self.DB_PORT}"
+
+    def normalized_app_profile(self) -> str:
+        """Return the normalized application profile identifier."""
+        from apps.registry import normalize_backend_app_id
+
+        return normalize_backend_app_id(self.APP_PROFILE)
+
+    def get_backend_app_definition(self) -> "BackendAppDefinition":
+        """Return the selected backend app definition from the app registry."""
+        from apps.registry import get_backend_app_definition
+
+        return get_backend_app_definition(self.APP_PROFILE)
 
     def normalized_db_type(self) -> str:
         """Return normalized database type."""

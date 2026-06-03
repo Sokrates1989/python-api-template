@@ -1,0 +1,10 @@
+services:
+  api:
+    environment:
+      APP_PROFILE: mongo_db_test
+      BACKEND_APP_ID: mongo_db_test
+    volumes:
+      - ../../app/apps/mongo_db_test:/app/apps/mongo_db_test:ro
+  mongodb:
+    volumes:
+      - ../../.docker/apps/mongo_db_test/mongodb-data:/data/db

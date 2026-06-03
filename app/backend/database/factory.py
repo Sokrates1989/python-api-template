@@ -2,10 +2,8 @@
 Database factory for creating the appropriate database handler based on configuration.
 """
 from typing import Optional
+
 from .base import BaseDatabaseHandler
-from .neo4j_handler import Neo4jHandler
-from .sql_handler import SQLHandler
-from .mongodb_handler import MongoDBHandler
 
 
 class DatabaseFactory:
@@ -35,17 +33,23 @@ class DatabaseFactory:
         db_type = db_type.lower()
         
         if db_type == "neo4j":
+            from .neo4j_handler import Neo4jHandler
+
             return Neo4jHandler(
                 url=kwargs.get("url", ""),
                 user=kwargs.get("user", ""),
                 password=kwargs.get("password", "")
             )
         elif db_type in ["mongodb", "mongo"]:
+            from .mongodb_handler import MongoDBHandler
+
             return MongoDBHandler(
                 url=kwargs.get("url", ""),
                 database=kwargs.get("database", "apidb"),
             )
         elif db_type in ["postgresql", "postgres", "mysql", "sqlite", "sql"]:
+            from .sql_handler import SQLHandler
+
             return SQLHandler(
                 database_url=kwargs.get("database_url", ""),
                 echo=kwargs.get("echo", False)

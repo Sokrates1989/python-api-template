@@ -218,7 +218,7 @@ if [ "$DB_MODE" = "local" ]; then
         read -p "MongoDB port [27017]: " MONGODB_PORT
         MONGODB_PORT="${MONGODB_PORT:-27017}"
 
-        MONGODB_URL="mongodb://${MONGODB_ROOT_USER}:${MONGODB_ROOT_PASSWORD}@mongodb:${MONGODB_PORT}"
+        MONGODB_URL="mongodb://${MONGODB_ROOT_USER}:${MONGODB_ROOT_PASSWORD}@mongodb:27017/?authSource=admin"
 
         sed -i "s|^MONGODB_DB_NAME=.*|MONGODB_DB_NAME=$MONGODB_DB_NAME|" .env
         sed -i "s|^MONGODB_ROOT_USER=.*|MONGODB_ROOT_USER=$MONGODB_ROOT_USER|" .env

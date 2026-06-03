@@ -1,0 +1,10 @@
+# App-specific Docker Compose overrides for template_app.
+
+services:
+  api:
+    environment:
+      APP_PROFILE: template_app
+
+  postgres:
+    volumes:
+      - ../../.docker/apps/template_app/postgres-data:/var/lib/postgresql/data

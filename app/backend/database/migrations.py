@@ -3,15 +3,13 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-
-from alembic import command
-from alembic.config import Config
-from alembic.runtime.migration import MigrationContext
-from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine
+from typing import TYPE_CHECKING
 
 from api.settings import settings
 from backend.observability import log_event
+
+if TYPE_CHECKING:
+    from alembic.config import Config
 
 logger = logging.getLogger("backend.database.migrations")
 
@@ -26,6 +24,13 @@ def run_migrations(fail_on_error: bool = False) -> bool:
     Returns:
         bool: True when migrations succeeded or were not required.
     """
+    # Lazy imports - only needed for SQL databases with migrations
+    from alembic import command
+    from alembic.config import Config
+    from alembic.runtime.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+    from sqlalchemy import create_engine
+
     if not settings.is_sql_database():
         log_event(
             logger,
@@ -119,6 +124,9 @@ def run_migrations(fail_on_error: bool = False) -> bool:
 
 def _get_current_version() -> str | None:
     """Get the current database migration version."""
+    from alembic.runtime.migration import MigrationContext
+    from sqlalchemy import create_engine
+
     try:
         db_url = settings.get_database_url()
         if db_url.startswith("postgresql+asyncpg://"):
@@ -134,8 +142,10 @@ def _get_current_version() -> str | None:
         return None
 
 
-def _get_pending_migrations(alembic_cfg: Config, current_version: str | None):
+def _get_pending_migrations(alembic_cfg: "Config", current_version: str | None):
     """Get list of pending migrations with revision metadata."""
+    from alembic.script import ScriptDirectory
+
     try:
         script = ScriptDirectory.from_config(alembic_cfg)
         if current_version:
@@ -168,6 +178,9 @@ def create_migration(message: str):
     Args:
         message: Description of the migration
     """
+    from alembic import command
+    from alembic.config import Config
+
     project_root = Path(__file__).parent.parent.parent.parent
     alembic_ini_path = project_root / "alembic.ini"
 

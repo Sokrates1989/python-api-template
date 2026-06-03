@@ -1,0 +1,3 @@
+local-deployment/base/api.compose.yml
+local-deployment/base/redis.compose.yml
+local-deployment/base/mongodb.compose.yml

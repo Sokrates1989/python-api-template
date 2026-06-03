@@ -1,0 +1,4 @@
+local-deployment/base/api.compose.yml
+local-deployment/base/redis.compose.yml
+local-deployment/base/postgres.compose.yml
+app/apps/postgres_template/deployment/compose.override.yml

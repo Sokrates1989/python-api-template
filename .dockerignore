@@ -13,6 +13,10 @@ __pycache__/
 env/
 venv/
 .venv/
+**/.venv/
+**/.pdm-manager/
+**/__pycache__/
+.docker/
 pip-log.txt
 pip-delete-this-directory.txt
 .tox/

@@ -1,6 +1,12 @@
 # Environments
 .env
+.env.*
+!.env.example
+!.env.*.example
 .env.backup.*
+app/apps/*/env/.env*
+!app/apps/*/env/.env.example
+!app/apps/*/env/*.env.example
 .venv/
 venv/
 

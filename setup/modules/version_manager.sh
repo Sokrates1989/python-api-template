@@ -235,14 +235,17 @@ remote_image_status() {
 }
 
 update_image_version() {
-    local env_file=".env"
-    local ci_env_file=".ci.env"
+    local env_file="${1:-.env}"
+    local ci_env_file="${2:-.ci.env}"
+    local image_name_override="${3:-}"
 
     local current_env_version
     current_env_version=$(grep '^IMAGE_VERSION=' "$env_file" 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' "')
 
-    local current_ci_version
-    current_ci_version=$(grep '^IMAGE_VERSION=' "$ci_env_file" 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' "')
+    local current_ci_version=""
+    if [ -n "$ci_env_file" ]; then
+        current_ci_version=$(grep '^IMAGE_VERSION=' "$ci_env_file" 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' "')
+    fi
 
     local base_version="$current_env_version"
     if [ -z "$base_version" ]; then
@@ -252,8 +255,10 @@ update_image_version() {
         base_version="0.1.0"
     fi
 
-    local image_name
-    image_name=$(grep '^IMAGE_NAME=' "$env_file" 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' "')
+    local image_name="$image_name_override"
+    if [ -z "$image_name" ]; then
+        image_name=$(grep '^IMAGE_NAME=' "$env_file" 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' "')
+    fi
 
     local display_env=${current_env_version:-"<nicht gesetzt>"}
     local display_ci=${current_ci_version:-"<nicht gesetzt>"}
@@ -330,7 +335,9 @@ update_image_version() {
 
     echo ""
     update_image_version_in_file "$env_file" "$new_version"
-    update_image_version_in_file "$ci_env_file" "$new_version"
+    if [ -n "$ci_env_file" ]; then
+        update_image_version_in_file "$ci_env_file" "$new_version"
+    fi
     echo ""
     echo "🎯 IMAGE_VERSION wurde auf $new_version gesetzt."
 }

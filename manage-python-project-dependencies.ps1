@@ -15,10 +15,11 @@ param(
 )
 
 $coreScript = ".\tools\core-pdm-manager\scripts\pdm-manager.ps1"
+$projectRoot = if ($env:PDM_MANAGER_PROJECT_ROOT) { $env:PDM_MANAGER_PROJECT_ROOT } else { "." }
 
 if (Test-Path $coreScript) {
     if ($InitialRun.IsPresent) {
-        & $coreScript -ProjectRoot . -InitialRun -NonInteractive @RemainingArgs
+        & $coreScript -ProjectRoot $projectRoot -InitialRun -NonInteractive @RemainingArgs
         if ($?) {
             exit 0
         }
@@ -28,7 +29,7 @@ if (Test-Path $coreScript) {
         exit 1
     }
 
-    & $coreScript -ProjectRoot . @RemainingArgs
+    & $coreScript -ProjectRoot $projectRoot @RemainingArgs
     if ($?) {
         exit 0
     }

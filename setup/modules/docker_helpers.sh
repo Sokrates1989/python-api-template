@@ -44,6 +44,29 @@ read_env_variable() {
     fi
 }
 
+update_env_variable() {
+    local var_name="$1"
+    local value="$2"
+    local env_file="${3:-.env}"
+
+    if [ ! -f "$env_file" ]; then
+        printf '%s=%s\n' "$var_name" "$value" > "$env_file"
+        return 0
+    fi
+
+    local temp_file
+    temp_file="$(mktemp)" || return 1
+
+    if grep -qE "^${var_name}=" "$env_file" 2>/dev/null; then
+        sed "s|^${var_name}=.*|${var_name}=${value}|" "$env_file" > "$temp_file"
+    else
+        cat "$env_file" > "$temp_file"
+        printf '\n%s=%s\n' "$var_name" "$value" >> "$temp_file"
+    fi
+
+    mv "$temp_file" "$env_file"
+}
+
 determine_compose_file() {
     local db_type="$1"
     local db_mode="$2"
@@ -59,7 +82,7 @@ determine_compose_file() {
     elif [ "$normalized_db_type" = "postgresql" ] || [ "$normalized_db_type" = "postgres" ] || [ "$normalized_db_type" = "mysql" ]; then
         echo "local-deployment/docker-compose.postgres.yml"
     elif [ "$normalized_db_type" = "mongodb" ] || [ "$normalized_db_type" = "mongo" ]; then
-        echo "local-deployment/docker-compose.mongodb.yml"
+        echo "local-deployment/docker-compose.mongodb.named-volume.yml"
     else
         echo "local-deployment/docker-compose.yml"
     fi

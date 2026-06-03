@@ -5,12 +5,14 @@
 name: python-api-template
 
 services:
-  app:
+  api:
     build:
       context: ..
       dockerfile: Dockerfile
       args:
         PYTHON_VERSION: ${PYTHON_VERSION}
+        BACKEND_APP_ID: ${ACTIVE_BACKEND_APP_ID:-demo_app}
+        BACKEND_DATA_PROFILE: ${DB_TYPE}
     ports:
       - "${PORT}:8000"
     env_file:
@@ -45,7 +47,7 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGODB_ROOT_USER:-mongo}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD:-mongo}
     volumes:
-      - ../.docker/mongodb-data:/data/db
+      - mongodb-data:/data/db
     healthcheck:
       test: ["CMD-SHELL", "mongosh --quiet -u ${MONGODB_ROOT_USER:-mongo} -p ${MONGODB_ROOT_PASSWORD:-mongo} --authenticationDatabase admin --eval \"db.adminCommand({ ping: 1 }).ok\" | grep 1"]
       interval: 60s

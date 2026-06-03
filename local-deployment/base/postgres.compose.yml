@@ -1,0 +1,72 @@
+# Shared Docker Compose fragment for PostgreSQL-backed app stacks.
+#
+# The pgAdmin service writes its server import file at container startup so the
+# local database appears automatically with the active app profile, port, and
+# credentials from the selected environment file.
+
+services:
+  api:
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    volumes:
+      - ../../alembic:/app/alembic
+      - ../../alembic.ini:/app/alembic.ini
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    command: ["postgres", "-p", "${DB_PORT:-5433}"]
+    environment:
+      POSTGRES_DB: ${DB_NAME:-apidb}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    ports:
+      - "${DB_PORT:-5433}:${DB_PORT:-5433}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -p ${DB_PORT:-5433}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@local.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      PGADMIN_SERVER_JSON_FILE: /var/lib/pgadmin/servers.json
+    volumes:
+      - ../../.docker/apps/${APP_PROFILE:-postgres_template}/pgadmin:/var/lib/pgadmin
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        mkdir -p /var/lib/pgadmin
+        cat > /var/lib/pgadmin/servers.json <<EOF
+        {
+          "Servers": {
+            "1": {
+              "Name": "${APP_PROFILE:-local} DB",
+              "Group": "Local",
+              "Host": "postgres",
+              "Port": ${DB_PORT:-5433},
+              "MaintenanceDB": "${DB_NAME:-apidb}",
+              "Username": "${DB_USER:-postgres}",
+              "SSLMode": "prefer",
+              "PassFile": "/var/lib/pgadmin/pgpassfile"
+            }
+          }
+        }
+        EOF
+        printf 'postgres:%s:%s:%s:%s\n' "${DB_PORT:-5433}" "${DB_NAME:-apidb}" "${DB_USER:-postgres}" "${DB_PASSWORD:-postgres}" > /var/lib/pgadmin/pgpassfile
+        chmod 600 /var/lib/pgadmin/pgpassfile
+        exec /entrypoint.sh
+    depends_on:
+      postgres:
+        condition: service_healthy

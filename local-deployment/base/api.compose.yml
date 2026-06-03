@@ -1,0 +1,27 @@
+# Shared Docker Compose fragment for the backend API service.
+# App-specific stacks combine this base file with additional service fragments
+# and a per-app override file from app/apps/<app_id>/deployment/.
+
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION}
+        BACKEND_APP_ID: ${ACTIVE_BACKEND_APP_ID:-demo_app}
+        BACKEND_DATA_PROFILE: ${DB_TYPE}
+    ports:
+      - "${PORT}:8000"
+    env_file:
+      - ${APP_ENV_FILE:-../../.env}
+    environment:
+      DB_TYPE: ${DB_TYPE}
+      DEBUG: ${DEBUG}
+    volumes:
+      - ../../app/main.py:/app/main.py
+      - ../../app/api:/app/api
+      - ../../app/backend:/app/backend
+      - ../../app/models:/app/models
+      - ../../app/mounted_data:/mnt/data
+      - ../../backups:/app/backups
