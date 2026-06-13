@@ -3,7 +3,7 @@ distribution = false
 
 [project]
 name = "postgres_template"
-version = "0.0.1"
+version = "0.0.4"
 description = "App-specific backend dependency manifest for the Postgres Template backend."
 requires-python = ">=3.13,<3.14"
 dependencies = [

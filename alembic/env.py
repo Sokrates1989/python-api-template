@@ -8,6 +8,7 @@ from pathlib import Path
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+from sqlalchemy.engine import URL
 from dotenv import load_dotenv
 
 # Add the app directory to the import path
@@ -52,14 +53,28 @@ def get_url() -> str:
                     "Missing PostgreSQL configuration. Set DATABASE_URL or provide "
                     "DB_HOST, DB_NAME, DB_USER, and DB_PASSWORD/DB_PASSWORD_FILE."
                 )
-            database_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+            database_url = URL.create(
+                "postgresql",
+                username=db_user,
+                password=db_password,
+                host=db_host,
+                port=int(db_port),
+                database=db_name,
+            ).render_as_string(hide_password=False)
         elif db_type == "mysql":
             if not all([db_host, db_name, db_user, db_password]):
                 raise ValueError(
                     "Missing MySQL configuration. Set DATABASE_URL or provide "
                     "DB_HOST, DB_NAME, DB_USER, and DB_PASSWORD/DB_PASSWORD_FILE."
                 )
-            database_url = f"mysql+pymysql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+            database_url = URL.create(
+                "mysql+pymysql",
+                username=db_user,
+                password=db_password,
+                host=db_host,
+                port=int(db_port),
+                database=db_name,
+            ).render_as_string(hide_password=False)
         elif db_type == "sqlite":
             if not db_name:
                 raise ValueError("Missing SQLite DB_NAME. Set DATABASE_URL or DB_NAME.")

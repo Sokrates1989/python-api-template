@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL
 
 if TYPE_CHECKING:
     from apps.contracts import BackendAppDefinition
@@ -258,9 +259,23 @@ class Settings(BaseSettings):
         password = self.get_db_password()
         db_type = self.normalized_db_type()
         if db_type in {"postgresql", "postgres"}:
-            return f"postgresql://{self.DB_USER}:{password}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+            return URL.create(
+                "postgresql",
+                username=self.DB_USER,
+                password=password,
+                host=self.DB_HOST,
+                port=self.DB_PORT,
+                database=self.DB_NAME,
+            ).render_as_string(hide_password=False)
         elif db_type == "mysql":
-            return f"mysql://{self.DB_USER}:{password}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+            return URL.create(
+                "mysql+pymysql",
+                username=self.DB_USER,
+                password=password,
+                host=self.DB_HOST,
+                port=self.DB_PORT,
+                database=self.DB_NAME,
+            ).render_as_string(hide_password=False)
         elif db_type == "sqlite":
             return f"sqlite:///{self.DB_NAME}"
         return ""

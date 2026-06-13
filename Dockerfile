@@ -75,5 +75,5 @@ ENV PYTHONPATH=/app
 EXPOSE 8000
 
 # Use 'pdm run' to execute uvicorn from within the project's virtual environment.
-ENTRYPOINT ["pdm", "run"]
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+ENTRYPOINT ["sh", "-c"]
+CMD ["exec pdm run uvicorn main:app --host 0.0.0.0 --port \"${PORT:-8000}\""]
