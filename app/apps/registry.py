@@ -93,6 +93,8 @@ def _coerce_backend_app_definition(raw_definition: Any) -> BackendAppDefinition 
     requires_database = getattr(raw_definition, "requires_database", True)
     requires_redis = getattr(raw_definition, "requires_redis", True)
     include_shared_routes = getattr(raw_definition, "include_shared_routes", True)
+    openapi_security_schemes = getattr(raw_definition, "openapi_security_schemes", ())
+    openapi_route_security = getattr(raw_definition, "openapi_route_security", ())
 
     return BackendAppDefinition(
         app_id=str(app_id),
@@ -103,6 +105,8 @@ def _coerce_backend_app_definition(raw_definition: Any) -> BackendAppDefinition 
         requires_database=bool(requires_database),
         requires_redis=bool(requires_redis),
         include_shared_routes=bool(include_shared_routes),
+        openapi_security_schemes=tuple(openapi_security_schemes),
+        openapi_route_security=tuple(openapi_route_security),
     )
 
 

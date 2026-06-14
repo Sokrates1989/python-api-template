@@ -7,6 +7,7 @@ families and app metadata while keeping shared infrastructure reusable.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from fastapi import APIRouter
 
@@ -55,6 +56,68 @@ class RouteRegistration:
 
 
 @dataclass(frozen=True)
+class OpenApiSecurityScheme:
+    """
+    Describe one OpenAPI security scheme owned by a backend app.
+
+    Args:
+        name (str): Component name used by OpenAPI security requirements.
+        scheme (dict[str, Any]): OpenAPI security scheme object.
+
+    Returns:
+        None: Dataclass instances are used as immutable OpenAPI metadata.
+
+    Side Effects:
+        None.
+    """
+
+    name: str
+    scheme: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class RouteSecurityRequirement:
+    """
+    Describe OpenAPI security requirements for a route family.
+
+    Args:
+        path_prefix (str): Route path prefix to match, such as `/v1/notify`.
+        requirement (dict[str, list[str]]): OpenAPI security requirement object.
+        methods (tuple[str, ...]): Lowercase HTTP methods the requirement applies
+            to. Defaults to common mutation and read methods.
+        exact_path (bool): When True, only the exact path matches.
+
+    Returns:
+        None: Dataclass instances are used as immutable OpenAPI metadata.
+
+    Side Effects:
+        None.
+    """
+
+    path_prefix: str
+    requirement: dict[str, list[str]]
+    methods: tuple[str, ...] = ("get", "post", "delete", "put", "patch")
+    exact_path: bool = False
+
+    def matches_path(self, path: str) -> bool:
+        """
+        Return whether an OpenAPI path matches this requirement.
+
+        Args:
+            path (str): OpenAPI path key to evaluate.
+
+        Returns:
+            bool: True when the path should receive this security requirement.
+
+        Side Effects:
+            None.
+        """
+        if self.exact_path:
+            return path == self.path_prefix
+        return path.startswith(self.path_prefix)
+
+
+@dataclass(frozen=True)
 class BackendAppDefinition:
     """
     Describe one backend app hosted inside the multi-app monorepo.
@@ -75,6 +138,11 @@ class BackendAppDefinition:
         include_shared_routes (bool): Whether to mount shared routes (/users,
             /database/*, /examples, /files, /packages). Defaults to True for
             backward compatibility.
+        openapi_security_schemes (tuple[OpenApiSecurityScheme, ...]): Security
+            schemes owned by this app and shown in Swagger UI only when this app
+            is selected.
+        openapi_route_security (tuple[RouteSecurityRequirement, ...]): Route
+            security requirements owned by this app.
 
     Returns:
         None: Dataclass instances are used as immutable app manifests.
@@ -91,6 +159,8 @@ class BackendAppDefinition:
     requires_database: bool = True
     requires_redis: bool = True
     include_shared_routes: bool = True
+    openapi_security_schemes: tuple[OpenApiSecurityScheme, ...] = ()
+    openapi_route_security: tuple[RouteSecurityRequirement, ...] = ()
 
     def registered_route_prefixes(self) -> tuple[str, ...]:
         """

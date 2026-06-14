@@ -5,12 +5,10 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 from api.settings import settings
-from api.shared_dependencies.security import verify_admin_key
 from api.middleware import setup_middleware
 from api.config import setup_openapi, create_lifespan_handler
 from backend.adapters.provider_capability_factory import normalize_provider_db_type
 from backend.observability import log_event
-from backend.shared_services.backup_service import BackupService
 
 logger = logging.getLogger("app.main")
 app_profile = settings.normalized_app_profile()
@@ -26,11 +24,6 @@ app = FastAPI(
 
 # Configure OpenAPI and lifecycle events
 setup_openapi(app)
-
-# Initialize backup services
-class DatabaseStats(BaseModel):
-    database_type: str
-    stats: dict
 
 # Include shared routes only when the app definition allows it.
 registered_routers: list[str] = []
@@ -145,14 +138,52 @@ def get_version():
 #     return {"message": "This endpoint was added while the container was running!", "timestamp": "2024-01-01"}
 
 
-@app.get("/stats", response_model=DatabaseStats)
-async def get_database_stats(_: str = Depends(verify_admin_key)):
-    backup_service = BackupService()
-    try:
-        stats = await backup_service.get_database_stats()
-        return DatabaseStats(database_type=backup_service.db_type, stats=stats)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to get database stats: {str(exc)}")
+if selected_backend_app.requires_database:
+    from api.shared_dependencies.security import verify_admin_key
+    from backend.shared_services.backup_service import BackupService
 
+    class DatabaseStats(BaseModel):
+        """
+        Response model for database statistics.
+
+        Attributes:
+            database_type (str): Active database provider reported by the
+                backup/statistics service.
+            stats (dict): Provider-specific database statistics.
+
+        Returns:
+            None: Pydantic model used for response serialization.
+
+        Side Effects:
+            None.
+        """
+
+        database_type: str
+        stats: dict
+
+    @app.get("/stats", response_model=DatabaseStats)
+    async def get_database_stats(_: str = Depends(verify_admin_key)):
+        """
+        Return database statistics for database-backed apps.
+
+        Args:
+            _ (str): Validated admin credential from `verify_admin_key`.
+
+        Returns:
+            DatabaseStats: Active database type and provider-specific stats.
+
+        Raises:
+            HTTPException: Propagates backup service HTTP errors or returns
+                HTTP 500 when statistics collection fails unexpectedly.
+        """
+        backup_service = BackupService()
+        try:
+            stats = await backup_service.get_database_stats()
+            return DatabaseStats(database_type=backup_service.db_type, stats=stats)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to get database stats: {str(exc)}",
+            ) from exc

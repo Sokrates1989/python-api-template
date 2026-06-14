@@ -5,10 +5,18 @@ from fastapi import Security, HTTPException, status
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 from api.settings import settings
 
-# Define the API key headers
-admin_key_header = APIKeyHeader(name="X-Admin-Key", auto_error=False)
-restore_key_header = APIKeyHeader(name="X-Restore-Key", auto_error=False)
-bearer_token = HTTPBearer(auto_error=False)
+# Define the API key headers.
+admin_key_header = APIKeyHeader(
+    name="X-Admin-Key",
+    scheme_name="X-Admin-Key",
+    auto_error=False,
+)
+restore_key_header = APIKeyHeader(
+    name="X-Restore-Key",
+    scheme_name="X-Restore-Key",
+    auto_error=False,
+)
+bearer_token = HTTPBearer(scheme_name="BearerAuth", auto_error=False)
 
 
 def _extract_bearer_value(credentials: HTTPAuthorizationCredentials | None) -> str:
