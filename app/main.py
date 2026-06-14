@@ -2,12 +2,10 @@
 import logging
 
 import uvicorn
-import redis
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 from api.settings import settings
 from api.shared_dependencies.security import verify_admin_key
-from api.shared_routes import test, files, packages, database_lock, users, examples
 from api.middleware import setup_middleware
 from api.config import setup_openapi, create_lifespan_handler
 from backend.adapters.provider_capability_factory import normalize_provider_db_type
@@ -34,15 +32,20 @@ class DatabaseStats(BaseModel):
     database_type: str
     stats: dict
 
-# Include core routers (work with any database)
-app.include_router(test.router)
-app.include_router(files.router)
-app.include_router(packages.router)
-app.include_router(database_lock.router)
-app.include_router(users.router)
-app.include_router(examples.router)
+# Include shared routes only when the app definition allows it.
+registered_routers: list[str] = []
+if selected_backend_app.include_shared_routes:
+    from api.shared_routes import test, files, packages, database_lock, users, examples
 
-registered_routers = ["/users", "/database/*", "/examples"]
+    app.include_router(test.router)
+    app.include_router(files.router)
+    app.include_router(packages.router)
+    app.include_router(database_lock.router)
+    app.include_router(users.router)
+    app.include_router(examples.router)
+    registered_routers.extend(["/users", "/database/*", "/examples"])
+
+# Mount app-owned route registrations
 for route_registration in selected_backend_app.route_registrations:
     app.include_router(
         route_registration.router,
@@ -57,26 +60,35 @@ log_event(
     routers=registered_routers,
     db_type=settings.DB_TYPE,
     app_profile=app_profile,
+    shared_routes=selected_backend_app.include_shared_routes,
 )
 
 
 # Setup middleware
 setup_middleware(app)
 
-# Initialize Redis connection
-log_event(logger, logging.INFO, "redis.client.initialize", redis_url=settings.REDIS_URL)
-r = redis.Redis.from_url(settings.REDIS_URL)
+# Initialize Redis only when the app definition requires it.
+r = None
+if selected_backend_app.requires_redis:
+    import redis
+
+    log_event(logger, logging.INFO, "redis.client.initialize", redis_url=settings.REDIS_URL)
+    r = redis.Redis.from_url(settings.REDIS_URL)
 
 
-# Redis test Endpoints.
+# Redis test Endpoints (only available when Redis is enabled).
 @app.get("/")
 def read_root():
+    if r is None:
+        return {"message": "Hello from FastAPI!"}
     visits = r.incr("visits")
     return {"message": f"Hello from FastAPI! This page has been visited {visits} times."}
 
 
 @app.get("/cache/{key}")
 def get_cache(key: str):
+    if r is None:
+        raise HTTPException(status_code=503, detail="Redis not available")
     value = r.get(key)
     if value is None:
         raise HTTPException(status_code=404, detail="Key not found")
@@ -85,6 +97,8 @@ def get_cache(key: str):
 
 @app.post("/cache/{key}")
 def set_cache(key: str, value: str):
+    if r is None:
+        raise HTTPException(status_code=503, detail="Redis not available")
     r.set(key, value)
     return {"message": f"Stored key '{key}' with value '{value}'"}
 
@@ -95,6 +109,14 @@ def check_health():
     database_type = getattr(app.state, "database_type", settings.normalized_db_type())
     startup_probe = getattr(app.state, "startup_probe", None)
     wellness_route_prefix = selected_backend_app.find_route_prefix("wellness")
+
+    # Report startup probe status, handling "skipped" for no-db apps.
+    probe_status = "unknown"
+    if isinstance(startup_probe, dict):
+        probe_status = startup_probe.get("status", "unknown")
+    elif not selected_backend_app.requires_database:
+        probe_status = "skipped"
+
     return {
         "status": "OK",
         "app_profile": app_profile,
@@ -104,11 +126,10 @@ def check_health():
         "provider_profile": normalize_provider_db_type(database_type),
         "wellness_route_prefix": wellness_route_prefix,
         "sync_routes_enabled": selected_backend_app.exposes_sync_routes,
-        "startup_probe_status": (
-            startup_probe.get("status", "unknown")
-            if isinstance(startup_probe, dict)
-            else "unknown"
-        ),
+        "requires_database": selected_backend_app.requires_database,
+        "requires_redis": selected_backend_app.requires_redis,
+        "include_shared_routes": selected_backend_app.include_shared_routes,
+        "startup_probe_status": probe_status,
     }
 
 

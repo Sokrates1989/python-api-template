@@ -314,7 +314,9 @@ if (`$includeNeo4j -match '^(?i:true)$') {
 }
 
 try { Add-Content -Path `$logFile -Value ("[{0}] DEBUG: Processing additional targets..." -f (Get-Date)) -Encoding UTF8 } catch {}
-`$targetsJsonBase64 = '$([Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes(($additionalTargets | ConvertTo-Json -Compress -ErrorAction SilentlyContinue))))'
+`$targetsJson = if (`$additionalTargets) { `$additionalTargets | ConvertTo-Json -Compress -ErrorAction SilentlyContinue } else { '[]' }
+if ([string]::IsNullOrWhiteSpace(`$targetsJson) -or `$targetsJson -eq 'null') { `$targetsJson = '[]' }
+`$targetsJsonBase64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes(`$targetsJson))
 try { Add-Content -Path `$logFile -Value ("[{0}] DEBUG: Base64 length={1}" -f (Get-Date), `$targetsJsonBase64.Length) -Encoding UTF8 } catch {}
 `$targetsJson = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(`$targetsJsonBase64))
 try { Add-Content -Path `$logFile -Value ("[{0}] DEBUG: Decoded JSON={1}" -f (Get-Date), `$targetsJson) -Encoding UTF8 } catch {}

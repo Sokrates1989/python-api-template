@@ -1,10 +1,9 @@
 """
 Registry for backend apps hosted in the multi-app monorepo.
 
-The registry discovers backend app definitions from child packages at import
-time and resolves the selected app definition from configuration. Dynamic app
+The registry resolves app definitions lazily from child packages. Dynamic app
 creation therefore only needs to add a package under `app/apps/<app_id>` with a
-`definition.py` module.
+`definition.py` module, while app-specific dependency sets can remain isolated.
 """
 from __future__ import annotations
 
@@ -89,13 +88,54 @@ def _coerce_backend_app_definition(raw_definition: Any) -> BackendAppDefinition 
     if not app_id or not display_name or not backend_data_profile:
         return None
 
+    # Read optional infrastructure flags from legacy definitions, defaulting to
+    # True for backward compatibility.
+    requires_database = getattr(raw_definition, "requires_database", True)
+    requires_redis = getattr(raw_definition, "requires_redis", True)
+    include_shared_routes = getattr(raw_definition, "include_shared_routes", True)
+
     return BackendAppDefinition(
         app_id=str(app_id),
         display_name=str(display_name),
         backend_data_profile=str(backend_data_profile),
         route_registrations=(),
         exposes_sync_routes=False,
+        requires_database=bool(requires_database),
+        requires_redis=bool(requires_redis),
+        include_shared_routes=bool(include_shared_routes),
     )
+
+
+def _load_backend_app_definition(package_name: str) -> BackendAppDefinition | None:
+    """
+    Load one backend app definition by package name.
+
+    Args:
+        package_name (str): Package below `apps` that should expose a
+            `definition.py` module.
+
+    Returns:
+        BackendAppDefinition | None: Loaded app definition, or `None` when the
+            requested app package does not provide a definition module/object.
+
+    Raises:
+        ModuleNotFoundError: Propagated when the requested app definition imports
+            a missing dependency. Missing dependencies in the selected app should
+            fail loudly because the app cannot boot correctly.
+
+    Side Effects:
+        Imports the selected `apps.<package_name>.definition` module.
+    """
+    module_name = f"apps.{package_name}.definition"
+    try:
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError as exc:
+        if exc.name == module_name:
+            return None
+        raise
+
+    raw_definition = _get_raw_definition(module)
+    return _coerce_backend_app_definition(raw_definition)
 
 
 def discover_backend_apps() -> dict[str, BackendAppDefinition]:
@@ -113,16 +153,7 @@ def discover_backend_apps() -> dict[str, BackendAppDefinition]:
     """
     registered_apps: dict[str, BackendAppDefinition] = {}
     for package_name in _iter_backend_app_package_names():
-        module_name = f"apps.{package_name}.definition"
-        try:
-            module = importlib.import_module(module_name)
-        except ModuleNotFoundError as exc:
-            if exc.name == module_name:
-                continue
-            raise
-
-        raw_definition = _get_raw_definition(module)
-        definition = _coerce_backend_app_definition(raw_definition)
+        definition = _load_backend_app_definition(package_name)
         if definition is None:
             continue
 
@@ -148,7 +179,7 @@ def normalize_backend_app_id(app_id: str | None) -> str:
     return normalized_app_id or DEFAULT_BACKEND_APP_ID
 
 
-REGISTERED_BACKEND_APPS: dict[str, BackendAppDefinition] = discover_backend_apps()
+REGISTERED_BACKEND_APPS: dict[str, BackendAppDefinition] = {}
 
 
 def get_backend_app_definition(app_id: str | None) -> BackendAppDefinition:
@@ -165,13 +196,18 @@ def get_backend_app_definition(app_id: str | None) -> BackendAppDefinition:
         ValueError: Raised when the requested app is not registered.
 
     Side Effects:
-        None.
+        Imports the selected app definition on first use.
     """
     normalized_app_id = normalize_backend_app_id(app_id)
     definition = REGISTERED_BACKEND_APPS.get(normalized_app_id)
     if definition is None:
-        supported_ids = ", ".join(sorted(REGISTERED_BACKEND_APPS))
-        raise ValueError(
-            f"Unsupported backend app id: {app_id!r}. Supported apps: {supported_ids}"
-        )
+        definition = _load_backend_app_definition(normalized_app_id)
+        if definition is None:
+            supported_ids = ", ".join(sorted(_iter_backend_app_package_names()))
+            raise ValueError(
+                f"Unsupported backend app id: {app_id!r}. Supported apps: {supported_ids}"
+            )
+
+        REGISTERED_BACKEND_APPS[normalized_app_id] = definition
+
     return definition

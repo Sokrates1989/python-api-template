@@ -32,8 +32,18 @@ class Settings(BaseSettings):
     # Database Type Configuration
     # Official stability matrix: neo4j, postgresql/postgres, mongodb
     # Legacy compatibility types: mysql, sqlite
-    DB_TYPE: Literal["neo4j", "postgresql", "postgres", "mysql", "sqlite", "mongodb", "mongo"] = "neo4j"
-    DB_MODE: Literal["local", "external"] = "local"
+    # No-database app profiles: none
+    DB_TYPE: Literal[
+        "neo4j",
+        "postgresql",
+        "postgres",
+        "mysql",
+        "sqlite",
+        "mongodb",
+        "mongo",
+        "none",
+    ] = "neo4j"
+    DB_MODE: Literal["local", "external", "none"] = "local"
 
     # Authentication Provider Configuration
     AUTH_PROVIDER: str = "cognito"
@@ -283,6 +293,31 @@ class Settings(BaseSettings):
     def is_http_debug_logging_enabled(self) -> bool:
         """Return True when HTTP debug logging should be enabled."""
         return bool(self.DEBUG and self.ENABLE_HTTP_DEBUG_LOGGING)
+
+    def read_env_or_file(self, value: str, file_path: str) -> str:
+        """
+        Read a configuration value from file or environment variable.
+
+        File values take precedence over direct environment values. This
+        supports Docker secrets and other file-based secret injection patterns.
+
+        Args:
+            value (str): Direct environment variable value.
+            file_path (str): Path to file containing the value.
+
+        Returns:
+            str: The value from file if available, otherwise the direct value.
+
+        Raises:
+            ValueError: When file_path is set but the file does not exist.
+        """
+        if file_path:
+            path_obj = Path(file_path)
+            if path_obj.exists():
+                return path_obj.read_text().strip()
+            # File path is specified but file does not exist - this is a config error
+            raise ValueError(f"Configuration file not found: {file_path}")
+        return value
 
 
 settings = Settings()

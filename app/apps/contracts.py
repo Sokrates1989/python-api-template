@@ -68,6 +68,13 @@ class BackendAppDefinition:
             the app module.
         exposes_sync_routes (bool): Whether the app intentionally publishes
             sync endpoints.
+        requires_database (bool): Whether the app requires database
+            initialization. Defaults to True for backward compatibility.
+        requires_redis (bool): Whether the app requires Redis connection.
+            Defaults to True for backward compatibility.
+        include_shared_routes (bool): Whether to mount shared routes (/users,
+            /database/*, /examples, /files, /packages). Defaults to True for
+            backward compatibility.
 
     Returns:
         None: Dataclass instances are used as immutable app manifests.
@@ -81,6 +88,9 @@ class BackendAppDefinition:
     backend_data_profile: str
     route_registrations: tuple[RouteRegistration, ...]
     exposes_sync_routes: bool = False
+    requires_database: bool = True
+    requires_redis: bool = True
+    include_shared_routes: bool = True
 
     def registered_route_prefixes(self) -> tuple[str, ...]:
         """

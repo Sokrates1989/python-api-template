@@ -75,6 +75,7 @@ function Resolve-BackendEnvFile {
         "mongodb_template" { return ".env.flutter.mongodb_template.mongodb" }
         "postgres_template" { return ".env.flutter.postgres_template.postgresql" }
         "template_app" { return ".env.flutter.template.postgresql" }
+        "secure_messaging" { return "app\apps\secure_messaging\local.env" }
         default { return ".env" }
     }
 }
@@ -137,25 +138,55 @@ function Resolve-BackendComposeManifest {
         catch { }
     }
 
-    if ($DbMode -eq "local") {
-        try {
-            if (Test-Path -LiteralPath $defaultManifestPath -ErrorAction SilentlyContinue) {
-                return $defaultManifestPath
-            }
+    try {
+        if (Test-Path -LiteralPath $defaultManifestPath -ErrorAction SilentlyContinue) {
+            return $defaultManifestPath
         }
-        catch { }
     }
-
-    if ([string]::IsNullOrWhiteSpace($DbMode)) {
-        try {
-            if (Test-Path -LiteralPath $defaultManifestPath -ErrorAction SilentlyContinue) {
-                return $defaultManifestPath
-            }
-        }
-        catch { }
-    }
+    catch { }
 
     return ""
+}
+
+<#
+.SYNOPSIS
+Builds Docker Compose environment file arguments.
+
+.DESCRIPTION
+Layers the repository .env before the active app env file so shared build-time
+variables such as PYTHON_VERSION remain available while app-specific values can
+override database, port, and provider settings.
+
+.PARAMETER EnvFile
+Absolute or relative path to the active backend app environment file.
+
+.RETURNS
+String[]. Docker Compose CLI arguments containing one or more --env-file pairs.
+#>
+function Get-ComposeEnvFileArgs {
+    param([string]$EnvFile)
+
+    $args = @()
+    $rootEnvFile = Join-Path $projectRoot ".env"
+    $activeEnvFile = if ([System.IO.Path]::IsPathRooted($EnvFile)) {
+        $EnvFile
+    } else {
+        Join-Path $projectRoot $EnvFile
+    }
+
+    if (Test-Path -LiteralPath $rootEnvFile -PathType Leaf) {
+        $args += @("--env-file", $rootEnvFile)
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($activeEnvFile)) {
+        $rootEnvFullPath = [System.IO.Path]::GetFullPath($rootEnvFile)
+        $activeEnvFullPath = [System.IO.Path]::GetFullPath($activeEnvFile)
+        if ($activeEnvFullPath -ne $rootEnvFullPath) {
+            $args += @("--env-file", $activeEnvFile)
+        }
+    }
+
+    return $args
 }
 
 function Get-ComposeProjectName {
@@ -300,7 +331,7 @@ function Invoke-BackendComposeStack {
         [string[]]$CommandArgs
     )
 
-    $composeArgs = @("compose", "--env-file", $EnvFile)
+    $composeArgs = @("compose") + (Get-ComposeEnvFileArgs -EnvFile $EnvFile)
     foreach ($composeFile in $ComposeFiles) {
         if (-not [string]::IsNullOrWhiteSpace($composeFile)) {
             $composeArgs += @("-f", $composeFile)
@@ -956,7 +987,10 @@ function Configure-ServicePorts {
     $script:selectedDatabasePort = ""
     $script:selectedRedisPort = ""
 
-    if ($DbMode -eq "local") {
+    # Skip database port prompts if app doesn't need a database
+    $requiresDatabase = ($DbType -ne "none" -and $DbType -ne "external")
+    
+    if ($requiresDatabase -and $DbMode -eq "local") {
         $databasePortVariable = Resolve-DatabasePortVariableName -DbType $DbType
         if (-not [string]::IsNullOrWhiteSpace($databasePortVariable)) {
             $databasePortLabel = Resolve-DatabasePortPromptLabel -DbType $DbType
@@ -967,12 +1001,15 @@ function Configure-ServicePorts {
         }
     }
 
-    $script:selectedRedisPort = Read-EnvPortSelection -EnvFile $EnvFile -VariableName "REDIS_PORT" -PromptLabel "Redis port" -DefaultValue "6379"
+    # Skip Redis port if no database needed
+    if ($requiresDatabase) {
+        $script:selectedRedisPort = Read-EnvPortSelection -EnvFile $EnvFile -VariableName "REDIS_PORT" -PromptLabel "Redis port" -DefaultValue "6379"
+    }
 
     # Prompt for monitoring UI port (pgAdmin for PostgreSQL, Mongo Express for MongoDB)
     $script:selectedMonitoringUiPortVariable = ""
     $script:selectedMonitoringUiPort = ""
-    if ($DbMode -eq "local") {
+    if ($requiresDatabase -and $DbMode -eq "local") {
         $monitoringPortVariable = Resolve-MonitoringUiPortVariableName -DbType $DbType
         if (-not [string]::IsNullOrWhiteSpace($monitoringPortVariable)) {
             $monitoringPortLabel = Resolve-MonitoringUiPortPromptLabel -DbType $DbType
@@ -1115,7 +1152,9 @@ Configure-ServicePorts -EnvFile $script:activeBackendEnvFile -DbType $DB_TYPE -D
 if (-not [string]::IsNullOrWhiteSpace($script:selectedDatabasePort)) {
     Write-Host (("{0} will use port: {1}") -f (Resolve-DatabasePortPromptLabel -DbType $DB_TYPE), $script:selectedDatabasePort) -ForegroundColor Gray
 }
-Write-Host (("Redis will use port: {0}") -f $script:selectedRedisPort) -ForegroundColor Gray
+if (-not [string]::IsNullOrWhiteSpace($script:selectedRedisPort)) {
+    Write-Host (("Redis will use port: {0}") -f $script:selectedRedisPort) -ForegroundColor Gray
+}
 if (-not [string]::IsNullOrWhiteSpace($script:selectedMonitoringUiPort)) {
     Write-Host (("{0} will use port: {1}") -f (Resolve-MonitoringUiPortPromptLabel -DbType $DB_TYPE), $script:selectedMonitoringUiPort) -ForegroundColor Gray
 }
@@ -1253,6 +1292,33 @@ if (-not (Test-Path .setup-complete)) {
     }
 
     Write-Host ""
+    # Check and generate app-specific lockfile if needed
+    $appId = if ($env:BACKEND_APP_ID) { $env:BACKEND_APP_ID } else { "api" }
+    $appLockfilePath = Join-Path $projectRoot "app\apps\$appId\pdm.lock"
+    if (Test-Path $appLockfilePath) {
+        $lockfileContent = Get-Content $appLockfilePath -Raw
+        if ($lockfileContent -match "placeholder|PLACEHOLDER") {
+            Write-Host "Generating dependencies for app '$appId'..." -ForegroundColor Yellow
+            $pdmPath = Get-Command pdm -ErrorAction SilentlyContinue
+            if ($pdmPath) {
+                $appDir = Join-Path $projectRoot "app\apps\$appId"
+                Push-Location $appDir
+                try {
+                    pdm lock 2>&1 | Out-Null
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Host "Lockfile generated successfully" -ForegroundColor Green
+                    } else {
+                        Write-Host "Warning: Failed to generate lockfile. Build may fail." -ForegroundColor Red
+                    }
+                } finally {
+                    Pop-Location
+                }
+            } else {
+                Write-Host "Warning: PDM not found. Cannot generate lockfile. Install PDM or run: pip install pdm" -ForegroundColor Red
+            }
+        }
+    }
+
     $composeEnvFile = if ($env:DOCKER_COMPOSE_ENV_FILE) { $env:DOCKER_COMPOSE_ENV_FILE } else { $script:activeBackendEnvFile }
     Invoke-BackendComposeStack -EnvFile $composeEnvFile -ComposeFiles $composeFiles -CommandArgs @("up", "--build", "--remove-orphans")
 } else {

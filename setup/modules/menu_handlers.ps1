@@ -118,6 +118,50 @@ function Test-ComposeIncludesNeo4j {
 
 <#
 .SYNOPSIS
+Builds Docker Compose environment file arguments.
+
+.DESCRIPTION
+Layers the repository .env before the active backend env file. Compose uses
+these files for interpolation before container env_file values are applied, so
+shared build variables remain available while app-specific values override them.
+
+.PARAMETER EnvFile
+Absolute or relative path to the active backend app environment file.
+
+.RETURNS
+String[]. Docker Compose CLI arguments containing one or more --env-file pairs.
+#>
+function Get-BackendComposeEnvFileArgs {
+    param(
+        [string]$EnvFile
+    )
+
+    $args = @()
+    $projectRoot = [System.IO.Path]::GetFullPath((Get-Location).Path)
+    $rootEnvFile = Join-Path $projectRoot ".env"
+    $activeEnvFile = if ([System.IO.Path]::IsPathRooted($EnvFile)) {
+        $EnvFile
+    } else {
+        Join-Path $projectRoot $EnvFile
+    }
+
+    if (Test-Path -LiteralPath $rootEnvFile -PathType Leaf) {
+        $args += @("--env-file", $rootEnvFile)
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($activeEnvFile)) {
+        $rootEnvFullPath = [System.IO.Path]::GetFullPath($rootEnvFile)
+        $activeEnvFullPath = [System.IO.Path]::GetFullPath($activeEnvFile)
+        if ($activeEnvFullPath -ne $rootEnvFullPath) {
+            $args += @("--env-file", $activeEnvFile)
+        }
+    }
+
+    return $args
+}
+
+<#
+.SYNOPSIS
 Runs Docker Compose against the full active compose stack.
 
 .DESCRIPTION
@@ -143,7 +187,7 @@ function Invoke-BackendComposeCommand {
         [string[]]$CommandArgs
     )
 
-    $composeArgs = @("compose", "--env-file", $EnvFile)
+    $composeArgs = @("compose") + (Get-BackendComposeEnvFileArgs -EnvFile $EnvFile)
     foreach ($activeComposeFile in Get-ActiveComposeFiles -FallbackComposeFile $ComposeFile) {
         $composeArgs += @("-f", $activeComposeFile)
     }

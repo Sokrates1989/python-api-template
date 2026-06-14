@@ -7,6 +7,12 @@
 app/apps/*/env/.env*
 !app/apps/*/env/.env.example
 !app/apps/*/env/*.env.example
+
+# App-specific local environment files (contain secrets)
+local.env
+local.env.user
+app/apps/*/local.env
+app/apps/*/local.env.user
 .venv/
 venv/
 
