@@ -1,0 +1,15 @@
+# Secure messaging local deployment override
+# No database, no Redis, no shared routes
+
+services:
+  api:
+    environment:
+      APP_PROFILE: secure_messaging
+      BACKEND_APP_ID: secure_messaging
+      DB_TYPE: none
+      DB_MODE: none
+      # Keep the API listening on the container port published by the base stack.
+      PORT: "8000"
+    volumes:
+      # Mount secure_messaging app for development hot-reload
+      - ../../app/apps/secure_messaging:/app/apps/secure_messaging:ro

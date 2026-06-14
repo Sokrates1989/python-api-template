@@ -1,4 +1,5 @@
 # Environments
+.active_backend_app
 .env
 .env.*
 !.env.example
@@ -13,6 +14,7 @@ local.env
 local.env.user
 app/apps/*/local.env
 app/apps/*/local.env.user
+app/apps/*/.git.nested-backup/
 .venv/
 venv/
 

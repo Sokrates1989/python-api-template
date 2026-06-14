@@ -1,0 +1,8 @@
+# Local deployment compose files for secure_messaging app
+# Used by quick-start to determine which compose files to load
+
+# Base API service
+local-deployment/base/api.compose.yml
+
+# Secure messaging app override (sets APP_PROFILE, DB_TYPE=none)
+app/apps/secure_messaging/deployment/compose.override.yml
