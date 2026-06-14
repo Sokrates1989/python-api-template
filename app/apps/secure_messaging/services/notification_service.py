@@ -11,6 +11,7 @@ from apps.secure_messaging.services.email_provider import (
     is_email_configured,
     send_email_notification,
 )
+from apps.secure_messaging.services.markdown_formatter import format_email_content, format_telegram_message
 from apps.secure_messaging.services.providers import ProviderDispatchError, ProviderDispatchResult
 from apps.secure_messaging.services.redaction import redact_sensitive_content
 from apps.secure_messaging.services.telegram_provider import (
@@ -91,7 +92,7 @@ async def dispatch_notification(
     """
     # Redact sensitive content before sending
     redacted_message = redact_sensitive_content(request.message)
-    redacted_title = redact_sensitive_content(request.title)
+    redacted_title = redact_sensitive_content(request.title) if request.title else None
 
     # Determine dispatch targets
     enabled_providers = _get_enabled_providers()
@@ -109,22 +110,25 @@ async def dispatch_notification(
     for provider in targets:
         try:
             if provider == "telegram":
+                # Format message with optional title
+                formatted_message = format_telegram_message(redacted_title, redacted_message)
                 result = await send_telegram_notification(
-                    level=request.level,
-                    title=redacted_title,
+                    formatted_message=formatted_message,
                     app=request.app,
-                    message=redacted_message,
-                    tags=request.tags,
                     sender_name=sender_name,
                     to=to_override,
                 )
             elif provider == "email":
-                result = await send_email_notification(
-                    level=request.level,
+                # Format email with title as subject
+                subject, html_body = format_email_content(
                     title=redacted_title,
-                    app=request.app,
                     message=redacted_message,
-                    tags=request.tags,
+                    app=request.app,
+                )
+                result = await send_email_notification(
+                    subject=subject,
+                    html_body=html_body,
+                    app=request.app,
                     sender_name=sender_name,
                     to=to_override,
                 )
@@ -148,7 +152,6 @@ async def dispatch_notification(
                 extra={
                     "provider": provider,
                     "app": request.app,
-                    "level": request.level,
                     "sender": sender_name,
                     "error": str(exc),
                 },
@@ -172,7 +175,6 @@ async def dispatch_notification(
         "notification.dispatch_complete",
         extra={
             "app": request.app,
-            "level": request.level,
             "provider": request.provider,
             "overall_status": overall_status,
             "success_count": success_count,

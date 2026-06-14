@@ -8,7 +8,6 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-NotificationLevel = Literal["info", "success", "warning", "error", "critical"]
 NotificationProvider = Literal["telegram", "email", "all"]
 
 
@@ -17,14 +16,21 @@ class NotifyRequest(BaseModel):
     Request schema for sending a notification.
 
     Attributes:
-        app (str): Service identifier sending the notification (1-100 chars).
-        level (NotificationLevel): Severity level of the notification.
-        title (str): Short notification title (1-200 chars).
-        message (str): Detailed notification message (1-4000 chars).
-        tags (list[str]): Optional list of categorization tags.
+        app (str): Service identifier for internal logging only (1-100 chars).
+            Not included in the delivered message content.
+        title (str | None): Optional notification title (1-200 chars).
+            If provided, rendered bold/larger. For email, becomes the subject.
+            If omitted, only the message is sent.
+        message (str): Required message content (1-4000 chars).
+            Supports markdown formatting. Auto-converted between formats:
+            Telegram receives native markdown, email receives HTML.
         provider (NotificationProvider): Target provider(s) for delivery.
         sender (str | None): Specific sender name to use (from configured senders).
-        to (str | None): Optional override recipient. Uses level-based target from sender config if not specified.
+            Uses first available sender if not specified.
+        to (str | None): Recipient key or direct address.
+            If key exists in sender's receivers config, uses that value.
+            If not found, used as direct address (email or chat ID).
+            Supports comma-separated list for multiple recipients.
 
     Returns:
         None: Pydantic model for request validation.
@@ -34,12 +40,11 @@ class NotifyRequest(BaseModel):
         json_schema_extra={
             "example": {
                 "app": "test",
-                "level": "info",
                 "title": "Backup completed",
                 "message": "The backup job completed successfully.",
-                "tags": ["backup"],
-                "provider": "telegram",
+                "provider": "all",
                 "sender": "backup",
+                "to": "info",
             }
         }
     )
@@ -48,27 +53,19 @@ class NotifyRequest(BaseModel):
         ...,
         min_length=1,
         max_length=100,
-        description="Service identifier (e.g., 'wikijs-backup')",
+        description="Service identifier for internal logging (not sent in message)",
     )
-    level: NotificationLevel = Field(
-        default="info",
-        description="Severity level: info, success, warning, error, critical",
-    )
-    title: str = Field(
-        ...,
+    title: str | None = Field(
+        default=None,
         min_length=1,
         max_length=200,
-        description="Notification title",
+        description="Optional title. Bold/larger in output. Becomes email subject.",
     )
     message: str = Field(
         ...,
         min_length=1,
         max_length=4000,
-        description="Detailed notification message",
-    )
-    tags: list[str] = Field(
-        default_factory=list,
-        description="Optional categorization tags",
+        description="Required message content (supports markdown)",
     )
     provider: NotificationProvider = Field(
         default="all",
@@ -80,19 +77,8 @@ class NotifyRequest(BaseModel):
     )
     to: str | None = Field(
         default=None,
-        description="Optional recipient override (email or chat ID). Uses level-based target from sender config if not specified.",
+        description="Recipient key (from sender config) or direct address. Comma-separated for multiple.",
     )
-
-    @field_validator("tags")
-    @classmethod
-    def validate_tags(cls, v: list[str]) -> list[str]:
-        """Validate tags list length and individual tag length."""
-        if len(v) > 20:
-            raise ValueError("Maximum 20 tags allowed")
-        for tag in v:
-            if len(tag) > 50:
-                raise ValueError(f"Tag too long (max 50 chars): {tag}")
-        return v
 
 
 class ProviderResult(BaseModel):

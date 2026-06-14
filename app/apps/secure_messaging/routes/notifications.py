@@ -57,7 +57,7 @@ async def notify(
     auth_client = authenticate_request(request, notify_request.app)
     logger.info(
         "notify.authenticated",
-        extra={"app": auth_client.app, "level": notify_request.level},
+        extra={"app": auth_client.app},
     )
 
     # Rate limiting check

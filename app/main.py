@@ -8,7 +8,10 @@ from api.settings import settings
 from api.middleware import setup_middleware
 from api.config import setup_openapi, create_lifespan_handler
 from backend.adapters.provider_capability_factory import normalize_provider_db_type
+from backend.logging_config import setup_logging
 from backend.observability import log_event
+
+setup_logging(log_dir=settings.LOG_DIR)
 
 logger = logging.getLogger("app.main")
 app_profile = settings.normalized_app_profile()

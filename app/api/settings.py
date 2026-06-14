@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     IMAGE_TAG: str = "local non docker"
     REDIS_URL: str = "redis://localhost:6379"
     DEBUG: bool = False
+    DEBUG_ENABLED: bool = False
+    LOG_DIR: str = "/app/logs"
+    LOG_LEVEL: str = ""
+    LOG_TIMEZONE: str = "Europe/Berlin"
     ENABLE_HTTP_DEBUG_LOGGING: bool = False
     LOG_REQUEST_HEADERS: bool = False
     LOG_REQUEST_BODY: bool = False

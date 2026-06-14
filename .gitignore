@@ -24,6 +24,13 @@ venv/
 # Docker volumes (local directories)
 .docker/
 
+# Runtime logs (local and mounted deployment diagnostics)
+logs/*
+!logs/README.md
+!logs/api/
+logs/api/*
+!logs/api/.gitkeep
+
 # Database backups (sensitive data)
 backups/*.sql
 backups/*.sql.gz

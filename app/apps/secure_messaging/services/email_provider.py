@@ -20,6 +20,7 @@ EMAIL_NON_TARGET_KEYS = {
     "password",
     "use_tls",
     "from",
+    "receivers",  # Nested object containing recipient mappings
 }
 
 
@@ -29,7 +30,7 @@ def _has_email_target(sender_config: dict[str, str]) -> bool:
 
     Args:
         sender_config (dict[str, str]): Merged sender configuration containing
-            SMTP settings and level/default recipient targets.
+            SMTP settings and receivers (nested or flat format).
 
     Returns:
         bool: True when the sender has any recipient target.
@@ -37,60 +38,84 @@ def _has_email_target(sender_config: dict[str, str]) -> bool:
     Side Effects:
         None.
     """
-    return any(
-        bool(value)
-        for key, value in sender_config.items()
-        if key not in EMAIL_NON_TARGET_KEYS
-    )
+    receivers = _get_receivers_dict(sender_config)
+    return any(bool(v) for v in receivers.values())
 
 
-def _format_email_subject(level: str, app: str, title: str) -> str:
+def _get_receivers_dict(sender_config: dict[str, str]) -> dict[str, str]:
     """
-    Format email subject line.
+    Extract receivers mapping from sender config.
+
+    Supports two formats for backward compatibility:
+    1. Nested: {"host": "...", "receivers": {"info": "a@b.com", "warning": "c@d.com"}}
+    2. Flat: {"host": "...", "info": "a@b.com", "warning": "c@d.com"}
 
     Args:
-        level (str): Notification level.
-        app (str): App identifier.
-        title (str): Notification title.
+        sender_config (dict[str, str]): Sender configuration.
 
     Returns:
-        str: Formatted subject line.
+        dict[str, str]: Mapping of recipient keys to email addresses.
     """
-    level_upper = level.upper()
-    return f"[{level_upper}] {app}: {title}"
+    # Prefer nested receivers object (new format)
+    receivers_json = sender_config.get("receivers", "")
+    if receivers_json:
+        try:
+            import json
+            nested = json.loads(receivers_json)
+            if isinstance(nested, dict):
+                return {str(k): str(v) for k, v in nested.items()}
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Fall back to flat structure (backward compatibility)
+    non_target_keys = EMAIL_NON_TARGET_KEYS | {"password"}
+    return {k: v for k, v in sender_config.items() if k not in non_target_keys}
 
 
-def _format_email_body(
-    level: str,
-    title: str,
-    app: str,
-    message: str,
-    tags: list[str],
-) -> str:
+def _resolve_recipients(sender_config: dict[str, str], to: str | None) -> list[str]:
     """
-    Format plain text email body.
+    Resolve recipient email addresses from 'to' parameter or sender config.
+
+    Supports comma-separated list for multiple recipients.
+    If 'to' is provided:
+        - Looks up as key in receivers (info, warning, error, etc.)
+        - If not found, uses the value directly as email address
+    If 'to' is None:
+        - Uses first available receiver from config
 
     Args:
-        level (str): Notification level.
-        title (str): Notification title.
-        app (str): App identifier.
-        message (str): Redacted notification message.
-        tags (list[str]): Categorization tags.
+        sender_config (dict[str, str]): Sender configuration with SMTP settings and receivers.
+        to (str | None): Recipient key(s) or direct email address(es).
 
     Returns:
-        str: Formatted plain text email body.
+        list[str]: List of resolved email addresses.
+
+    Raises:
+        ValueError: When no recipients can be resolved.
     """
-    lines = [
-        f"App: {app}",
-        f"Level: {level}",
-        f"Title: {title}",
-    ]
+    receivers = _get_receivers_dict(sender_config)
 
-    if tags:
-        lines.append(f"Tags: {', '.join(tags)}")
+    if to:
+        # Handle comma-separated recipients
+        to_values = [t.strip() for t in to.split(",")]
+        addresses: list[str] = []
 
-    lines.extend(["", message])
-    return "\n".join(lines)
+        for to_value in to_values:
+            # Try lookup as key in receivers first
+            if to_value in receivers:
+                addresses.append(receivers[to_value])
+            else:
+                # Use directly as email address
+                addresses.append(to_value)
+
+        if addresses:
+            return addresses
+
+    # No 'to' provided - use first available receiver
+    if receivers:
+        return [next(iter(receivers.values()))]
+
+    raise ValueError("No recipient configured")
 
 
 def _send_smtp_sync(
@@ -139,11 +164,9 @@ def _send_smtp_sync(
 
 
 async def send_email_notification(
-    level: str,
-    title: str,
+    subject: str,
+    html_body: str,
     app: str,
-    message: str,
-    tags: list[str],
     sender_name: str | None = None,
     to: str | None = None,
 ) -> ProviderDispatchResult:
@@ -151,13 +174,12 @@ async def send_email_notification(
     Send notification via SMTP email.
 
     Args:
-        level (str): Notification level.
-        title (str): Notification title.
-        app (str): App identifier.
-        message (str): Redacted notification message.
-        tags (list[str]): Categorization tags.
+        subject (str): Email subject line.
+        html_body (str): HTML-formatted email body.
+        app (str): App identifier for internal logging.
         sender_name (str | None): Specific sender to use. Uses first available if None.
-        to (str | None): Optional override recipient. Uses sender default if None.
+        to (str | None): Recipient key(s) or direct email address(es). Comma-separated for multiple.
+            Key lookup order: checks sender config for matching key, else uses directly.
 
     Returns:
         ProviderDispatchResult: Dispatch result status.
@@ -199,81 +221,84 @@ async def send_email_notification(
     password = sender_config.get("password", "")
     from_addr = sender_config.get("from", "")
 
-    # Determine recipient: custom override > level-based default > default_to > first available target
-    if to:
-        to_addr = to
-    elif level in sender_config:
-        to_addr = sender_config[level]
-    elif "default_to" in sender_config:
-        to_addr = sender_config["default_to"]
-    elif "default" in sender_config:
-        to_addr = sender_config["default"]
-    else:
-        # Use first defined target as fallback (excluding SMTP settings)
-        targets = {
-            k: v
-            for k, v in sender_config.items()
-            if k not in EMAIL_NON_TARGET_KEYS
-        }
-        to_addr = next(iter(targets.values())) if targets else ""
-
     # Validate configuration
     if not smtp_host:
         raise ProviderDispatchError("Email not configured: missing SMTP host", "email")
     if not from_addr:
         raise ProviderDispatchError("Email not configured: missing from address", "email")
-    if not to_addr:
-        raise ProviderDispatchError("Email not configured: missing to address", "email")
 
-    subject = _format_email_subject(level, app, title)
-    body = _format_email_body(level, title, app, message, tags)
-
+    # Resolve recipients
     try:
-        await asyncio.to_thread(
-            _send_smtp_sync,
-            smtp_host,
-            smtp_port,
-            use_tls,
-            username,
-            password,
-            from_addr,
-            to_addr,
-            subject,
-            body,
-        )
+        to_addrs = _resolve_recipients(sender_config, to)
+    except ValueError as exc:
+        raise ProviderDispatchError(str(exc), "email") from exc
 
-        logger.info(
-            "email.notification.sent",
-            extra={
-                "app": app,
-                "level": level,
-                "to": to_addr,
-                "subject": subject,
-            },
-        )
+    # Send to all resolved recipients
+    errors: list[str] = []
+    sent_count = 0
+
+    for to_addr in to_addrs:
+        try:
+            await asyncio.to_thread(
+                _send_smtp_sync,
+                smtp_host,
+                smtp_port,
+                use_tls,
+                username,
+                password,
+                from_addr,
+                to_addr,
+                subject,
+                html_body,
+            )
+
+            logger.info(
+                "email.notification.sent",
+                extra={
+                    "app": app,
+                    "to": to_addr,
+                    "subject": subject,
+                },
+            )
+            sent_count += 1
+
+        except smtplib.SMTPAuthenticationError as exc:
+            logger.error("email.notification.auth_error", extra={"app": app})
+            errors.append(f"{to_addr}: Authentication failed")
+
+        except smtplib.SMTPConnectError as exc:
+            logger.error("email.notification.connect_error", extra={"app": app})
+            errors.append(f"{to_addr}: Connection failed")
+
+        except smtplib.SMTPException as exc:
+            logger.error(
+                "email.notification.smtp_error",
+                extra={"app": app, "error": str(exc)},
+            )
+            errors.append(f"{to_addr}: SMTP error")
+
+        except Exception as exc:
+            logger.error(
+                "email.notification.unexpected_error",
+                extra={"app": app, "error": str(exc)},
+            )
+            errors.append(f"{to_addr}: Unexpected error")
+
+    # Determine overall result
+    if sent_count == len(to_addrs):
         return ProviderDispatchResult(status="sent", sender=sender_name)
-
-    except smtplib.SMTPAuthenticationError as exc:
-        logger.error("email.notification.auth_error", extra={"app": app, "level": level})
-        raise ProviderDispatchError("Email authentication failed", "email") from exc
-
-    except smtplib.SMTPConnectError as exc:
-        logger.error("email.notification.connect_error", extra={"app": app, "level": level})
-        raise ProviderDispatchError("Email connection failed", "email") from exc
-
-    except smtplib.SMTPException as exc:
-        logger.error(
-            "email.notification.smtp_error",
-            extra={"app": app, "level": level, "error": str(exc)},
+    elif sent_count > 0:
+        return ProviderDispatchResult(
+            status="partial_failure",
+            sender=sender_name,
+            error="; ".join(errors),
         )
-        raise ProviderDispatchError(f"Email SMTP error: {type(exc).__name__}", "email") from exc
-
-    except Exception as exc:
-        logger.error(
-            "email.notification.unexpected_error",
-            extra={"app": app, "level": level, "error": str(exc)},
+    else:
+        return ProviderDispatchResult(
+            status="failed",
+            sender=sender_name,
+            error="; ".join(errors) if errors else "All sends failed",
         )
-        raise ProviderDispatchError("Email dispatch failed: unexpected error", "email") from exc
 
 
 def is_email_configured() -> bool:

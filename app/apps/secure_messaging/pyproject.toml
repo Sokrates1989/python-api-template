@@ -1,6 +1,6 @@
 [project]
 name = "secure_messaging"
-version = "0.1.0"
+version = "0.1.1"
 description = "Internal-only secure messaging backend app for Swarm notifications."
 requires-python = ">=3.13,<3.14"
 dependencies = [

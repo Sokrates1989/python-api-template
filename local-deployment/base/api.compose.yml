@@ -18,6 +18,9 @@ services:
     environment:
       DB_TYPE: ${DB_TYPE}
       DEBUG: ${DEBUG}
+      DEBUG_ENABLED: ${DEBUG_ENABLED:-false}
+      LOG_DIR: /app/logs
+      LOG_TIMEZONE: ${LOG_TIMEZONE:-Europe/Berlin}
     volumes:
       - ../../app/main.py:/app/main.py
       - ../../app/api:/app/api
@@ -25,3 +28,4 @@ services:
       - ../../app/models:/app/models
       - ../../app/mounted_data:/mnt/data
       - ../../backups:/app/backups
+      - ../../logs/api:/app/logs
