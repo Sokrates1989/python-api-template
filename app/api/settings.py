@@ -12,6 +12,10 @@ if TYPE_CHECKING:
 class Settings(BaseSettings):
     # API Settings
     PORT: int = 8000
+    # Comma-separated list of allowed CORS origins.
+    # Defaults to common local dev ports (Flutter web, Vite, React, etc.).
+    # Override via CORS_ORIGINS env var for staging and production.
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://localhost:8080,http://localhost:4200"
     IMAGE_TAG: str = "local non docker"
     REDIS_URL: str = "redis://localhost:6379"
     DEBUG: bool = False
@@ -293,6 +297,23 @@ class Settings(BaseSettings):
         elif db_type == "sqlite":
             return f"sqlite:///{self.DB_NAME}"
         return ""
+
+    def get_cors_origins(self) -> list[str]:
+        """
+        Parse CORS_ORIGINS into a list of allowed origin strings.
+
+        Splits the comma-separated CORS_ORIGINS setting and strips whitespace
+        from each entry. Returns an empty list when CORS_ORIGINS is unset.
+
+        Returns:
+            list[str]: Allowed CORS origins for CORSMiddleware.
+
+        Side Effects:
+            None.
+        """
+        if not self.CORS_ORIGINS:
+            return []
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
     def is_http_debug_logging_enabled(self) -> bool:
         """Return True when HTTP debug logging should be enabled."""

@@ -108,6 +108,44 @@ test_compose_includes_neo4j() {
     return 1
 }
 
+# Build the --env-file argument list for Docker Compose.
+#
+# Mirrors the deprecated PS1 Get-BackendComposeEnvFileArgs: layers the
+# repository root .env first so shared build variables (e.g. PYTHON_VERSION)
+# are always available, then layers the active app env file on top so
+# app-specific values override them. When both paths resolve to the same
+# file only one --env-file argument is emitted.
+#
+# Args:
+#   env_file: Active app env file path (absolute or relative to PROJECT_ROOT).
+#
+# Returns:
+#   Writes --env-file pairs to the caller's compose_args array via nameref.
+_build_compose_env_file_args() {
+    local env_file="$1"
+    local root_env="${PROJECT_ROOT:-.}/.env"
+    local active_env
+
+    if [[ "$env_file" = /* ]]; then
+        active_env="$env_file"
+    else
+        active_env="${PROJECT_ROOT:-.}/$env_file"
+    fi
+
+    if [[ -f "$root_env" ]]; then
+        compose_args+=(--env-file "$root_env")
+    fi
+
+    if [[ -n "$active_env" ]]; then
+        local root_real active_real
+        root_real="$(realpath -m "$root_env" 2>/dev/null || printf '%s' "$root_env")"
+        active_real="$(realpath -m "$active_env" 2>/dev/null || printf '%s' "$active_env")"
+        if [[ "$active_real" != "$root_real" ]]; then
+            compose_args+=(--env-file "$active_env")
+        fi
+    fi
+}
+
 # Run Docker Compose against the full active compose stack.
 #
 # Args:
@@ -121,7 +159,8 @@ run_backend_compose_command() {
     local env_file="$1"
     local fallback_compose_file="$2"
     shift 2
-    local compose_args=(docker compose --env-file "$env_file")
+    local compose_args=(docker compose)
+    _build_compose_env_file_args "$env_file"
     local active_compose_file
 
     while IFS= read -r active_compose_file || [ -n "$active_compose_file" ]; do
@@ -323,7 +362,7 @@ handle_backend_start() {
     # Open browsers automatically when services are ready
     open_browsers_delayed "$port" "$include_neo4j" 120
     
-    run_backend_compose_command "$env_file" "$compose_file" up --build --remove-orphans
+    run_backend_compose_command "$env_file" "$compose_file" up --build --remove-orphans --watch
 }
 
 handle_dependency_management() {
@@ -388,7 +427,7 @@ handle_dependency_and_backend() {
     # Open browsers automatically when services are ready
     open_browsers_delayed "$port" "$include_neo4j" 120
     
-    run_backend_compose_command "$env_file" "$compose_file" up --remove-orphans
+    run_backend_compose_command "$env_file" "$compose_file" up --remove-orphans --watch
 }
 
 handle_environment_diagnostics() {
@@ -488,7 +527,7 @@ handle_backend_start_no_cache() {
     open_browsers_delayed "$port" "$include_neo4j" 120
     
     run_backend_compose_command "$env_file" "$compose_file" build --no-cache
-    run_backend_compose_command "$env_file" "$compose_file" up --remove-orphans
+    run_backend_compose_command "$env_file" "$compose_file" up --remove-orphans --watch
 }
 
 open_browser_incognito() {

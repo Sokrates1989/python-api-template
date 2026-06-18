@@ -37,6 +37,11 @@ resolve_backend_env_file() {
         return
     fi
 
+    if [[ "$app_id" == "secure_messaging" ]]; then
+        printf '%s\n' "app/apps/secure_messaging/local.env"
+        return
+    fi
+
     # Fallback to root preset files for backward compatibility
     case "$app_id" in
         demo_app) echo ".env.flutter.demo.mongodb" ;;
@@ -87,12 +92,7 @@ resolve_backend_compose_manifest() {
         fi
     fi
 
-    if [ "$db_mode" = "local" ] && [ -f "$default_manifest_path" ]; then
-        printf '%s' "$default_manifest_path"
-        return 0
-    fi
-
-    if [ -z "$db_mode" ] && [ -f "$default_manifest_path" ]; then
+    if [ -f "$default_manifest_path" ]; then
         printf '%s' "$default_manifest_path"
         return 0
     fi
@@ -236,13 +236,38 @@ print_compose_file_stack() {
 }
 
 # Run docker compose with the full active compose stack.
+#
+# Layers root .env first (for shared build vars like PYTHON_VERSION) then the
+# active app env file on top (for app-specific overrides). Mirrors the
+# deprecated PS1 Get-BackendComposeEnvFileArgs layering contract.
 run_backend_compose_stack() {
     local env_file="$1"
     local compose_files="$2"
     shift 2
-    local compose_args=(docker compose --env-file "$env_file")
-    local compose_file
+    local compose_args=(docker compose)
+    local root_env="${PROJECT_ROOT}/.env"
+    local active_env
 
+    if [[ "$env_file" = /* ]]; then
+        active_env="$env_file"
+    else
+        active_env="${PROJECT_ROOT}/${env_file}"
+    fi
+
+    if [[ -f "$root_env" ]]; then
+        compose_args+=(--env-file "$root_env")
+    fi
+
+    if [[ -n "$active_env" ]]; then
+        local root_real active_real
+        root_real="$(realpath -m "$root_env" 2>/dev/null || printf '%s' "$root_env")"
+        active_real="$(realpath -m "$active_env" 2>/dev/null || printf '%s' "$active_env")"
+        if [[ "$active_real" != "$root_real" ]]; then
+            compose_args+=(--env-file "$active_env")
+        fi
+    fi
+
+    local compose_file
     while IFS= read -r compose_file || [ -n "$compose_file" ]; do
         compose_file="${compose_file%$'\r'}"
         [ -z "$compose_file" ] && continue
@@ -905,8 +930,21 @@ configure_service_ports() {
 
     SELECTED_DATABASE_PORT_VARIABLE=""
     SELECTED_DATABASE_PORT=""
+    SELECTED_REDIS_PORT=""
+    SELECTED_MONITORING_UI_PORT_VARIABLE=""
+    SELECTED_MONITORING_UI_PORT=""
 
-    if [ "$db_mode" = "local" ]; then
+    # Apps with DB_TYPE=none or DB_TYPE=external (e.g. secure_messaging) do not
+    # run a local database or Redis sidecar, so skip all backend port prompts.
+    # This mirrors the PS1 $requiresDatabase guard.
+    local requires_database=true
+    local normalized_db_type
+    normalized_db_type="$(printf '%s' "$db_type" | tr '[:upper:]' '[:lower:]')"
+    if [ "$normalized_db_type" = "none" ] || [ "$normalized_db_type" = "external" ]; then
+        requires_database=false
+    fi
+
+    if [ "$requires_database" = "true" ] && [ "$db_mode" = "local" ]; then
         local database_port_variable
         local database_port_label
         local database_port_default
@@ -920,12 +958,13 @@ configure_service_ports() {
         fi
     fi
 
-    SELECTED_REDIS_PORT="$(prompt_env_port_value "$env_file" "REDIS_PORT" "Redis port" "6379")"
+    # Redis is only needed when a database backend is present.
+    if [ "$requires_database" = "true" ]; then
+        SELECTED_REDIS_PORT="$(prompt_env_port_value "$env_file" "REDIS_PORT" "Redis port" "6379")"
+    fi
 
-    # Prompt for monitoring UI port (pgAdmin for PostgreSQL, Mongo Express for MongoDB)
-    SELECTED_MONITORING_UI_PORT_VARIABLE=""
-    SELECTED_MONITORING_UI_PORT=""
-    if [ "$db_mode" = "local" ]; then
+    # Monitoring UI port (pgAdmin / Mongo Express) only for local database stacks.
+    if [ "$requires_database" = "true" ] && [ "$db_mode" = "local" ]; then
         local monitoring_port_variable
         local monitoring_port_label
         local monitoring_port_default
@@ -1057,7 +1096,9 @@ configure_service_ports "$ACTIVE_BACKEND_ENV_FILE" "$DB_TYPE" "$DB_MODE"
 if [ -n "$SELECTED_DATABASE_PORT" ]; then
     echo "$(resolve_database_port_prompt_label "$DB_TYPE") will use port: $SELECTED_DATABASE_PORT"
 fi
-echo "Redis will use port: $SELECTED_REDIS_PORT"
+if [ -n "$SELECTED_REDIS_PORT" ]; then
+    echo "Redis will use port: $SELECTED_REDIS_PORT"
+fi
 if [ -n "$SELECTED_MONITORING_UI_PORT" ]; then
     echo "$(resolve_monitoring_ui_port_prompt_label "$DB_TYPE") will use port: $SELECTED_MONITORING_UI_PORT"
 fi
@@ -1180,7 +1221,7 @@ if [ ! -f ".setup-complete" ]; then
         echo "Could not detect browser command. Please open manually: http://localhost:$PORT/docs"
     fi
     echo ""
-    run_backend_compose_stack "${DOCKER_COMPOSE_ENV_FILE:-$ACTIVE_BACKEND_ENV_FILE}" "$COMPOSE_FILES" up --build --remove-orphans
+    run_backend_compose_stack "${DOCKER_COMPOSE_ENV_FILE:-$ACTIVE_BACKEND_ENV_FILE}" "$COMPOSE_FILES" up --build --remove-orphans --watch
 else
     echo "🐳 Starte Backend mit Docker Compose..."
     echo "Backend wird verfügbar sein auf: http://localhost:$PORT"

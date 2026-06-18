@@ -4,6 +4,9 @@ services:
   api:
     environment:
       APP_PROFILE: template_app
+      # Allow the Flutter web dev server to make cross-origin requests.
+      # Port 3000 is the default Flutter web port used by quick-start.ps1.
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:5173,http://localhost:8080,http://localhost:4200"
 
   postgres:
     volumes:

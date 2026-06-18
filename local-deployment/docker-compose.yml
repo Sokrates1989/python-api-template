@@ -28,6 +28,8 @@ services:
     env_file:
       - ${APP_ENV_FILE:-../.env}
     environment:
+      # Pin internal container port so env_file cannot override it.
+      PORT: "8000"
       DB_TYPE: ${DB_TYPE}
       NEO4J_URL: ${NEO4J_URL}
       DATABASE_URL: ${DATABASE_URL}
@@ -42,6 +44,7 @@ services:
       - ../app/api:/app/api
       - ../app/backend:/app/backend
       - ../app/models:/app/models
+      - ../app/apps:/app/apps
       - ../app/mounted_data:/mnt/data
       # Mount backups directory to host for persistence and easy access
       - ../backups:/app/backups

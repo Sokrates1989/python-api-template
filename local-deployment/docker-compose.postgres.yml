@@ -18,6 +18,8 @@ services:
     env_file:
       - ${APP_ENV_FILE:-../.env}
     environment:
+      # Pin internal container port so env_file cannot override it.
+      PORT: "8000"
       DB_TYPE: ${DB_TYPE}
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
@@ -28,6 +30,7 @@ services:
       - ../app/api:/app/api
       - ../app/backend:/app/backend
       - ../app/models:/app/models
+      - ../app/apps:/app/apps
       - ../app/mounted_data:/mnt/data
       # Mount alembic for live-reloading of migrations
       - ../alembic:/app/alembic

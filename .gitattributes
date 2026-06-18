@@ -14,3 +14,7 @@
 *.toml text eol=lf
 *.ini text eol=lf
 *.md text eol=lf
+
+# Env files must stay LF so Bash variable readers don't receive trailing CR.
+.env text eol=lf
+.env.* text eol=lf

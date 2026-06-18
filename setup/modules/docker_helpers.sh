@@ -35,7 +35,7 @@ read_env_variable() {
     local default_value="${3:-}"
     
     local value
-    value=$(grep "^${var_name}=" "$env_file" 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d ' "')
+    value=$(grep "^${var_name}=" "$env_file" 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d '\r' | tr -d '"' | sed "s/^[[:space:]]*//;s/[[:space:]]*$//")
     
     if [ -z "$value" ]; then
         echo "$default_value"

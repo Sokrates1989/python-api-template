@@ -36,6 +36,43 @@ _setup_done = False
 _timezone = ZoneInfo(DEFAULT_TIMEZONE)
 
 
+class UvicornStartupLabelFilter(logging.Filter):
+    """
+    Rewrite the displayed logger name for informational uvicorn.error records.
+
+    Uvicorn unconditionally routes *all* lifecycle messages (startup, shutdown,
+    address announcement) through the ``uvicorn.error`` logger regardless of
+    their actual severity.  That makes lines like::
+
+        [INFO] [uvicorn.error] Application startup complete.
+
+    look like error reports.  This filter renames the logger to ``uvicorn``
+    for any record below WARNING so the startup stream reads clearly.  Records
+    at WARNING or above keep the original ``uvicorn.error`` name so genuine
+    error context is preserved.
+
+    The filter is attached to output handlers rather than to a logger so the
+    rename is applied uniformly on every channel without changing log routing.
+
+    Attributes:
+        None beyond the base ``logging.Filter`` attributes.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """
+        Optionally rename the ``uvicorn.error`` logger on sub-WARNING records.
+
+        Args:
+            record (logging.LogRecord): The log record being evaluated.
+
+        Returns:
+            bool: Always True — this filter never drops records, only renames.
+        """
+        if record.name == "uvicorn.error" and record.levelno < logging.WARNING:
+            record.name = "uvicorn"
+        return True
+
+
 def _env_var_is_truthy(name: str) -> bool:
     """
     Return whether an environment variable contains a truthy value.
@@ -276,19 +313,48 @@ class DayBasedFileHandler(logging.Handler):
 
 def _configure_logger_hierarchy(level: int) -> None:
     """
-    Route root and uvicorn loggers through the shared handlers.
+    Route root and framework loggers through the shared handlers with
+    appropriate verbosity clamping.
+
+    Uvicorn startup lines (uvicorn.error at INFO) are kept so the API
+    address and process ID remain visible. Per-request access lines
+    (uvicorn.access) are suppressed at INFO because they produce a line
+    per request and obscure lifecycle events; they remain visible at DEBUG.
+
+    SQLAlchemy engine loggers echo every SQL statement at INFO when the
+    SQLAlchemy ``echo`` flag is set or propagation reaches the root logger.
+    They are clamped to WARNING in normal operation so the startup stream
+    does not repeat every SELECT/ROLLBACK from the migration probe. DEBUG
+    mode restores full SQL echo for developer inspection.
+
+    HTTP client loggers (httpx, httpcore) can log full provider URLs
+    containing credentials; they are held at WARNING unconditionally.
 
     Args:
-        level (int): Effective root logging level.
+        level (int): Effective root logging level resolved from environment.
 
     Returns:
         None: Logger hierarchy is configured in place.
     """
-    for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+    for logger_name in ("uvicorn", "uvicorn.error"):
         target_logger = logging.getLogger(logger_name)
         target_logger.handlers.clear()
         target_logger.propagate = True
         target_logger.setLevel(level)
+
+    # Suppress per-request access lines unless the operator explicitly wants
+    # DEBUG output — at INFO they flood the startup stream.
+    access_logger = logging.getLogger("uvicorn.access")
+    access_logger.handlers.clear()
+    access_logger.propagate = True
+    access_logger.setLevel(level if level <= logging.DEBUG else logging.WARNING)
+
+    # Clamp SQLAlchemy engine echo at WARNING in normal operation to avoid
+    # duplicated SQL probe lines during startup. DEBUG restores full echo.
+    sqlalchemy_level = level if level <= logging.DEBUG else logging.WARNING
+    for logger_name in ("sqlalchemy.engine", "sqlalchemy.engine.Engine", "sqlalchemy"):
+        target_logger = logging.getLogger(logger_name)
+        target_logger.setLevel(sqlalchemy_level)
 
     # HTTP client DEBUG logs can include fully expanded provider URLs with
     # credentials. Provider modules log sanitized request outcomes themselves.
@@ -334,9 +400,14 @@ def setup_logging(log_dir: str | None = None) -> None:
     root.handlers.clear()
     root.setLevel(level)
 
+    # Rename "uvicorn.error" → "uvicorn" on INFO/DEBUG lines so startup output
+    # does not read like an error stream to developers.
+    startup_label_filter = UvicornStartupLabelFilter()
+
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(level)
     console_handler.setFormatter(formatter)
+    console_handler.addFilter(startup_label_filter)
     root.addHandler(console_handler)
 
     combined_file_handler = logging.FileHandler(
@@ -345,6 +416,7 @@ def setup_logging(log_dir: str | None = None) -> None:
     )
     combined_file_handler.setLevel(level)
     combined_file_handler.setFormatter(formatter)
+    combined_file_handler.addFilter(startup_label_filter)
     root.addHandler(combined_file_handler)
 
     error_file_handler = logging.FileHandler(

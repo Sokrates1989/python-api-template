@@ -75,5 +75,9 @@ ENV PYTHONPATH=/app
 EXPOSE 8000
 
 # Use 'pdm run' to execute uvicorn from within the project's virtual environment.
+# UVICORN_RELOAD is injected by local-dev compose stacks to enable in-process
+# hot-reload (--reload). Production stacks leave it unset so --reload is never
+# active in production. The ${UVICORN_RELOAD:+--reload} expansion is empty when
+# UVICORN_RELOAD is unset or empty, and becomes "--reload" when it has any value.
 ENTRYPOINT ["sh", "-c"]
-CMD ["exec pdm run uvicorn main:app --host 0.0.0.0 --port \"${PORT:-8000}\""]
+CMD ["exec pdm run uvicorn main:app --host 0.0.0.0 --port \"${PORT:-8000}\" ${UVICORN_RELOAD:+--reload}"]

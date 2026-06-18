@@ -16,6 +16,15 @@ services:
     env_file:
       - ${APP_ENV_FILE:-../../.env}
     environment:
+      # Pin the internal container port so the env_file value of PORT (the host
+      # port) cannot leak in and make uvicorn bind a port that compose does not
+      # publish. The host-to-container mapping "${PORT}:8000" in ports: remains
+      # correct, so http://localhost:<PORT>/docs reaches uvicorn as expected.
+      PORT: "8000"
+      # Enable uvicorn --reload for local development so code changes are picked
+      # up in-process without restarting the container. Production stacks do not
+      # set this variable, so --reload is never added there.
+      UVICORN_RELOAD: "true"
       DB_TYPE: ${DB_TYPE}
       DEBUG: ${DEBUG}
       DEBUG_ENABLED: ${DEBUG_ENABLED:-false}
@@ -26,6 +35,19 @@ services:
       - ../../app/api:/app/api
       - ../../app/backend:/app/backend
       - ../../app/models:/app/models
+      # Mount app-specific packages so uvicorn --reload watches routes,
+      # services, schemas, and definitions without a container restart.
+      - ../../app/apps:/app/apps
       - ../../app/mounted_data:/mnt/data
       - ../../backups:/app/backups
       - ../../logs/api:/app/logs
+    develop:
+      watch:
+        # Source dirs are already bind-mounted above; uvicorn --reload handles
+        # in-process hot-reload without any sync entries here.
+        # Rebuild the image when dependency manifests change because the .venv
+        # is baked into the image and cannot be updated via a bind mount.
+        - action: rebuild
+          path: ../../app/apps/${ACTIVE_BACKEND_APP_ID:-demo_app}/pyproject.toml
+        - action: rebuild
+          path: ../../app/apps/${ACTIVE_BACKEND_APP_ID:-demo_app}/pdm.lock

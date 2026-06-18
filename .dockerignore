@@ -15,6 +15,7 @@ venv/
 .venv/
 **/.venv/
 **/.pdm-manager/
+**/.pdm-build/
 **/__pycache__/
 .docker/
 pip-log.txt
