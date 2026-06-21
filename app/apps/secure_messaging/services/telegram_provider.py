@@ -299,18 +299,22 @@ def is_telegram_configured() -> bool:
     """
     Check if Telegram provider is properly configured.
 
+    A sender is considered ready when it has a valid bot token. Pre-configured
+    named targets (e.g. info, error) are treated as optional convenience because
+    callers may supply a direct chat ID via the ``to`` request field instead.
+    The readiness check therefore only validates that credentials exist, not
+    that a default target is defined.
+
     Returns:
-        bool: True if at least one sender has a token and recipient target.
+        bool: True when at least one sender has a bot token configured.
     """
     try:
         senders = SecureMessagingSettings.get_telegram_senders()
         if not senders:
             return False
 
-        # Match the dispatch path, which accepts level-based targets such as
-        # info/warning/error, a default target, or any other named target.
         for sender_config in senders.values():
-            if sender_config.get("token") and _has_telegram_target(sender_config):
+            if sender_config.get("token"):
                 return True
         return False
     except ValueError:

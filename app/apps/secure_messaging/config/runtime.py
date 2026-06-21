@@ -78,6 +78,44 @@ class SecureMessagingSettings:
         return token
 
     @classmethod
+    def get_client_tokens(cls) -> dict[str, str]:
+        """
+        Load the per-client token registry from env or file.
+
+        The registry maps client names to their individual bearer tokens.
+        When neither SECURE_MESSAGING_CLIENT_TOKENS_JSON nor
+        SECURE_MESSAGING_CLIENT_TOKENS_FILE is set an empty dict is returned,
+        which causes the auth layer to fall back to legacy single-token mode.
+
+        JSON format:
+            {"file-backup": "token-abc", "wiki-backup": "token-xyz"}
+
+        Returns:
+            dict[str, str]: Map of client-name → bearer token. Empty when
+                the per-client registry is not configured.
+
+        Raises:
+            ValueError: When the configured file is declared but does not
+                exist, or when the JSON is malformed.
+        """
+        content = cls._read_env_or_file(
+            "SECURE_MESSAGING_CLIENT_TOKENS_JSON",
+            "SECURE_MESSAGING_CLIENT_TOKENS_FILE",
+        )
+        if not content:
+            return {}
+
+        try:
+            mapping = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid JSON in client tokens: {exc}") from exc
+
+        if not isinstance(mapping, dict):
+            raise ValueError("Client tokens must be a JSON object mapping client names to tokens")
+
+        return {str(k): str(v) for k, v in mapping.items()}
+
+    @classmethod
     def get_rate_limit_per_minute(cls) -> int:
         """Return rate limit per minute, default 30."""
         value = os.getenv("SECURE_MESSAGING_RATE_LIMIT_PER_MINUTE", "30")

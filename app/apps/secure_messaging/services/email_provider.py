@@ -305,20 +305,23 @@ def is_email_configured() -> bool:
     """
     Check if email provider is properly configured.
 
+    A sender is considered ready when it has a valid SMTP host and a from
+    address. Pre-configured named recipients (e.g. info, error) are treated
+    as optional convenience because callers may supply a direct email address
+    via the ``to`` request field instead.  The readiness check therefore only
+    validates that SMTP credentials exist, not that a default recipient is
+    defined.
+
     Returns:
-        bool: True if at least one sender has SMTP settings and a recipient.
+        bool: True when at least one sender has an SMTP host and from address.
     """
     try:
         senders = SecureMessagingSettings.get_email_senders()
         if not senders:
             return False
 
-        # Match the dispatch path, which accepts level-based recipients,
-        # default_to/default, or any other named recipient target.
         for sender_config in senders.values():
-            if (sender_config.get("host") and
-                sender_config.get("from") and
-                _has_email_target(sender_config)):
+            if sender_config.get("host") and sender_config.get("from"):
                 return True
         return False
     except ValueError:
