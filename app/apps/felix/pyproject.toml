@@ -1,0 +1,23 @@
+[tool.pdm]
+distribution = false
+
+[project]
+name = "felix"
+version = "0.1.0"
+description = "App-specific backend dependency manifest for the Felix backend."
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "fastapi>=0.111.0",
+    "uvicorn>=0.30.1",
+    "pydantic-settings>=2.3.4",
+    "python-dotenv>=1.0.1",
+    "redis>=5.0.1",
+    "sqlalchemy>=2.0.25",
+    "psycopg2-binary>=2.9.9",
+    "asyncpg>=0.29.0",
+    "alembic>=1.13.1",
+    "python-multipart>=0.0.20",
+    "python-jose[cryptography]>=3.3.0",
+    "requests>=2.32.3",
+    "pydantic[email]>=2.12.4",
+]

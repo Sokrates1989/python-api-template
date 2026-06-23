@@ -1,4 +1,10 @@
 # App-specific Docker Compose overrides for postgres_template.
+#
+# POSTGRES_DATA_ROOT and PGADMIN_DATA_ROOT are injected by quick-start.sh.
+# On Windows/WSL2 they resolve to a WSL2-native path so that PostgreSQL and
+# pgAdmin can chown their data directories (NTFS DrvFs mounts do not allow
+# Linux ownership changes). On macOS/Linux they resolve to the standard
+# project-relative .docker/apps/postgres_template/ path.
 
 services:
   api:
@@ -10,4 +16,8 @@ services:
 
   postgres:
     volumes:
-      - ../../.docker/apps/postgres_template/postgres-data:/var/lib/postgresql/data
+      - ${POSTGRES_DATA_ROOT}:/var/lib/postgresql/data
+
+  pgadmin:
+    volumes:
+      - ${PGADMIN_DATA_ROOT}:/var/lib/pgadmin

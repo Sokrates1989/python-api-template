@@ -1,15 +1,15 @@
-# App-specific Docker Compose overrides for template_app.
+# App-specific Docker Compose overrides for felix.
 #
 # POSTGRES_DATA_ROOT and PGADMIN_DATA_ROOT are injected by quick-start.sh.
 # On Windows/WSL2 they resolve to a WSL2-native path so that PostgreSQL and
 # pgAdmin can chown their data directories (NTFS DrvFs mounts do not allow
 # Linux ownership changes). On macOS/Linux they resolve to the standard
-# project-relative .docker/apps/template_app/ path.
+# project-relative .docker/apps/felix/ path.
 
 services:
   api:
     environment:
-      APP_PROFILE: template_app
+      APP_PROFILE: felix
       # Allow the Flutter web dev server to make cross-origin requests.
       # Port 3000 is the default Flutter web port used by quick-start.ps1.
       CORS_ORIGINS: "http://localhost:3000,http://localhost:5173,http://localhost:8080,http://localhost:4200"

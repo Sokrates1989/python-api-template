@@ -139,3 +139,49 @@ On Linux, you may need to adjust ownership:
 ```bash
 sudo chown -R $USER:$USER backups/
 ```
+
+### WSL + Docker Desktop Bind Mount Issues
+
+When running on Windows with Docker Desktop's WSL2 backend, the bind-mount
+broker can get into a stale state if the `/.docker/apps/<app_id>/postgres-data`
+directory is manually created or deleted from Windows/PowerShell instead of
+being created by the container on first startup.
+
+Root cause: PostgreSQL (`initdb`) and pgAdmin both require `chmod`/`chown` on
+their data directories. NTFS DrvFs mounts (`/mnt/d/...`) do not support Linux
+ownership changes. Any postgres or pgadmin bind mount must point to a WSL2-native
+path (e.g. `/home/<user>/.docker-data/...`) not a Windows drive path.
+
+Symptoms:
+- `postgres-1 | initdb: error: could not change permissions of directory "/var/lib/postgresql/data": Operation not permitted`
+- `pgadmin-1  | chmod: /var/lib/pgadmin/pgpassfile: Operation not permitted`
+- `mkdir /mnt/d/.../.docker/apps/<app_id>: file exists`
+- `mkdir /run/desktop/mnt/host/wsl/docker-desktop-bind-mounts/...: file exists`
+
+**Fix:**
+1. Stop the compose project: `docker compose -p <project> down -v`
+2. Shut down WSL completely to flush the DrvFs metadata cache:
+   ```powershell
+   wsl --shutdown
+   ```
+3. Remove the stale directory from **WSL** (run after WSL restarts):
+   ```bash
+   wsl -d <your-distro>
+   rm -rf /mnt/d/Development/Code/python/python-api-template/.docker/apps/<app_id>
+   ```
+   Or pre-create it cleanly:
+   ```bash
+   mkdir -p /mnt/d/.../path/to/.docker/apps/<app_id>/postgres-data
+   mkdir -p /mnt/d/.../path/to/.docker/apps/<app_id>/pgadmin
+   ```
+4. Restart the stack via the quick-start script:
+   ```bash
+   ./quick-start.sh
+   # Windows:
+   # .\quick-start.ps1
+   ```
+
+**Prevention:**
+- Do not manually create or copy `/.docker/apps/<app_id>/` when adding a new app.
+- Use the app slice copy instructions in `app/apps/README.md`.
+- Always start the stack through `quick-start.sh` or `quick-start.ps1`.

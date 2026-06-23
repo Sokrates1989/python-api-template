@@ -38,6 +38,19 @@ python-api-template/
 │   │   ├── __init__.py
 │   │   └── sql/example_sql_models.py    # SQLAlchemy models
 │   │
+│   ├── apps/                         # 🧩 Backend app slices
+│   │   ├── template_app/             # Reference app slice
+│   │   │   ├── config/
+│   │   │   ├── definition.py
+│   │   │   ├── deployment/
+│   │   │   ├── env/
+│   │   │   ├── routes/
+│   │   │   ├── schemas/
+│   │   │   ├── services/
+│   │   │   ├── pyproject.toml
+│   │   │   └── pdm.lock
+│   │   └── [your_app]/               # Add new app slices here
+│   │
 │   ├── mounted_data/                 # Example data
 │   └── main.py                       # 🚀 Application entry point
 │
@@ -57,6 +70,43 @@ python-api-template/
 ```
 
 ## Layer Responsibilities
+
+### 🧩 Backend App Slices (`app/apps/`)
+
+**Purpose:** Self-contained backend applications that plug into the shared API
+runtime. Each slice owns its routes, services, schemas, configuration, and
+deployment overrides.
+
+**Contains:**
+- `template_app/` - Reference implementation
+- `[your_app]/` - New app slices
+
+**Responsibilities:**
+- Register route families under the app-specific prefix
+- Own app-specific schemas and service facades
+- Provide app-specific environment and compose overrides
+
+**Adding a new app:**
+See `app/apps/README.md` for the copy-rename workflow from `template_app`.
+
+**Example:**
+```python
+# app/apps/felix/definition.py
+from apps.contracts import BackendAppDefinition
+from apps.felix.config import FELIX_APP_CONFIG
+from apps.felix.routes import sync, wellness
+
+FELIX_APP_DEFINITION = BackendAppDefinition(
+    app_id=FELIX_APP_CONFIG.app_id,
+    route_registrations=(
+        RouteRegistration(
+            router=wellness.router,
+            external_prefix=FELIX_APP_CONFIG.wellness_mount_prefix,
+            public_prefix=FELIX_APP_CONFIG.wellness_public_prefix,
+        ),
+    ),
+)
+```
 
 ### 🌐 API Layer (`app/api/`)
 

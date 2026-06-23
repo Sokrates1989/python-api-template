@@ -16,6 +16,41 @@ ACTIVE_BACKEND_APP_STATE_FILE=".active_backend_app"
 ACTIVE_BACKEND_APP_ID="demo_app"
 ACTIVE_BACKEND_ENV_FILE=".env.flutter.demo.mongodb"
 
+#
+# OS-aware Docker data root.
+#
+# On Windows (WSL2 + Docker Desktop), PostgreSQL and pgAdmin cannot chown
+# directories on NTFS DrvFs mounts (/mnt/d/...). Data directories must live
+# on the WSL2-native filesystem to allow the required uid/permission changes.
+#
+# On macOS and Linux, the standard project-relative path works fine.
+#
+# POSTGRES_DATA_ROOT and PGADMIN_DATA_ROOT are exported so that
+# compose.override.yml files can reference them via ${POSTGRES_DATA_ROOT}
+# and ${PGADMIN_DATA_ROOT} without hardcoding OS-specific paths.
+#
+_detect_docker_data_root() {
+    local app_id="$1"
+    if grep -qEi "(microsoft|wsl)" /proc/version 2>/dev/null; then
+        # Running inside WSL2 on Windows — use WSL2-native filesystem.
+        local wsl_user
+        wsl_user="$(whoami)"
+        POSTGRES_DATA_ROOT="/home/${wsl_user}/.docker-data/python-api-template/${app_id}/postgres-data"
+        PGADMIN_DATA_ROOT="/home/${wsl_user}/.docker-data/python-api-template/${app_id}/pgadmin"
+        mkdir -p "$POSTGRES_DATA_ROOT" "$PGADMIN_DATA_ROOT"
+        # pgAdmin runs as uid 5050 inside the container and must own its data dir.
+        # Use sudo only if the directory is not already owned by 5050.
+        if [ "$(stat -c '%u' "$PGADMIN_DATA_ROOT")" != "5050" ]; then
+            sudo chown -R 5050:5050 "$PGADMIN_DATA_ROOT" 2>/dev/null || true
+        fi
+    else
+        # macOS or native Linux — use project-relative path.
+        POSTGRES_DATA_ROOT="${PROJECT_ROOT}/.docker/apps/${app_id}/postgres-data"
+        PGADMIN_DATA_ROOT="${PROJECT_ROOT}/.docker/apps/${app_id}/pgadmin"
+    fi
+    export POSTGRES_DATA_ROOT PGADMIN_DATA_ROOT
+}
+
 # Source modules
 source "${SETUP_DIR}/modules/docker_helpers.sh"
 source "${SETUP_DIR}/modules/version_manager.sh"
@@ -139,6 +174,7 @@ refresh_docker_compose_context() {
     DOCKER_COMPOSE_ENV_FILE="${PROJECT_ROOT}/${env_file}"
     COMPOSE_PROJECT_NAME="$(get_compose_project_name "$app_id")"
     APP_ENV_FILE="${PROJECT_ROOT}/${env_file}"
+    _detect_docker_data_root "$app_id"
     PDM_MANAGER_PROJECT_ROOT="$(resolve_backend_dependency_project_root "$app_id")"
     deployment_root="$(resolve_backend_deployment_root "$app_id")"
     compose_manifest="$(resolve_backend_compose_manifest "$app_id")"
