@@ -169,11 +169,11 @@ def format_telegram_message(
 
         <message>
 
-        _<app>_
+        _From: <app>_
 
-    The app label is rendered as a small italic footer line so the reader
-    immediately knows which application sent the message. When multiple apps
-    share the same Telegram chat this prevents ambiguity.
+    The "From:" prefix makes the italic footer self-explanatory in chat so
+    readers immediately understand what the last line means. When multiple
+    apps share the same Telegram chat this prevents ambiguity.
 
     Args:
         title (str | None): Optional title (will be uppercased, underlined, and bolded).
@@ -186,16 +186,16 @@ def format_telegram_message(
 
     Example:
         >>> format_telegram_message("Alert", "Something happened", "file-backup")
-        '*__ALERT__*\\n\\nSomething happened\\n\\n_file\\-backup_'
+        '*__ALERT__*\\n\\nSomething happened\\n\\n_From: file\\-backup_'
     """
     # Convert HTML in message to Telegram markdown.
     telegram_message = html_to_telegram_markdown(message)
 
-    # Build app footer as italic text.
+    # Build app footer as italic "From: <app>" line so the label is self-explanatory.
     app_footer = ""
     if app:
         escaped_app = _escape_telegram_special_chars(app)
-        app_footer = f"\n\n_{escaped_app}_"
+        app_footer = f"\n\n_From: {escaped_app}_"
 
     if title:
         # Convert HTML in title, uppercase, underline, and bold.
