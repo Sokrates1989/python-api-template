@@ -70,20 +70,37 @@ def html_to_telegram_markdown(text: str) -> str:
         result,
     )
 
-    # Handle HTML tags
-    result = re.sub(r"<b>(.*?)</b>", lambda m: f"*{m.group(1)}*", result)
-    result = re.sub(r"<strong>(.*?)</strong>", lambda m: f"*{m.group(1)}*", result)
-    result = re.sub(r"<i>(.*?)</i>", lambda m: f"_{m.group(1)}_", result)
-    result = re.sub(r"<em>(.*?)</em>", lambda m: f"_{m.group(1)}_", result)
-    result = re.sub(r"<u>(.*?)</u>", lambda m: f"__{m.group(1)}__", result)
-    result = re.sub(r"<ins>(.*?)</ins>", lambda m: f"__{m.group(1)}__", result)
+    # Handle HTML tags — store formatted spans as placeholders so the
+    # final _escape_telegram_special_chars pass does not re-escape the
+    # MarkdownV2 marker characters (* and _) we just introduced.
+    fmt_spans: list[str] = []
+
+    def _store_fmt(marker_open: str, marker_close: str, content: str) -> str:
+        """Escape content, wrap in MarkdownV2 markers, store as placeholder."""
+        escaped_content = _escape_telegram_special_chars(content)
+        placeholder = f"\x00FMT{len(fmt_spans)}\x00"
+        fmt_spans.append(f"{marker_open}{escaped_content}{marker_close}")
+        return placeholder
+
+    result = re.sub(r"<b>(.*?)</b>", lambda m: _store_fmt("*", "*", m.group(1)), result)
+    result = re.sub(r"<strong>(.*?)</strong>", lambda m: _store_fmt("*", "*", m.group(1)), result)
+    result = re.sub(r"<i>(.*?)</i>", lambda m: _store_fmt("_", "_", m.group(1)), result)
+    result = re.sub(r"<em>(.*?)</em>", lambda m: _store_fmt("_", "_", m.group(1)), result)
+    result = re.sub(r"<u>(.*?)</u>", lambda m: _store_fmt("__", "__", m.group(1)), result)
+    result = re.sub(r"<ins>(.*?)</ins>", lambda m: _store_fmt("__", "__", m.group(1)), result)
 
     # Restore pre blocks
     for i, block in enumerate(pre_blocks):
         result = result.replace(f"\x00PRE{i}\x00", block)
 
-    # Escape remaining special characters (outside of formatting)
-    return _escape_telegram_special_chars(result)
+    # Escape remaining plain text (markers are still placeholders here).
+    result = _escape_telegram_special_chars(result)
+
+    # Restore formatted spans after escaping so their markers are untouched.
+    for i, span in enumerate(fmt_spans):
+        result = result.replace(f"\x00FMT{i}\x00", span)
+
+    return result
 
 
 def _escape_telegram_special_chars(text: str) -> str:
