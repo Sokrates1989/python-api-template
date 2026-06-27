@@ -110,8 +110,8 @@ async def dispatch_notification(
     for provider in targets:
         try:
             if provider == "telegram":
-                # Format message with optional title
-                formatted_message = format_telegram_message(redacted_title, redacted_message)
+                # Format message with optional title and app footer.
+                formatted_message = format_telegram_message(redacted_title, redacted_message, app=request.app)
                 result = await send_telegram_notification(
                     formatted_message=formatted_message,
                     app=request.app,

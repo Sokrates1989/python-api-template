@@ -156,40 +156,55 @@ def telegram_markdown_to_html(text: str) -> str:
     return result
 
 
-def format_telegram_message(title: str | None, message: str) -> str:
+def format_telegram_message(
+    title: str | None,
+    message: str,
+    app: str | None = None,
+) -> str:
     """
-    Format a notification for Telegram with optional title.
+    Format a notification for Telegram with optional title and app label.
 
-    If title is provided:
-        *__<UPPERCASE_TITLE>__*\n\n<message>
-    (Title is auto-capitalized, underlined, and bold)
+    Output structure (all parts present):
+        *__<UPPERCASE_TITLE>__*
 
-    If no title:
         <message>
+
+        _<app>_
+
+    The app label is rendered as a small italic footer line so the reader
+    immediately knows which application sent the message. When multiple apps
+    share the same Telegram chat this prevents ambiguity.
 
     Args:
         title (str | None): Optional title (will be uppercased, underlined, and bolded).
         message (str): Required message content.
+        app (str | None): Application identifier appended as italic footer (e.g. "file-backup").
+            Omitted when None or empty.
 
     Returns:
         str: Formatted message for Telegram MarkdownV2.
 
     Example:
-        >>> format_telegram_message("Alert", "Something happened")
-        '*__ALERT__*\\n\\nSomething happened'
+        >>> format_telegram_message("Alert", "Something happened", "file-backup")
+        '*__ALERT__*\\n\\nSomething happened\\n\\n_file\\-backup_'
     """
-    # Convert HTML in message to Telegram markdown
+    # Convert HTML in message to Telegram markdown.
     telegram_message = html_to_telegram_markdown(message)
 
+    # Build app footer as italic text.
+    app_footer = ""
+    if app:
+        escaped_app = _escape_telegram_special_chars(app)
+        app_footer = f"\n\n_{escaped_app}_"
+
     if title:
-        # Convert HTML in title, uppercase, underline, and bold
+        # Convert HTML in title, uppercase, underline, and bold.
         telegram_title = html_to_telegram_markdown(title)
-        # Strip any existing markdown formatting and apply uppercase + underline + bold
         plain_title = telegram_title.replace("*", "").replace("_", "")
         formatted_title = f"*__{plain_title.upper()}__*"
-        return f"{formatted_title}\n\n{telegram_message}"
+        return f"{formatted_title}\n\n{telegram_message}{app_footer}"
 
-    return telegram_message
+    return f"{telegram_message}{app_footer}"
 
 
 def format_email_content(
