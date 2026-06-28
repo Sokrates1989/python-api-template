@@ -114,13 +114,7 @@ jobs:
           PROFILE=""
           for i in $(seq 1 120); do
             if curl -fsS http://localhost:8081/health > /tmp/health.json; then
-              PROFILE="$(python - <<'PY'
-import json
-with open('/tmp/health.json', 'r', encoding='utf-8') as f:
-    data = json.load(f)
-print(data.get('provider_profile', ''))
-PY
-)"
+              PROFILE="$(python3 -c "import json; data=json.load(open('/tmp/health.json')); print(data.get('provider_profile',''))")"
               if [ "$PROFILE" = "$EXPECTED_PROFILE" ]; then
                 break
               fi
@@ -144,16 +138,7 @@ PY
             -H "X-Admin-Key: $ADMIN_KEY" \
             http://localhost:8081/database/provider-info > /tmp/provider_info.json
 
-          python - <<'PY'
-import json
-import os
-expected = os.environ["EXPECTED_PROFILE"]
-with open('/tmp/provider_info.json', 'r', encoding='utf-8') as f:
-    data = json.load(f)
-observed = data.get("provider_profile")
-if observed != expected:
-    raise SystemExit(f"provider-info mismatch: expected={expected} observed={observed}")
-PY
+          python3 -c 'import json,os; d=json.load(open("/tmp/provider_info.json")); e=os.environ["EXPECTED_PROFILE"]; o=d.get("provider_profile"); raise SystemExit(f"provider-info mismatch: expected={e} observed={o}") if o!=e else None'
 
           curl -fsS -X POST \
             -H "X-Admin-Key: $ADMIN_KEY" \
@@ -161,25 +146,13 @@ PY
             -d '{"operation":"ci_drill"}' \
             http://localhost:8081/database/lock > /tmp/lock.json
 
-          python - <<'PY'
-import json
-with open('/tmp/lock.json', 'r', encoding='utf-8') as f:
-    data = json.load(f)
-if not data.get("success") or not data.get("is_locked"):
-    raise SystemExit(f"lock contract failed: {data}")
-PY
+          python3 -c 'import json; d=json.load(open("/tmp/lock.json")); raise SystemExit(f"lock contract failed: {d}") if not d.get("success") or not d.get("is_locked") else None'
 
           curl -fsS -X POST \
             -H "X-Admin-Key: $ADMIN_KEY" \
             http://localhost:8081/database/unlock > /tmp/unlock.json
 
-          python - <<'PY'
-import json
-with open('/tmp/unlock.json', 'r', encoding='utf-8') as f:
-    data = json.load(f)
-if not data.get("success") or data.get("is_locked"):
-    raise SystemExit(f"unlock contract failed: {data}")
-PY
+          python3 -c 'import json; d=json.load(open("/tmp/unlock.json")); raise SystemExit(f"unlock contract failed: {d}") if not d.get("success") or d.get("is_locked") else None'
 
       - name: Run test suite in app container
         run: docker compose --env-file .env -f ${{ matrix.db_profile.compose_file }} run --rm -v "${PWD}/tests:/app/tests" app python -m unittest discover -s tests -p "test_*.py" -t . -v
