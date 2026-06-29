@@ -77,6 +77,10 @@ jobs:
           if ! grep -q '^ACTIVE_BACKEND_APP_ID=' .env; then
             echo 'ACTIVE_BACKEND_APP_ID=${{ matrix.db_profile.backend_app }}' >> .env
           fi
+          sed -i 's/^APP_PROFILE=.*/APP_PROFILE=${{ matrix.db_profile.backend_app }}/' .env
+          if ! grep -q '^APP_PROFILE=' .env; then
+            echo 'APP_PROFILE=${{ matrix.db_profile.backend_app }}' >> .env
+          fi
 
           case "${{ matrix.db_profile.db_type }}" in
             postgresql)
@@ -136,7 +140,7 @@ jobs:
             -H "X-Admin-Key: $ADMIN_KEY" \
             http://localhost:8000/database/provider-info > /tmp/provider_info.json
 
-          python3 -c 'import json,os; d=json.load(open("/tmp/provider_info.json")); e=os.environ["EXPECTED_PROFILE"]; o=d.get("provider_profile"); raise SystemExit(f"provider-info mismatch: expected={e} observed={o}") if o!=e else None'
+          python3 -c 'import json,os,sys; d=json.load(open("/tmp/provider_info.json")); e=os.environ["EXPECTED_PROFILE"]; o=d.get("provider_profile"); sys.exit(f"provider-info mismatch: expected={e} observed={o}") if o!=e else None'
 
           curl -fsS -X POST \
             -H "X-Admin-Key: $ADMIN_KEY" \
@@ -144,13 +148,13 @@ jobs:
             -d '{"operation":"ci_drill"}' \
             http://localhost:8000/database/lock > /tmp/lock.json
 
-          python3 -c 'import json; d=json.load(open("/tmp/lock.json")); raise SystemExit(f"lock contract failed: {d}") if not d.get("success") or not d.get("is_locked") else None'
+          python3 -c 'import json,sys; d=json.load(open("/tmp/lock.json")); sys.exit(f"lock contract failed: {d}") if not d.get("success") or not d.get("is_locked") else None'
 
           curl -fsS -X POST \
             -H "X-Admin-Key: $ADMIN_KEY" \
             http://localhost:8000/database/unlock > /tmp/unlock.json
 
-          python3 -c 'import json; d=json.load(open("/tmp/unlock.json")); raise SystemExit(f"unlock contract failed: {d}") if not d.get("success") or d.get("is_locked") else None'
+          python3 -c 'import json,sys; d=json.load(open("/tmp/unlock.json")); sys.exit(f"unlock contract failed: {d}") if not d.get("success") or d.get("is_locked") else None'
 
       - name: Run test suite in app container
         run: docker compose --env-file .env -f ${{ matrix.db_profile.compose_file }} run --rm -v "${PWD}/tests:/app/tests" api python -m unittest discover -s tests -p "test_*.py" -t . -v
