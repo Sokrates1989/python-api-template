@@ -94,7 +94,7 @@ jobs:
               ;;
             mongodb)
               sed -i 's/^DB_TYPE=.*/DB_TYPE=mongodb/' .env
-              sed -i 's|^MONGODB_URL=.*|MONGODB_URL=mongodb://mongo:mongo@mongodb:27017|' .env
+              sed -i 's|^MONGODB_URL=.*|MONGODB_URL=mongodb://mongo:mongo@mongodb:27017/?authSource=admin|' .env
               sed -i 's/^MONGODB_DB_NAME=.*/MONGODB_DB_NAME=apidb/' .env
               sed -i 's/^MONGODB_ROOT_USER=.*/MONGODB_ROOT_USER=mongo/' .env
               sed -i 's/^MONGODB_ROOT_PASSWORD=.*/MONGODB_ROOT_PASSWORD=mongo/' .env

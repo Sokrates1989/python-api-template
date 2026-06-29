@@ -265,7 +265,8 @@ class Settings(BaseSettings):
         if user:
             credentials = f"{user}:{password}@"
 
-        return f"mongodb://{credentials}{self.DB_HOST}:{self.MONGODB_PORT}"
+        auth_source = "/?authSource=admin" if credentials else ""
+        return f"mongodb://{credentials}{self.DB_HOST}:{self.MONGODB_PORT}{auth_source}"
     
     def get_database_url(self) -> str:
         """Build database URL for SQL databases"""
