@@ -114,7 +114,7 @@ jobs:
           PROFILE=""
           for i in $(seq 1 120); do
             if curl -fsS http://localhost:8081/health > /tmp/health.json; then
-              PROFILE="$(python3 -c "import json; data=json.load(open('/tmp/health.json')); print(data.get('provider_profile',''))")"
+              PROFILE="$(python3 -c 'import json; data=json.load(open("/tmp/health.json")); print(data.get("provider_profile",""))')"
               if [ "$PROFILE" = "$EXPECTED_PROFILE" ]; then
                 break
               fi
