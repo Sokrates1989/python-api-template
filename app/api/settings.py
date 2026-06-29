@@ -3,7 +3,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy.engine import URL
 
 if TYPE_CHECKING:
     from apps.contracts import BackendAppDefinition
@@ -270,6 +269,8 @@ class Settings(BaseSettings):
     
     def get_database_url(self) -> str:
         """Build database URL for SQL databases"""
+        from sqlalchemy.engine import URL
+
         if self.DATABASE_URL:
             # Use provided URL (for external databases)
             return self.DATABASE_URL

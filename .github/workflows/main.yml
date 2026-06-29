@@ -108,6 +108,16 @@ jobs:
       - name: Build and start profile services
         run: docker compose --env-file .env -f ${{ matrix.db_profile.compose_file }} up -d --build
 
+      - name: Dump container state for diagnostics
+        if: always()
+        run: |
+          echo "=== Container status ==="
+          docker compose --env-file .env -f ${{ matrix.db_profile.compose_file }} ps -a
+          echo "=== API container logs (last 100) ==="
+          docker compose --env-file .env -f ${{ matrix.db_profile.compose_file }} logs --tail 100 api || true
+          echo "=== Resolved .env (redacted) ==="
+          grep -E '^(DB_TYPE|DB_MODE|APP_PROFILE|ACTIVE_BACKEND_APP_ID|MONGODB_URL|MONGODB_DB_NAME|MONGODB_ROOT_USER|PORT)=' .env || true
+
       - name: Verify provider contract endpoints
         env:
           EXPECTED_PROFILE: ${{ matrix.db_profile.db_type == 'postgresql' && 'sql' || matrix.db_profile.db_type }}
