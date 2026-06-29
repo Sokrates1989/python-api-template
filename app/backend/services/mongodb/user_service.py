@@ -12,9 +12,7 @@ try:  # pragma: no cover - import guard for environments without Mongo deps
     from pymongo.errors import DuplicateKeyError
 except Exception:  # pragma: no cover
     ReturnDocument = None  # type: ignore[assignment]
-
-    class DuplicateKeyError(Exception):
-        """Fallback duplicate key error when pymongo is unavailable."""
+    DuplicateKeyError = Exception  # type: ignore[misc]
 
 
 class UserService:

@@ -13,7 +13,7 @@ class ProviderDispatchResult:
     Result of a single provider dispatch attempt.
 
     Attributes:
-        status (str): Delivery status: sent, failed, disabled, skipped.
+        status (str): Delivery status: sent, failed, disabled, skipped, partial_failure.
         sender (str | None): Sender name used for dispatch when applicable.
         error (str | None): Optional sanitized error message.
 
@@ -21,7 +21,7 @@ class ProviderDispatchResult:
         None: Immutable result of provider dispatch.
     """
 
-    status: Literal["sent", "failed", "disabled", "skipped"]
+    status: Literal["sent", "failed", "disabled", "skipped", "partial_failure"]
     sender: str | None = None
     error: str | None = None
 

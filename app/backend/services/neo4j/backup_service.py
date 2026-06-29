@@ -50,7 +50,7 @@ class Neo4jBackupService:
 
     def _update_restore_progress(
         self, status: str, current: int = 0, total: int = 0,
-        message: str = "", warnings: list = None
+        message: str = "", warnings: list | None = None
     ):
         """Update restore operation progress to file."""
         try:
@@ -297,7 +297,7 @@ class Neo4jBackupService:
                 auth=(settings.DB_USER, settings.get_db_password())
             )
             
-            warnings = []
+            warnings: list[str] = []
             max_warnings_to_collect = 100
             
             with driver.session() as session:

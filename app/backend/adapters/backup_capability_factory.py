@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from backend.database import get_database_handler
+from backend.database.mongodb_handler import MongoDBHandler
 from backend.ports.backup_capability import BackupCapability
 from .provider_capability_factory import (
     get_provider_capabilities_for_db_type,
@@ -87,7 +88,7 @@ class MongoDBBackupCapabilityAdapter:
 
     async def get_database_stats(self) -> Dict[str, Any]:
         handler = get_database_handler()
-        if getattr(handler, "db_type", "") != "mongodb":
+        if not isinstance(handler, MongoDBHandler):
             raise ValueError("MongoDB stats requested but current handler is not MongoDB")
 
         collection_names = await handler.database.list_collection_names()

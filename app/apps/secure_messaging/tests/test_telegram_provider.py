@@ -111,11 +111,8 @@ async def test_telegram_http_error_includes_description(monkeypatch: pytest.Monk
 
     with pytest.raises(ProviderDispatchError) as exc_info:
         await telegram_provider.send_telegram_notification(
-            level="info",
-            title="Test",
+            formatted_message="*Test*\\nHello",
             app="pytest",
-            message="Hello",
-            tags=[],
             sender_name="backup",
         )
 
