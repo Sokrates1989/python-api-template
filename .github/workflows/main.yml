@@ -1,4 +1,4 @@
-name: CI-CD Pipeline
+name: Quality Pipeline
 
 on:
   push:
@@ -6,19 +6,6 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      image_version:
-        description: Docker image version tag override
-        required: false
-      python_version:
-        description: Python version build arg override
-        required: false
-        default: "3.13"
-
-env:
-  IMAGE_NAME: ${{ vars.IMAGE_NAME }}
-  IMAGE_VERSION: ${{ inputs.image_version || vars.IMAGE_VERSION || github.sha }}
-  PYTHON_VERSION: ${{ inputs.python_version || vars.PYTHON_VERSION || '3.13' }}
 
 jobs:
   lint:
@@ -33,7 +20,7 @@ jobs:
           python-version: "3.13"
 
       - name: Syntax and import compilation check
-        run: python -m compileall app/api app/backend app/models tests
+        run: python -m compileall app/api app/backend app/models app/apps tests qa_pytest
 
   type-check:
     runs-on: ubuntu-latest
@@ -50,11 +37,132 @@ jobs:
         run: python -m pip install --upgrade pip mypy
 
       - name: Run focused type checks
-        run: mypy --ignore-missing-imports app/backend/ports app/backend/services/user_service.py app/backend/services/example_service.py app/backend/services/backup_service.py
+        run: mypy --ignore-missing-imports app/backend/ports app/backend/services/user_service.py app/backend/services/example_service.py app/backend/services/backup_service.py app/apps/secure_messaging
 
-  integration-tests:
+  shared-tests:
     runs-on: ubuntu-latest
     needs: [lint, type-check]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install pytest
+        run: python -m pip install --upgrade pip pytest
+
+      - name: Run shared unit tests
+        run: python -m pytest -c pytest.ini qa_pytest/unit -q
+
+      - name: Run shared contract tests
+        run: python -m pytest -c pytest.ini qa_pytest/contracts -m contract -q
+
+  security-and-standards:
+    runs-on: ubuntu-latest
+    needs: [lint, type-check]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install bandit
+        run: python -m pip install --upgrade pip bandit
+
+      - name: Run source security scan
+        run: bandit -r app/api app/backend app/models app/apps -f txt -ll
+
+  app-discovery:
+    runs-on: ubuntu-latest
+    needs: [lint, type-check]
+    outputs:
+      apps: ${{ steps.discover.outputs.apps }}
+      runtime-apps: ${{ steps.discover.outputs.runtime_apps }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Discover app slices
+        id: discover
+        working-directory: app
+        run: |
+          python3 -c '
+          import json, pkgutil
+          import apps
+          from pathlib import Path
+
+          app_dir = Path("apps").resolve()
+          results = []
+          runtime_results = []
+          for info in pkgutil.iter_modules(apps.__path__):
+              if not info.ispkg or info.name.startswith("_"):
+                  continue
+              app_path = app_dir / info.name
+              has_definition = (app_path / "definition.py").exists()
+              has_pyproject = (app_path / "pyproject.toml").exists()
+              has_lock = (app_path / "pdm.lock").exists()
+              has_deployment = (app_path / "deployment" / "compose.override.yml").exists()
+              if not has_definition:
+                  continue
+              app_info = {
+                  "name": info.name,
+                  "has_pyproject": has_pyproject,
+                  "has_lock": has_lock,
+                  "has_deployment": has_deployment,
+              }
+              results.append(app_info)
+              if has_pyproject and has_lock:
+                  runtime_results.append(app_info)
+          print(f"apps={json.dumps(results)}")
+          print(f"runtime_apps={json.dumps(runtime_results)}")
+          ' > /tmp/discovery.txt
+          cat /tmp/discovery.txt
+          grep '^apps=' /tmp/discovery.txt >> "$GITHUB_OUTPUT"
+          grep '^runtime_apps=' /tmp/discovery.txt >> "$GITHUB_OUTPUT"
+
+  app-sanity-checks:
+    runs-on: ubuntu-latest
+    needs: [app-discovery]
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.app-discovery.outputs.apps) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: App definition import check
+        working-directory: app
+        run: python3 -c "from apps.registry import get_backend_app_definition; get_backend_app_definition('${{ matrix.app.name }}')"
+
+      - name: App dependency isolation check
+        if: matrix.app.has_pyproject && matrix.app.has_lock
+        run: |
+          python -m pip install --upgrade pip pdm
+          pdm venv create --with venv 2>/dev/null || true
+          pdm use -f .venv 2>/dev/null || true
+          pdm sync -p "app/apps/${{ matrix.app.name }}" --prod --no-self
+          pdm run -p "app/apps/${{ matrix.app.name }}" python -c "import apps.${{ matrix.app.name }}.definition; print('ok')"
+
+  reference-provider-integration:
+    runs-on: ubuntu-latest
+    needs: [app-sanity-checks]
     strategy:
       fail-fast: false
       matrix:
@@ -187,100 +295,10 @@ jobs:
 
   build-and-push:
     runs-on: ubuntu-latest
-    needs: [integration-tests]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [reference-provider-integration]
+    if: false
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Validate required build configuration
-        env:
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Skipped build-and-push
         run: |
-          if [ -z "$IMAGE_NAME" ]; then
-            echo "Repository variable IMAGE_NAME is required."
-            exit 1
-          fi
-          if [ -z "$DOCKER_USERNAME" ] || [ -z "$DOCKER_PASSWORD" ]; then
-            echo "Docker credentials are required via DOCKER_USERNAME/DOCKER_PASSWORD secrets."
-            exit 1
-          fi
-
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Docker login
-        env:
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-        run: echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-
-      - name: Build and push image
-        run: |
-          docker buildx build --load \
-            --build-arg IMAGE_TAG="$IMAGE_VERSION" \
-            --build-arg PYTHON_VERSION="$PYTHON_VERSION" \
-            -t "$IMAGE_NAME:$IMAGE_VERSION" \
-            .
-          docker push "$IMAGE_NAME:$IMAGE_VERSION"
-
-      - name: Build summary
-        run: |
-          echo "### Docker image built and pushed" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Image: \`$IMAGE_NAME:$IMAGE_VERSION\`" >> "$GITHUB_STEP_SUMMARY"
-
-  deploy:
-    runs-on: ubuntu-latest
-    needs: [build-and-push]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-      - name: Validate deploy configuration
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_PORT: ${{ secrets.SSH_PORT }}
-          STACK_FILE: ${{ vars.STACK_FILE }}
-          STACK_NAME: ${{ vars.STACK_NAME }}
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
-        run: |
-          for required in SSH_PRIVATE_KEY SSH_USER SSH_HOST SSH_PORT STACK_FILE STACK_NAME DEPLOY_PATH IMAGE_NAME IMAGE_VERSION; do
-            value="$(eval echo "\$$required")"
-            if [ -z "$value" ]; then
-              echo "Missing required deploy setting: $required"
-              exit 1
-            fi
-          done
-
-      - name: Setup SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-
-      - name: Deploy to server
-        env:
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_PORT: ${{ secrets.SSH_PORT }}
-          STACK_FILE: ${{ vars.STACK_FILE }}
-          STACK_NAME: ${{ vars.STACK_NAME }}
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
-          IMAGE_VERSION: ${{ env.IMAGE_VERSION }}
-        run: |
-          ssh -o StrictHostKeyChecking=no -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" << EOF
-            set -e
-            cd "$DEPLOY_PATH"
-            sed -i 's/^IMAGE_VERSION=.*/IMAGE_VERSION='"$IMAGE_VERSION"'/' .env
-            docker stack deploy -c <(docker-compose -f "$STACK_FILE" config) "$STACK_NAME"
-            sleep 30
-            docker stack services "$STACK_NAME"
-          EOF
-
-      - name: Deployment summary
-        env:
-          STACK_NAME: ${{ vars.STACK_NAME }}
-        run: |
-          echo "### Deployment successful" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Stack: \`$STACK_NAME\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Image: \`$IMAGE_NAME:$IMAGE_VERSION\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Image build and push are intentionally disabled in GitHub Actions."
+          echo "Manual releases are handled outside this repository's CI pipeline."
