@@ -15,9 +15,6 @@ from sqlalchemy import text
 
 from apps.felix.services.rewards_state import normalize_rewards_patch, normalize_rewards_state
 from backend.database import get_database_handler
-from backend.database.mongodb_handler import MongoDBHandler
-from backend.database.neo4j_handler import Neo4jHandler
-from backend.database.sql_handler import SQLHandler
 
 
 class FelixRewardsService:
@@ -51,11 +48,11 @@ class FelixRewardsService:
             Creates a default rewards-state row/document/node when none exists.
         """
         try:
-            if isinstance(self.handler, MongoDBHandler):
+            if self._uses_mongodb_handler():
                 state = await self._get_mongodb_state(user_id)
-            elif isinstance(self.handler, SQLHandler):
+            elif self._uses_sql_handler():
                 state = await self._get_sql_state(user_id)
-            elif isinstance(self.handler, Neo4jHandler):
+            elif self._uses_neo4j_handler():
                 state = await self._get_neo4j_state(user_id)
             else:
                 return {"status": "error", "message": "Unsupported database type for Felix rewards", "data": None}
@@ -82,17 +79,79 @@ class FelixRewardsService:
             if current_result.get("status") != "success":
                 return current_result
             next_state = normalize_rewards_patch(patch, current_state=current_result.get("data"))
-            if isinstance(self.handler, MongoDBHandler):
+            if self._uses_mongodb_handler():
                 state = await self._set_mongodb_state(user_id, next_state)
-            elif isinstance(self.handler, SQLHandler):
+            elif self._uses_sql_handler():
                 state = await self._set_sql_state(user_id, next_state)
-            elif isinstance(self.handler, Neo4jHandler):
+            elif self._uses_neo4j_handler():
                 state = await self._set_neo4j_state(user_id, next_state)
             else:
                 return {"status": "error", "message": "Unsupported database type for Felix rewards", "data": None}
             return {"status": "success", "message": "Felix rewards updated successfully", "data": state}
         except Exception as exc:
             return {"status": "error", "message": f"Error updating Felix rewards: {str(exc)}", "data": None}
+
+    def _handler_type_name(self) -> str:
+        """Return the active database handler class name.
+
+        Args:
+            None.
+
+        Returns:
+            str: Runtime class name for the configured database handler.
+
+        Side Effects:
+            None.
+
+        Note:
+            This deliberately avoids importing optional provider handlers at
+            module import time. Felix runs on PostgreSQL, so importing the
+            Neo4j handler here would require the optional ``neo4j`` package
+            before the SQL path is even selected.
+        """
+        return type(self.handler).__name__
+
+    def _uses_mongodb_handler(self) -> bool:
+        """Return whether the active handler is MongoDB-backed.
+
+        Args:
+            None.
+
+        Returns:
+            bool: ``True`` when the runtime handler is ``MongoDBHandler``.
+
+        Side Effects:
+            None.
+        """
+        return self._handler_type_name() == "MongoDBHandler"
+
+    def _uses_sql_handler(self) -> bool:
+        """Return whether the active handler is SQL-backed.
+
+        Args:
+            None.
+
+        Returns:
+            bool: ``True`` when the runtime handler is ``SQLHandler``.
+
+        Side Effects:
+            None.
+        """
+        return self._handler_type_name() == "SQLHandler"
+
+    def _uses_neo4j_handler(self) -> bool:
+        """Return whether the active handler is Neo4j-backed.
+
+        Args:
+            None.
+
+        Returns:
+            bool: ``True`` when the runtime handler is ``Neo4jHandler``.
+
+        Side Effects:
+            None.
+        """
+        return self._handler_type_name() == "Neo4jHandler"
 
     async def _get_mongodb_state(self, user_id: str) -> Dict[str, Any]:
         """Load or create the MongoDB rewards-state document.
