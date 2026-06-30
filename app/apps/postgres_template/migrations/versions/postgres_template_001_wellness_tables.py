@@ -1,21 +1,36 @@
-"""Create SQL wellness tables and sync conflict log.
+"""Create Postgres Template-owned SQL wellness tables.
 
-Revision ID: 010_create_wellness_tables
-Revises: 009_add_sync_support
-Create Date: 2026-04-14 12:00:00.000000
+Revision ID: postgres_template_001_wellness_tables
+Revises: None
+Create Date: 2026-06-30 00:00:00.000000
+
+The Postgres Template uses the shared wellness runtime as an example feature,
+but its SQL tables are owned by the selected app migration stream.
 """
 
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = "010_create_wellness_tables"
-down_revision = "009_add_sync_support"
+revision = "postgres_template_001_wellness_tables"
+down_revision = None
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
+    """Create wellness tables for the Postgres Template SQL profile.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+
+    Side Effects:
+        Adds the activity, diary, and check-in tables consumed by the shared
+        wellness runtime when Postgres Template is selected.
+    """
     op.create_table(
         "wellness_activities",
         sa.Column("pk", sa.Integer(), autoincrement=True, nullable=False),
@@ -37,7 +52,12 @@ def upgrade() -> None:
         sa.UniqueConstraint("user_id", "id", name="uq_wellness_activities_user_id_id"),
     )
     op.create_index("ix_wellness_activities_user_id", "wellness_activities", ["user_id"], unique=False)
-    op.create_index("ix_wellness_activities_user_favorite", "wellness_activities", ["user_id", "favorite"], unique=False)
+    op.create_index(
+        "ix_wellness_activities_user_favorite",
+        "wellness_activities",
+        ["user_id", "favorite"],
+        unique=False,
+    )
 
     op.create_table(
         "wellness_diary_entries",
@@ -59,7 +79,12 @@ def upgrade() -> None:
         sa.UniqueConstraint("user_id", "id", name="uq_wellness_diary_entries_user_id_id"),
     )
     op.create_index("ix_wellness_diary_entries_user_id", "wellness_diary_entries", ["user_id"], unique=False)
-    op.create_index("ix_wellness_diary_entries_user_created_at", "wellness_diary_entries", ["user_id", "created_at"], unique=False)
+    op.create_index(
+        "ix_wellness_diary_entries_user_created_at",
+        "wellness_diary_entries",
+        ["user_id", "created_at"],
+        unique=False,
+    )
 
     op.create_table(
         "wellness_checkins",
@@ -78,30 +103,27 @@ def upgrade() -> None:
         sa.UniqueConstraint("user_id", "id", name="uq_wellness_checkins_user_id_id"),
     )
     op.create_index("ix_wellness_checkins_user_id", "wellness_checkins", ["user_id"], unique=False)
-    op.create_index("ix_wellness_checkins_user_recorded_at", "wellness_checkins", ["user_id", "recorded_at"], unique=False)
-
-    op.create_table(
-        "sync_conflicts",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("user_id", sa.String(length=255), nullable=False),
-        sa.Column("op_id", sa.String(length=128), nullable=False),
-        sa.Column("feature", sa.String(length=64), nullable=True),
-        sa.Column("entity_type", sa.String(length=64), nullable=False),
-        sa.Column("entity_id", sa.String(length=255), nullable=False),
-        sa.Column("detected_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("result_json", sa.Text(), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
+    op.create_index(
+        "ix_wellness_checkins_user_recorded_at",
+        "wellness_checkins",
+        ["user_id", "recorded_at"],
+        unique=False,
     )
-    op.create_index("ix_sync_conflicts_user_id", "sync_conflicts", ["user_id"], unique=False)
-    op.create_index("ix_sync_conflicts_op_id", "sync_conflicts", ["op_id"], unique=False)
-    op.create_index("ix_sync_conflicts_user_detected_at", "sync_conflicts", ["user_id", "detected_at"], unique=False)
 
 
 def downgrade() -> None:
-    op.drop_index("ix_sync_conflicts_user_detected_at", table_name="sync_conflicts")
-    op.drop_index("ix_sync_conflicts_op_id", table_name="sync_conflicts")
-    op.drop_index("ix_sync_conflicts_user_id", table_name="sync_conflicts")
-    op.drop_table("sync_conflicts")
+    """Drop Postgres Template-owned wellness tables.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+
+    Side Effects:
+        Removes the activity, diary, and check-in tables from the selected
+        Postgres Template SQL profile.
+    """
     op.drop_index("ix_wellness_checkins_user_recorded_at", table_name="wellness_checkins")
     op.drop_index("ix_wellness_checkins_user_id", table_name="wellness_checkins")
     op.drop_table("wellness_checkins")

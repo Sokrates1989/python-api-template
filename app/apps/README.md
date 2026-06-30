@@ -4,6 +4,9 @@ This directory contains backend app slices. Each slice is a self-contained app
 that owns its own routes, services, schemas, configuration, and deployment
 overrides.
 
+See also: `docs/APP_SLICE_BOUNDARY_GUIDE.md` for the full app/global
+ownership contract.
+
 ## Adding a new backend app
 
 The canonical way to add a new app is to copy `template_app` and rename it.
@@ -21,10 +24,10 @@ continue inside WSL or `quick-start.ps1`.
 
 Inside `app/apps/<new_app>` replace:
 
-- `template_app` → `<new_app>`
-- `TemplateApp` → `<NewApp>`
-- `TEMPLATE_APP` → `<NEW_APP>`
-- `Template App` → `<New App>`
+- `template_app` -> `<new_app>`
+- `TemplateApp` -> `<NewApp>`
+- `TEMPLATE_APP` -> `<NEW_APP>`
+- `Template App` -> `<New App>`
 
 Also rename the environment file:
 
@@ -110,6 +113,7 @@ Copy these source-controlled files only:
 - `definition.py`
 - `deployment/`
 - `env/.env.template_app`
+- `migrations/` if the app owns SQL schema changes
 - `pyproject.toml`
 - `pdm.lock`
 - `routes/`
@@ -123,6 +127,51 @@ Copy these source-controlled files only:
 - `.docker/` or `.docker/apps/template_app/` (runtime data)
 - Any generated container data, build caches, or logs
 - `env/.env.template_app` should be renamed, not kept as-is
+
+## App-specific SQL migrations
+
+App-owned SQL schema changes belong under:
+
+```text
+app/apps/<app_id>/migrations/versions/
+```
+
+Add the relative folder to the app definition:
+
+```python
+BackendAppDefinition(
+    ...,
+    migration_version_locations=("migrations/versions",),
+)
+```
+
+The startup migration runner always applies shared migrations from the global
+`alembic/versions` tree first. It then applies only the selected app's declared
+version locations using an app-specific version table such as
+`alembic_version_felix`.
+
+Use the global Alembic tree only for tables or columns that intentionally affect
+all backend app profiles. Keep product-specific tables, columns, indexes, and
+data migrations inside the owning app slice.
+
+Shared feature runtimes still use app-owned SQL migrations. For example, the
+wellness runtime is reusable code, but SQL wellness tables are created from the
+selected SQL app's `migrations/versions` folder rather than from the global
+Alembic stream.
+
+## Shared route groups
+
+Shared routes are opt-in per backend app. Configure them with:
+
+```python
+BackendAppDefinition(
+    ...,
+    shared_route_groups=("users",),
+)
+```
+
+Use only the groups an app genuinely needs. Product apps should not inherit
+example, package, file, or database-maintenance routes by default.
 
 ## Troubleshooting
 

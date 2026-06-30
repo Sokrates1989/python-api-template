@@ -1,3 +1,10 @@
+"""Shared SQL ORM models for the reusable wellness feature runtime.
+
+These models are intentionally feature-shared, not Felix-specific. Selected
+backend apps that opt into SQL wellness routes must own their table creation in
+``app/apps/<app_id>/migrations/versions`` so the global Alembic stream remains
+provider-wide.
+"""
 from __future__ import annotations
 
 import json
@@ -10,6 +17,18 @@ from .base import Base
 
 
 def _decode_string_list(value: str | None) -> List[str]:
+    """Decode a JSON string column into a clean list of strings.
+
+    Args:
+        value (str | None): Raw JSON payload stored in a text column.
+
+    Returns:
+        List[str]: Non-empty string values, or an empty list when decoding
+        fails or the stored payload is not a list.
+
+    Side Effects:
+        None.
+    """
     if not value:
         return []
     try:
@@ -22,11 +41,44 @@ def _decode_string_list(value: str | None) -> List[str]:
 
 
 def _encode_string_list(values: List[str] | None) -> str:
+    """Encode string-like values for storage in text JSON columns.
+
+    Args:
+        values (List[str] | None): Optional list of values to normalize.
+
+    Returns:
+        str: Compact JSON array containing non-empty string values.
+
+    Side Effects:
+        None.
+    """
     payload = [str(item) for item in (values or []) if str(item).strip()]
     return json.dumps(payload, separators=(",", ":"))
 
 
 class WellnessActivity(Base):
+    """SQL activity row used by apps that opt into shared wellness.
+
+    Attributes:
+        pk (int): Internal database primary key.
+        user_id (str): Owner id from the shared users table.
+        id (str): App-visible activity id scoped by user.
+        icon_key (str): Icon identifier used by clients.
+        title_key (str | None): Optional localization key for the title.
+        title (str | None): Optional persisted title override.
+        summary_key (str | None): Optional localization key for the summary.
+        summary (str | None): Optional persisted summary override.
+        duration_minutes (int): Suggested activity duration.
+        favorite (bool): Whether the user favorited the activity.
+        energy_impact (str | None): Optional energy impact descriptor.
+        created_at (datetime): Row creation timestamp.
+        updated_at (datetime): Row update timestamp.
+
+    Methods:
+        category_keys: Decodes and stores category keys.
+        to_dict: Serializes the row for wellness service responses.
+    """
+
     __tablename__ = "wellness_activities"
     __table_args__ = (
         UniqueConstraint("user_id", "id", name="uq_wellness_activities_user_id_id"),
@@ -50,13 +102,44 @@ class WellnessActivity(Base):
 
     @property
     def category_keys(self) -> List[str]:
+        """Return decoded activity category keys.
+
+        Returns:
+            List[str]: Category identifiers, or an empty list when none are
+            stored.
+
+        Side Effects:
+            None.
+        """
         return _decode_string_list(self._category_keys)
 
     @category_keys.setter
     def category_keys(self, values: List[str] | None) -> None:
+        """Store activity category keys as compact JSON text.
+
+        Args:
+            values (List[str] | None): Category identifiers to persist.
+
+        Returns:
+            None.
+
+        Side Effects:
+            Updates the mapped ``category_keys`` column value.
+        """
         self._category_keys = _encode_string_list(values)
 
     def to_dict(self) -> dict:
+        """Serialize the activity row into an API-friendly dictionary.
+
+        Args:
+            None.
+
+        Returns:
+            dict: Activity fields with decoded categories and ISO timestamps.
+
+        Side Effects:
+            None.
+        """
         return {
             "id": self.id,
             "icon_key": self.icon_key,
@@ -74,6 +157,27 @@ class WellnessActivity(Base):
 
 
 class WellnessDiaryEntry(Base):
+    """SQL diary entry row used by apps that opt into shared wellness.
+
+    Attributes:
+        pk (int): Internal database primary key.
+        user_id (str): Owner id from the shared users table.
+        id (str): App-visible diary id scoped by user.
+        title_key (str | None): Optional localization key for the title.
+        title (str | None): Optional persisted title override.
+        summary_key (str | None): Optional localization key for the summary.
+        summary (str | None): Optional persisted summary override.
+        mood_state_key (str): Mood state identifier.
+        mood_score (int): Numeric mood value.
+        related_activity_id (str | None): Optional related activity id.
+        created_at (datetime): Row creation timestamp.
+        updated_at (datetime): Row update timestamp.
+
+    Methods:
+        tag_keys: Decodes and stores tag keys.
+        to_dict: Serializes the row for wellness service responses.
+    """
+
     __tablename__ = "wellness_diary_entries"
     __table_args__ = (
         UniqueConstraint("user_id", "id", name="uq_wellness_diary_entries_user_id_id"),
@@ -96,13 +200,43 @@ class WellnessDiaryEntry(Base):
 
     @property
     def tag_keys(self) -> List[str]:
+        """Return decoded diary tag keys.
+
+        Returns:
+            List[str]: Tag identifiers, or an empty list when none are stored.
+
+        Side Effects:
+            None.
+        """
         return _decode_string_list(self._tag_keys)
 
     @tag_keys.setter
     def tag_keys(self, values: List[str] | None) -> None:
+        """Store diary tag keys as compact JSON text.
+
+        Args:
+            values (List[str] | None): Tag identifiers to persist.
+
+        Returns:
+            None.
+
+        Side Effects:
+            Updates the mapped ``tag_keys`` column value.
+        """
         self._tag_keys = _encode_string_list(values)
 
     def to_dict(self) -> dict:
+        """Serialize the diary entry row into an API-friendly dictionary.
+
+        Args:
+            None.
+
+        Returns:
+            dict: Diary fields with decoded tags and ISO timestamps.
+
+        Side Effects:
+            None.
+        """
         return {
             "id": self.id,
             "title_key": self.title_key,
@@ -119,6 +253,24 @@ class WellnessDiaryEntry(Base):
 
 
 class WellnessCheckIn(Base):
+    """SQL check-in row used by apps that opt into shared wellness.
+
+    Attributes:
+        pk (int): Internal database primary key.
+        user_id (str): Owner id from the shared users table.
+        id (str): App-visible check-in id scoped by user.
+        recorded_at (datetime): User-facing check-in timestamp.
+        mood_score (int): Numeric mood value.
+        stress_score (int): Numeric stress value.
+        energy_score (int): Numeric energy value.
+        note (str | None): Optional user note.
+        created_at (datetime): Row creation timestamp.
+        updated_at (datetime): Row update timestamp.
+
+    Methods:
+        to_dict: Serializes the row for wellness service responses.
+    """
+
     __tablename__ = "wellness_checkins"
     __table_args__ = (
         UniqueConstraint("user_id", "id", name="uq_wellness_checkins_user_id_id"),
@@ -137,6 +289,17 @@ class WellnessCheckIn(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     def to_dict(self) -> dict:
+        """Serialize the check-in row into an API-friendly dictionary.
+
+        Args:
+            None.
+
+        Returns:
+            dict: Check-in fields with ISO timestamps.
+
+        Side Effects:
+            None.
+        """
         return {
             "id": self.id,
             "recorded_at": self.recorded_at.isoformat() if self.recorded_at else None,

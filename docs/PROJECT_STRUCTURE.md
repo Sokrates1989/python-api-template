@@ -2,6 +2,23 @@
 
 Clear explanation of the project structure and how everything fits together.
 
+## Current App/Global Boundary
+
+Product-specific backend code belongs under `app/apps/<app_id>/`. Global
+folders are for product-neutral infrastructure or explicitly shared feature
+runtimes only.
+
+Do not add product routes directly to `app/api/routes` or register app-specific
+routers directly in `app/main.py`. Add app-owned route facades under
+`app/apps/<app_id>/routes` and expose them through the app's
+`BackendAppDefinition`.
+
+Do not add product-specific SQL migrations to `alembic/versions`. Use
+`app/apps/<app_id>/migrations/versions` and declare the folder in
+`migration_version_locations`.
+
+See also: `docs/APP_SLICE_BOUNDARY_GUIDE.md`.
+
 ## Directory Structure
 
 ```
@@ -85,6 +102,8 @@ deployment overrides.
 - Register route families under the app-specific prefix
 - Own app-specific schemas and service facades
 - Provide app-specific environment and compose overrides
+- Own app-specific SQL migrations under `migrations/versions`
+- Choose shared route groups explicitly
 
 **Adding a new app:**
 See `app/apps/README.md` for the copy-rename workflow from `template_app`.
@@ -110,17 +129,19 @@ FELIX_APP_DEFINITION = BackendAppDefinition(
 
 ### 🌐 API Layer (`app/api/`)
 
-**Purpose:** Handle HTTP requests and responses
+**Purpose:** Handle shared HTTP infrastructure and compatibility/reference
+routes.
 
 **Contains:**
 - Route handlers (`routes/`)
 - Configuration (`settings.py`)
 
 **Responsibilities:**
-- Define HTTP endpoints
+- Define shared or compatibility HTTP endpoints
 - Parse request parameters
 - Return HTTP responses
 - Input validation
+- Leave selected app product routes under `app/apps/<app_id>/routes`
 
 **Example:**
 ```python

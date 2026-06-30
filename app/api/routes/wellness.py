@@ -1,4 +1,9 @@
-"""Database-aware wellness routes for dashboard, activities, diary, and check-ins."""
+"""Legacy shared wellness routes for dashboard, activities, diary, and check-ins.
+
+Selected backend apps should register app-owned route facades from
+``app/apps/<app_id>/routes``. This module remains only as a compatibility
+reference for older integrations and must not receive Felix-specific behavior.
+"""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status

@@ -129,6 +129,9 @@ class BackendAppDefinition:
             app module.
         route_registrations (tuple[RouteRegistration, ...]): Routers exposed by
             the app module.
+        migration_version_locations (tuple[str, ...]): App-owned Alembic
+            version directories, relative to ``app/apps/<app_id>`` unless
+            absolute. These run only when this app is selected.
         exposes_sync_routes (bool): Whether the app intentionally publishes
             sync endpoints.
         requires_database (bool): Whether the app requires database
@@ -138,6 +141,10 @@ class BackendAppDefinition:
         include_shared_routes (bool): Whether to mount shared routes (/users,
             /database/*, /examples, /files, /packages). Defaults to True for
             backward compatibility.
+        shared_route_groups (tuple[str, ...]): Shared route group names this
+            app exposes when include_shared_routes is True. Use this to keep
+            product apps from inheriting demo, package, file, or database
+            maintenance routes by accident.
         openapi_security_schemes (tuple[OpenApiSecurityScheme, ...]): Security
             schemes owned by this app and shown in Swagger UI only when this app
             is selected.
@@ -155,10 +162,19 @@ class BackendAppDefinition:
     display_name: str
     backend_data_profile: str
     route_registrations: tuple[RouteRegistration, ...]
+    migration_version_locations: tuple[str, ...] = ()
     exposes_sync_routes: bool = False
     requires_database: bool = True
     requires_redis: bool = True
     include_shared_routes: bool = True
+    shared_route_groups: tuple[str, ...] = (
+        "test",
+        "files",
+        "packages",
+        "database_lock",
+        "users",
+        "examples",
+    )
     openapi_security_schemes: tuple[OpenApiSecurityScheme, ...] = ()
     openapi_route_security: tuple[RouteSecurityRequirement, ...] = ()
 

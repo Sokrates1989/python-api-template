@@ -4,6 +4,11 @@
 
 This template **automatically runs database migrations** when the application starts. This ensures your database schema is always up to date without manual intervention.
 
+The startup runner applies two scopes: global provider-wide migrations from
+`alembic/versions/`, then the selected app's declared migrations from
+`app/apps/<app_id>/migrations/versions/`. Do not put product-specific schema in
+the global migration tree.
+
 ## How It Works
 
 ### 1. **Startup Sequence**

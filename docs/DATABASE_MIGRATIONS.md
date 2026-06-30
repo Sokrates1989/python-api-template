@@ -2,6 +2,27 @@
 
 This template uses **Alembic** for production-ready database schema management and migrations.
 
+## Current Multi-App Rule
+
+The backend now has two migration scopes:
+
+1. Global provider-wide migrations in `alembic/versions/`.
+2. Selected-app migrations in `app/apps/<app_id>/migrations/versions/`.
+
+Use the global Alembic tree only for schema that intentionally affects every
+SQL app profile, such as shared users/auth tables or provider-wide sync
+infrastructure. Product tables, app-owned feature tables, and selected-app data
+migrations must live inside the owning app slice.
+
+Startup applies global migrations first with the `alembic_version` table, then
+applies only the selected app's declared `migration_version_locations` with an
+app-specific version table such as `alembic_version_felix`.
+
+See also:
+
+- `docs/APP_SLICE_BOUNDARY_GUIDE.md`
+- `app/apps/README.md`
+
 ## 📋 Table of Contents
 
 1. [Why Migrations?](#why-migrations)
@@ -157,7 +178,10 @@ class User(Base):
 docker compose run --rm app alembic revision --autogenerate -m "add users table"
 ```
 
-This creates a new file: `alembic/versions/002_add_users_table.py`
+Provider-wide migrations create files under `alembic/versions/`. App-owned
+migrations must be created under
+`app/apps/<app_id>/migrations/versions/` and declared by that app's
+`BackendAppDefinition`.
 
 #### Step 3: Review the Generated Migration
 

@@ -93,6 +93,19 @@ def _coerce_backend_app_definition(raw_definition: Any) -> BackendAppDefinition 
     requires_database = getattr(raw_definition, "requires_database", True)
     requires_redis = getattr(raw_definition, "requires_redis", True)
     include_shared_routes = getattr(raw_definition, "include_shared_routes", True)
+    shared_route_groups = getattr(
+        raw_definition,
+        "shared_route_groups",
+        (
+            "test",
+            "files",
+            "packages",
+            "database_lock",
+            "users",
+            "examples",
+        ),
+    )
+    migration_version_locations = getattr(raw_definition, "migration_version_locations", ())
     openapi_security_schemes = getattr(raw_definition, "openapi_security_schemes", ())
     openapi_route_security = getattr(raw_definition, "openapi_route_security", ())
 
@@ -101,10 +114,12 @@ def _coerce_backend_app_definition(raw_definition: Any) -> BackendAppDefinition 
         display_name=str(display_name),
         backend_data_profile=str(backend_data_profile),
         route_registrations=(),
+        migration_version_locations=tuple(migration_version_locations),
         exposes_sync_routes=False,
         requires_database=bool(requires_database),
         requires_redis=bool(requires_redis),
         include_shared_routes=bool(include_shared_routes),
+        shared_route_groups=tuple(str(group) for group in shared_route_groups),
         openapi_security_schemes=tuple(openapi_security_schemes),
         openapi_route_security=tuple(openapi_route_security),
     )

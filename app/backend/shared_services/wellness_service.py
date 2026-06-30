@@ -1,4 +1,9 @@
-"""Shared database-agnostic wellness service facade."""
+"""Shared database-agnostic wellness feature runtime.
+
+This module is product-neutral shared feature code. Backend app slices opt into
+it through their own route facades and own any SQL table creation through
+``app/apps/<app_id>/migrations/versions``.
+"""
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -9,7 +14,25 @@ from backend.ports.wellness_repository import WellnessRepository
 
 
 class WellnessService:
-    """Dispatch wellness operations to the configured database backend adapter."""
+    """
+    Dispatch wellness operations to the configured database backend adapter.
+
+    Attributes:
+        _repository (WellnessRepository): Provider-specific repository selected
+            from the active database handler.
+        _db_type (str): Normalized provider identifier used for diagnostics.
+
+    Methods:
+        get_dashboard: Return summary data for one user.
+        list_activities: Return the activity catalog for one user.
+        get_sync_bootstrap: Return initial offline-sync state.
+        get_sync_changes: Return incremental offline-sync changes.
+        update_activity: Persist mutable activity state.
+        list_diary_entries: Return diary timeline entries.
+        create_diary_entry: Persist one diary entry.
+        create_checkin: Persist one check-in.
+        reset_user_data: Reset user-owned wellness data.
+    """
 
     def __init__(self) -> None:
         """
@@ -46,11 +69,33 @@ class WellnessService:
         return self._db_type
 
     async def get_dashboard(self, user_id: str) -> Dict[str, Any]:
-        """Return the dashboard payload for one user."""
+        """
+        Return the dashboard payload for one user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+
+        Returns:
+            Dict[str, Any]: Provider-normalized dashboard payload.
+
+        Side Effects:
+            Reads from the configured wellness repository.
+        """
         return await self._repository.get_dashboard(user_id=user_id)
 
     async def list_activities(self, user_id: str) -> Dict[str, Any]:
-        """Return the activity catalog for one user."""
+        """
+        Return the activity catalog for one user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+
+        Returns:
+            Dict[str, Any]: Activity catalog payload.
+
+        Side Effects:
+            Reads from the configured wellness repository.
+        """
         return await self._repository.list_activities(user_id=user_id)
 
     async def get_sync_bootstrap(
@@ -59,7 +104,22 @@ class WellnessService:
         diary_limit: int = 50,
         checkin_limit: int = 50,
     ) -> Dict[str, Any]:
-        """Return the initial sync bootstrap payload."""
+        """
+        Return the initial sync bootstrap payload.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            diary_limit (int): Maximum number of diary rows to include.
+                Defaults to 50.
+            checkin_limit (int): Maximum number of check-in rows to include.
+                Defaults to 50.
+
+        Returns:
+            Dict[str, Any]: Bootstrap payload for local sync caches.
+
+        Side Effects:
+            Reads from the configured wellness repository.
+        """
         return await self._repository.get_sync_bootstrap(
             user_id=user_id,
             diary_limit=diary_limit,
@@ -73,7 +133,21 @@ class WellnessService:
         limit: int = 100,
         entity_type: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Return incremental sync changes for one user."""
+        """
+        Return incremental sync changes for one user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            cursor (Optional[str]): Opaque cursor from the previous sync read.
+            limit (int): Maximum number of changes to return. Defaults to 100.
+            entity_type (Optional[str]): Optional entity type filter.
+
+        Returns:
+            Dict[str, Any]: Incremental changes and next cursor.
+
+        Side Effects:
+            Reads from the configured wellness repository.
+        """
         return await self._repository.get_sync_changes(
             user_id=user_id,
             cursor=cursor,
@@ -87,7 +161,20 @@ class WellnessService:
         activity_id: str,
         favorite: Optional[bool] = None,
     ) -> Dict[str, Any]:
-        """Update one activity record for the user."""
+        """
+        Update mutable state on one activity record.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            activity_id (str): Activity identifier scoped by user.
+            favorite (Optional[bool]): Optional favorite state to persist.
+
+        Returns:
+            Dict[str, Any]: Provider-normalized mutation result.
+
+        Side Effects:
+            Writes to the configured wellness repository.
+        """
         return await self._repository.update_activity(
             user_id=user_id,
             activity_id=activity_id,
@@ -95,7 +182,20 @@ class WellnessService:
         )
 
     async def list_diary_entries(self, user_id: str, limit: int = 20) -> Dict[str, Any]:
-        """Return diary entries for one user."""
+        """
+        Return diary entries for one user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            limit (int): Maximum number of diary entries to return. Defaults
+                to 20.
+
+        Returns:
+            Dict[str, Any]: Diary timeline payload.
+
+        Side Effects:
+            Reads from the configured wellness repository.
+        """
         return await self._repository.list_diary_entries(user_id=user_id, limit=limit)
 
     async def create_diary_entry(
@@ -107,7 +207,23 @@ class WellnessService:
         tag_keys: List[str],
         related_activity_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Create a diary entry for one user."""
+        """
+        Create a diary entry for one user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            title (str): User-facing diary title.
+            summary (str): User-facing diary summary/body.
+            mood_score (int): Numeric mood score.
+            tag_keys (List[str]): Tag identifiers attached to the entry.
+            related_activity_id (Optional[str]): Optional related activity id.
+
+        Returns:
+            Dict[str, Any]: Provider-normalized mutation result.
+
+        Side Effects:
+            Writes to the configured wellness repository.
+        """
         return await self._repository.create_diary_entry(
             user_id=user_id,
             title=title,
@@ -125,7 +241,22 @@ class WellnessService:
         energy_score: int,
         note: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Create a check-in for one user."""
+        """
+        Create a check-in for one user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            mood_score (int): Numeric mood score.
+            stress_score (int): Numeric stress score.
+            energy_score (int): Numeric energy score.
+            note (Optional[str]): Optional user note.
+
+        Returns:
+            Dict[str, Any]: Provider-normalized mutation result.
+
+        Side Effects:
+            Writes to the configured wellness repository.
+        """
         return await self._repository.create_checkin(
             user_id=user_id,
             mood_score=mood_score,
@@ -140,7 +271,21 @@ class WellnessService:
         *,
         keep_activity_catalog: bool = True,
     ) -> Dict[str, Any]:
-        """Reset wellness data for one user."""
+        """
+        Reset wellness data for one user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            keep_activity_catalog (bool): When True, preserves or reseeds the
+                default activity catalog. Defaults to True.
+
+        Returns:
+            Dict[str, Any]: Provider-normalized reset summary.
+
+        Side Effects:
+            Deletes or rewrites user-owned wellness data in the configured
+            repository.
+        """
         return await self._repository.reset_user_data(
             user_id=user_id,
             keep_activity_catalog=keep_activity_catalog,

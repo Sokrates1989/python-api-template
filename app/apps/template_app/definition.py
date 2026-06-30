@@ -29,4 +29,5 @@ TEMPLATE_APP_DEFINITION = BackendAppDefinition(
         ),
     ),
     exposes_sync_routes=TEMPLATE_APP_CONFIG.exposes_sync_routes,
+    migration_version_locations=("migrations/versions",),
 )

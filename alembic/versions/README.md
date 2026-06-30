@@ -1,8 +1,18 @@
-# Migration Examples
+# Global Migration Versions
 
-This directory contains **reference migration examples** showing common database schema changes.
+This directory contains global Alembic migrations that run for every selected
+SQL app profile.
+
+Product-specific and selected-feature migrations belong in
+`app/apps/<app_id>/migrations/versions/`, not here.
 
 ## ⚠️ Important
+
+Only provider-wide schema belongs in this directory. Examples include shared
+users/auth tables and sync infrastructure that every SQL app profile requires.
+
+Feature tables such as app-owned wellness tables must be created from the
+selected app migration stream.
 
 **All migrations (001-008) run automatically as a complete demonstration!**
 

@@ -24,6 +24,23 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+def get_version_table() -> str:
+    """
+    Return the Alembic version table configured for this migration scope.
+
+    Args:
+        None.
+
+    Returns:
+        str: Version table name from Alembic configuration, defaulting to the
+        shared ``alembic_version`` table.
+
+    Side Effects:
+        None.
+    """
+    return config.get_main_option("version_table", "alembic_version")
+
+
 def get_url() -> str:
     """Get database URL from environment variables."""
     load_dotenv()
@@ -96,6 +113,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        version_table=get_version_table(),
     )
 
     with context.begin_transaction():
@@ -118,6 +136,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
+            version_table=get_version_table(),
         )
 
         with context.begin_transaction():

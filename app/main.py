@@ -1,8 +1,15 @@
-﻿# Entry point for the FastAPI app
+"""
+Entry point for the selected FastAPI backend app.
+
+The module composes product-owned route registrations from `app/apps/<app_id>`
+with explicitly selected shared route groups. Shared infrastructure stays here,
+while app-specific routes, schemas, services, and migrations stay in their
+own app slices.
+"""
 import logging
 
 import uvicorn
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 from api.settings import settings
 from api.middleware import setup_middleware
@@ -28,18 +35,73 @@ app = FastAPI(
 # Configure OpenAPI and lifecycle events
 setup_openapi(app)
 
-# Include shared routes only when the app definition allows it.
-registered_routers: list[str] = []
-if selected_backend_app.include_shared_routes:
-    from api.shared_routes import test, files, packages, database_lock, users, examples
 
-    app.include_router(test.router)
-    app.include_router(files.router)
-    app.include_router(packages.router)
-    app.include_router(database_lock.router)
-    app.include_router(users.router)
-    app.include_router(examples.router)
-    registered_routers.extend(["/users", "/database/*", "/examples"])
+def _available_shared_route_groups() -> dict[str, APIRouter]:
+    """
+    Return shared route groups that apps may explicitly opt into.
+
+    Args:
+        None.
+
+    Returns:
+        dict[str, APIRouter]: Mapping from route group name to router instance.
+
+    Side Effects:
+        Imports shared route modules lazily so apps that disable shared routes
+        do not import unused route handlers.
+    """
+    from api.shared_routes import database_lock, examples, files, packages, test, users
+
+    return {
+        "test": test.router,
+        "files": files.router,
+        "packages": packages.router,
+        "database_lock": database_lock.router,
+        "users": users.router,
+        "examples": examples.router,
+    }
+
+
+def _include_selected_shared_routes(fastapi_app: FastAPI) -> tuple[str, ...]:
+    """
+    Mount only the shared route groups selected by the active backend app.
+
+    Args:
+        fastapi_app (FastAPI): Application instance receiving shared routers.
+
+    Returns:
+        tuple[str, ...]: Public route prefixes mounted from shared route groups.
+
+    Side Effects:
+        Mutates the FastAPI app by including selected APIRouter instances.
+        Logs a warning for unknown route group names.
+    """
+    if not selected_backend_app.include_shared_routes:
+        return ()
+
+    route_groups = _available_shared_route_groups()
+    mounted_prefixes: list[str] = []
+    for group_name in selected_backend_app.shared_route_groups:
+        router = route_groups.get(group_name)
+        if router is None:
+            log_event(
+                logger,
+                logging.WARNING,
+                "app.shared_route_group.unknown",
+                group=group_name,
+                app_id=selected_backend_app.app_id,
+            )
+            continue
+
+        fastapi_app.include_router(router)
+        prefix = getattr(router, "prefix", "") or "/"
+        mounted_prefixes.append(f"{prefix}/*")
+
+    return tuple(mounted_prefixes)
+
+
+# Include selected shared route groups before app-owned routes.
+registered_routers: list[str] = list(_include_selected_shared_routes(app))
 
 # Mount app-owned route registrations
 for route_registration in selected_backend_app.route_registrations:
@@ -57,6 +119,7 @@ log_event(
     db_type=settings.DB_TYPE,
     app_profile=app_profile,
     shared_routes=selected_backend_app.include_shared_routes,
+    shared_route_groups=selected_backend_app.shared_route_groups,
 )
 
 
@@ -75,6 +138,19 @@ if selected_backend_app.requires_redis:
 # Redis test Endpoints (only available when Redis is enabled).
 @app.get("/")
 def read_root():
+    """
+    Return a minimal root response for the selected backend app.
+
+    Args:
+        None.
+
+    Returns:
+        dict: Greeting payload, including Redis-backed visit count only when
+        Redis is enabled for the selected app.
+
+    Side Effects:
+        Increments the Redis `visits` key when Redis is configured.
+    """
     if r is None:
         return {"message": "Hello from FastAPI!"}
     visits = r.incr("visits")
@@ -83,6 +159,19 @@ def read_root():
 
 @app.get("/cache/{key}")
 def get_cache(key: str):
+    """
+    Read a Redis cache value when the selected app enables Redis.
+
+    Args:
+        key (str): Redis key to read.
+
+    Returns:
+        dict: Cache key and decoded value.
+
+    Raises:
+        HTTPException: HTTP 503 when Redis is disabled and HTTP 404 when the
+        key does not exist.
+    """
     if r is None:
         raise HTTPException(status_code=503, detail="Redis not available")
     value = r.get(key)
@@ -93,6 +182,19 @@ def get_cache(key: str):
 
 @app.post("/cache/{key}")
 def set_cache(key: str, value: str):
+    """
+    Write a Redis cache value when the selected app enables Redis.
+
+    Args:
+        key (str): Redis key to write.
+        value (str): Value to store.
+
+    Returns:
+        dict: Confirmation message.
+
+    Raises:
+        HTTPException: HTTP 503 when Redis is disabled for the selected app.
+    """
     if r is None:
         raise HTTPException(status_code=503, detail="Redis not available")
     r.set(key, value)
@@ -102,9 +204,20 @@ def set_cache(key: str, value: str):
 # Health check endpoint.
 @app.get("/health")
 def check_health():
+    """
+    Return feature-neutral runtime diagnostics for the selected backend app.
+
+    Args:
+        None.
+
+    Returns:
+        dict: App, database, provider, route, and startup-probe diagnostics.
+
+    Side Effects:
+        Reads FastAPI application state populated during startup.
+    """
     database_type = getattr(app.state, "database_type", settings.normalized_db_type())
     startup_probe = getattr(app.state, "startup_probe", None)
-    wellness_route_prefix = selected_backend_app.find_route_prefix("wellness")
 
     # Report startup probe status, handling "skipped" for no-db apps.
     probe_status = "unknown"
@@ -120,7 +233,10 @@ def check_health():
         "backend_data_profile": selected_backend_app.backend_data_profile,
         "database_type": database_type,
         "provider_profile": normalize_provider_db_type(database_type),
-        "wellness_route_prefix": wellness_route_prefix,
+        "registered_route_prefixes": list(selected_backend_app.registered_route_prefixes()),
+        "shared_route_groups": list(selected_backend_app.shared_route_groups)
+        if selected_backend_app.include_shared_routes
+        else [],
         "sync_routes_enabled": selected_backend_app.exposes_sync_routes,
         "requires_database": selected_backend_app.requires_database,
         "requires_redis": selected_backend_app.requires_redis,
@@ -132,6 +248,18 @@ def check_health():
 # Get Image version.
 @app.get("/version")
 def get_version():
+    """
+    Return the runtime image tag.
+
+    Args:
+        None.
+
+    Returns:
+        dict: `IMAGE_TAG` value from settings.
+
+    Side Effects:
+        None.
+    """
     return {"IMAGE_TAG": f"{settings.IMAGE_TAG}"}
 
 

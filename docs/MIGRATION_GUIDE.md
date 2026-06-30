@@ -2,6 +2,11 @@
 
 This guide demonstrates **real-world database schema changes** using Alembic migrations.
 
+> Multi-app boundary note: use `alembic/versions/` only for provider-wide
+> schema that intentionally affects every SQL app profile. Product-specific
+> schema belongs in `app/apps/<app_id>/migrations/versions/` and must be
+> declared by the selected app definition.
+
 ## Overview
 
 As your application evolves, you'll need to:

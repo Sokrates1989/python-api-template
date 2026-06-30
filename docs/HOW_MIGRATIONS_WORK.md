@@ -1,5 +1,11 @@
 # How Alembic Migrations Work
 
+> Multi-app boundary note: `alembic/versions/` is now reserved for
+> provider-wide schema that every SQL app profile needs. Product-specific and
+> selected-feature tables belong under
+> `app/apps/<app_id>/migrations/versions/` and must be declared through
+> `BackendAppDefinition.migration_version_locations`.
+
 ## Quick Answer
 
 **Q: How is defined what migrations will be run?**  
