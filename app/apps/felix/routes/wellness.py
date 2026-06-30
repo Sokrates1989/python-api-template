@@ -5,6 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from api.shared_dependencies.auth import get_user_id_from_token
 from apps.felix.schemas.wellness import (
+    FelixRewardsMutationResponse,
+    FelixRewardsResponse,
+    FelixRewardsStateUpdateRequest,
     WellnessActivitiesResponse,
     WellnessActivityMutationResponse,
     WellnessActivityUpdateRequest,
@@ -17,6 +20,7 @@ from apps.felix.schemas.wellness import (
     WellnessSyncBootstrapResponse,
     WellnessSyncChangesResponse,
 )
+from apps.felix.services.rewards_service import FelixRewardsService
 from apps.felix.services.wellness_service import FelixWellnessService
 
 router = APIRouter(tags=["wellness"], prefix="/v1/wellness")
@@ -25,6 +29,21 @@ router = APIRouter(tags=["wellness"], prefix="/v1/wellness")
 def get_service() -> FelixWellnessService:
     """Return the Felix wellness service."""
     return FelixWellnessService()
+
+
+def get_rewards_service() -> FelixRewardsService:
+    """Return the Felix rewards service.
+
+    Args:
+        None.
+
+    Returns:
+        FelixRewardsService: App-owned service for reward persistence.
+
+    Side Effects:
+        Resolves the active database handler through the service constructor.
+    """
+    return FelixRewardsService()
 
 
 def get_runtime_settings():
@@ -101,6 +120,56 @@ async def get_sync_changes(
     if result.get("status") != "success":
         _raise_result_error(result)
     return WellnessSyncChangesResponse(**result)
+
+
+@router.get("/rewards")
+async def get_rewards_state(
+    current_user_id: str = Depends(get_user_id_from_token),
+) -> FelixRewardsResponse:
+    """Return the authenticated user's Felix rewards state.
+
+    Args:
+        current_user_id (str): Authenticated user id from the bearer token.
+
+    Returns:
+        FelixRewardsResponse: Complete app-owned rewards state.
+
+    Raises:
+        HTTPException: When the configured database backend cannot serve the
+        rewards state.
+    """
+    service = get_rewards_service()
+    result = await service.get_rewards_state(current_user_id)
+    if result.get("status") != "success":
+        _raise_result_error(result)
+    return FelixRewardsResponse(**result)
+
+
+@router.patch("/rewards")
+async def update_rewards_state(
+    request: FelixRewardsStateUpdateRequest,
+    current_user_id: str = Depends(get_user_id_from_token),
+) -> FelixRewardsMutationResponse:
+    """Patch the authenticated user's Felix rewards state.
+
+    Args:
+        request (FelixRewardsStateUpdateRequest): Partial rewards-state patch.
+        current_user_id (str): Authenticated user id from the bearer token.
+
+    Returns:
+        FelixRewardsMutationResponse: Updated app-owned rewards state.
+
+    Raises:
+        HTTPException: When the configured database backend rejects the update.
+    """
+    service = get_rewards_service()
+    result = await service.update_rewards_state(
+        current_user_id,
+        request.model_dump(exclude_unset=True),
+    )
+    if result.get("status") != "success":
+        _raise_result_error(result)
+    return FelixRewardsMutationResponse(**result)
 
 
 @router.post("/dev/reset")
