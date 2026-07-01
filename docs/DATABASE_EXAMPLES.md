@@ -21,7 +21,7 @@ Official matrix details: [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md)
 - Model: `app/models/sql/example.py`
 - Service facade: `app/backend/services/example_service.py`
 - SQL adapter target: `app/backend/services/sql/example_service.py`
-- Routes: `app/api/routes/examples.py` (shared router)
+- Routes: `app/api/shared_routes/examples.py` (explicit shared route group)
 
 ## Neo4j Example Routes
 
@@ -29,19 +29,19 @@ Official matrix details: [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md)
 - Model: `app/models/neo4j/example.py`
 - Service facade: `app/backend/services/example_service.py`
 - Neo4j adapter target: `app/backend/services/neo4j/example_node_service.py`
-- Routes: `app/api/routes/examples.py` (shared router)
+- Routes: `app/api/shared_routes/examples.py` (explicit shared route group)
 
 ## MongoDB Example Routes
 
 - Path: `/examples/`
 - Service facade: `app/backend/services/example_service.py`
 - MongoDB adapter target: `app/backend/services/mongodb/example_service.py`
-- Routes: `app/api/routes/examples.py` (shared router)
+- Routes: `app/api/shared_routes/examples.py` (explicit shared route group)
 
 ## Shared User Routes
 
 - Path: `/users/*`
-- Routes: `app/api/routes/users.py`
+- Routes: `app/api/shared_routes/users.py` (explicit shared route group)
 - Service facade: `app/backend/services/user_service.py`
 - Provider services:
   - SQL: `app/backend/services/sql/user_service.py`
@@ -51,15 +51,32 @@ Official matrix details: [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md)
 ## Route Registration (Current)
 
 ```python
-from api.routes import examples
-from api.routes.sql import sync
+from apps.contracts import BackendAppDefinition, RouteRegistration
+from apps.template_app.config import TEMPLATE_APP_CONFIG
+from apps.template_app.routes import sync, wellness
 
-app.include_router(users.router)
-app.include_router(examples.router)
-app.include_router(sync.router)
+TEMPLATE_APP_DEFINITION = BackendAppDefinition(
+    app_id=TEMPLATE_APP_CONFIG.app_id,
+    display_name=TEMPLATE_APP_CONFIG.display_name,
+    backend_data_profile=TEMPLATE_APP_CONFIG.backend_data_profile,
+    route_registrations=(
+        RouteRegistration(
+            router=wellness.router,
+            external_prefix=TEMPLATE_APP_CONFIG.wellness_mount_prefix,
+            public_prefix=TEMPLATE_APP_CONFIG.wellness_public_prefix,
+        ),
+        RouteRegistration(
+            router=sync.router,
+            external_prefix="",
+            public_prefix=TEMPLATE_APP_CONFIG.sync_public_prefix,
+        ),
+    ),
+    shared_route_groups=("cache", "users", "examples"),
+)
 ```
 
-The shared routers enforce provider capabilities at runtime:
+Shared route groups are selected explicitly by each app definition. The shared
+routers enforce provider capabilities at runtime:
 - `examples` endpoints return `400` only for unsupported/unknown DB providers.
 - `sync` endpoints return `400` when `DB_TYPE` is not SQL-compatible.
 

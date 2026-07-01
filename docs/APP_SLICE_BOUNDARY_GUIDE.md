@@ -1,6 +1,6 @@
 # Backend App Slice Boundary Guide
 
-Last updated: 2026-06-30
+Last updated: 2026-07-01
 
 ## Purpose
 
@@ -75,11 +75,24 @@ Apps must explicitly choose shared route groups through
 
 Examples:
 
-- Felix exposes only `("users",)` from shared routes.
+- Felix exposes only explicitly selected shared groups such as `("cache", "users")`.
 - Template/demo apps may expose broader example or maintenance groups.
 - Internal apps such as secure messaging can disable shared routes entirely.
 
-Do not rely on broad defaults for product apps.
+`BackendAppDefinition.shared_route_groups` defaults to an empty tuple. Do not
+rely on broad defaults for any app profile.
+
+## Legacy Route Package
+
+`app/api/routes/` is compatibility-only. It exists so older imports can be
+retired deliberately, but it is not the authoritative home for new endpoint
+work.
+
+Use:
+
+- `app/apps/<app_id>/routes/` for product route facades,
+- `app/api/shared_routes/` for reusable opt-in route groups,
+- `app/main.py` only for app composition and platform endpoints.
 
 ## SQL Migration Ownership
 

@@ -25,7 +25,9 @@ This directory contains **Pydantic models** for Neo4j graph database.
 1. Copy `example.py` to `your_node.py`
 2. Modify the Pydantic fields
 3. Create a service in `backend/services/neo4j/` with Cypher queries
-4. Create routes in `api/routes/neo4j/`
+4. Create product route facades in `app/apps/<app_id>/routes/`, or create a
+   shared route group in `app/api/shared_routes/` when the endpoint is reusable
+   and explicitly opt-in
 5. **No migrations needed!**
 
 ## Example

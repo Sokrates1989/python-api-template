@@ -89,22 +89,11 @@ def _coerce_backend_app_definition(raw_definition: Any) -> BackendAppDefinition 
         return None
 
     # Read optional infrastructure flags from legacy definitions, defaulting to
-    # True for backward compatibility.
+    # no shared route groups so older app manifests do not inherit demo routes.
     requires_database = getattr(raw_definition, "requires_database", True)
     requires_redis = getattr(raw_definition, "requires_redis", True)
     include_shared_routes = getattr(raw_definition, "include_shared_routes", True)
-    shared_route_groups = getattr(
-        raw_definition,
-        "shared_route_groups",
-        (
-            "test",
-            "files",
-            "packages",
-            "database_lock",
-            "users",
-            "examples",
-        ),
-    )
+    shared_route_groups = getattr(raw_definition, "shared_route_groups", ())
     migration_version_locations = getattr(raw_definition, "migration_version_locations", ())
     openapi_security_schemes = getattr(raw_definition, "openapi_security_schemes", ())
     openapi_route_security = getattr(raw_definition, "openapi_route_security", ())

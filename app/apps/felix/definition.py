@@ -30,5 +30,5 @@ FELIX_APP_DEFINITION = BackendAppDefinition(
     ),
     migration_version_locations=("migrations/versions",),
     exposes_sync_routes=FELIX_APP_CONFIG.exposes_sync_routes,
-    shared_route_groups=("users",),
+    shared_route_groups=("cache", "users"),
 )

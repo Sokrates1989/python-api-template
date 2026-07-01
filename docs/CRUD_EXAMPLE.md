@@ -103,7 +103,7 @@ app/
 | **Model** | `models/example.py` | Defines database schema, table structure, and data validation |
 | **Service** | `backend/services/example_service.py` | Contains business logic, database operations, error handling |
 | **Schemas** | `api/schemas/sql/examples/` | Pydantic request/response models shared across routes |
-| **Routes** | `api/routes/examples.py` | HTTP endpoints importing schemas, returning responses |
+| **Routes** | `apps/<app_id>/routes/` or `api/shared_routes/` | App-owned HTTP facades or explicit shared route groups |
 
 ---
 
@@ -247,15 +247,15 @@ class YourService:
                 return {"status": "error", "message": str(e)}
 ```
 
-### Step 3: Create Your Routes
+### Step 3: Create Your App Route Facade
 
-**File**: `app/api/routes/your_routes.py`
+**File**: `app/apps/<app_id>/routes/your_routes.py`
 
 ```python
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
-from backend.services.your_service import YourService
+from apps.your_app.services.your_service import YourService
 
 router = APIRouter(tags=["your-resource"], prefix="/your-resource")
 service = YourService()
@@ -305,12 +305,18 @@ async def delete_item(item_id: str):
 
 ### Step 4: Register Your Routes
 
-**File**: `app/main.py`
+**File**: `app/apps/<app_id>/definition.py`
 
 ```python
-from api.routes import your_routes
+from apps.contracts import BackendAppDefinition, RouteRegistration
+from apps.your_app.routes import your_routes
 
-app.include_router(your_routes.router)
+BACKEND_APP_DEFINITION = BackendAppDefinition(
+    ...,
+    route_registrations=(
+        RouteRegistration(router=your_routes.router),
+    ),
+)
 ```
 
 ---

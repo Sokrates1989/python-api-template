@@ -166,12 +166,14 @@ Shared routes are opt-in per backend app. Configure them with:
 ```python
 BackendAppDefinition(
     ...,
-    shared_route_groups=("users",),
+    shared_route_groups=("cache", "users"),
 )
 ```
 
 Use only the groups an app genuinely needs. Product apps should not inherit
 example, package, file, or database-maintenance routes by default.
+The default shared route group list is empty, so every app profile must name
+its shared HTTP surface explicitly.
 
 ## Troubleshooting
 

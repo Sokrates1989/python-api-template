@@ -50,9 +50,10 @@ def _available_shared_route_groups() -> dict[str, APIRouter]:
         Imports shared route modules lazily so apps that disable shared routes
         do not import unused route handlers.
     """
-    from api.shared_routes import database_lock, examples, files, packages, test, users
+    from api.shared_routes import cache, database_lock, examples, files, packages, test, users
 
     return {
+        "cache": cache.router,
         "test": test.router,
         "files": files.router,
         "packages": packages.router,
@@ -135,7 +136,6 @@ if selected_backend_app.requires_redis:
     r = redis.Redis.from_url(settings.REDIS_URL)
 
 
-# Redis test Endpoints (only available when Redis is enabled).
 @app.get("/")
 def read_root():
     """
@@ -155,50 +155,6 @@ def read_root():
         return {"message": "Hello from FastAPI!"}
     visits = r.incr("visits")
     return {"message": f"Hello from FastAPI! This page has been visited {visits} times."}
-
-
-@app.get("/cache/{key}")
-def get_cache(key: str):
-    """
-    Read a Redis cache value when the selected app enables Redis.
-
-    Args:
-        key (str): Redis key to read.
-
-    Returns:
-        dict: Cache key and decoded value.
-
-    Raises:
-        HTTPException: HTTP 503 when Redis is disabled and HTTP 404 when the
-        key does not exist.
-    """
-    if r is None:
-        raise HTTPException(status_code=503, detail="Redis not available")
-    value = r.get(key)
-    if value is None:
-        raise HTTPException(status_code=404, detail="Key not found")
-    return {"key": key, "value": value.decode()}
-
-
-@app.post("/cache/{key}")
-def set_cache(key: str, value: str):
-    """
-    Write a Redis cache value when the selected app enables Redis.
-
-    Args:
-        key (str): Redis key to write.
-        value (str): Value to store.
-
-    Returns:
-        dict: Confirmation message.
-
-    Raises:
-        HTTPException: HTTP 503 when Redis is disabled for the selected app.
-    """
-    if r is None:
-        raise HTTPException(status_code=503, detail="Redis not available")
-    r.set(key, value)
-    return {"message": f"Stored key '{key}' with value '{value}'"}
 
 
 # Health check endpoint.

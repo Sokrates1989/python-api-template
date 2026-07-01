@@ -1,4 +1,11 @@
-"""Database-aware backup and restore routes."""
+"""
+Legacy database-aware backup and restore routes.
+
+Current app definitions do not mount these built-in backup endpoints. Backup
+and restore orchestration should use the external backup-restore service
+documented in ``docs/DATABASE_BACKUP.md``. This module remains only for
+compatibility imports.
+"""
 from __future__ import annotations
 
 import shutil
@@ -20,7 +27,15 @@ router = APIRouter(prefix="/backup", tags=["database backup"])
 
 
 class RestoreResponse(BaseModel):
-    """Response model for restore operation start."""
+    """
+    Response model for restore operation start.
+
+    Attributes:
+        success (bool): Whether restore startup was accepted.
+        message (str): Human-readable operation message.
+        warnings (List[str] | None): Optional provider warnings.
+        warning_count (int): Number of warnings returned.
+    """
 
     success: bool
     message: str
@@ -29,7 +44,21 @@ class RestoreResponse(BaseModel):
 
 
 class RestoreStatusResponse(BaseModel):
-    """Response model for restore operation status."""
+    """
+    Response model for restore operation status.
+
+    Attributes:
+        status (str): Restore status such as in_progress, completed, failed,
+            none, or unsupported.
+        current (int): Current progress count.
+        total (int): Total progress count.
+        message (str): Human-readable status message.
+        warnings_count (int): Number of warnings seen during restore.
+        warnings (List[str] | None): Optional warning details.
+        timestamp (str | None): Provider status timestamp.
+        is_locked (bool): Whether the database lock is active.
+        lock_operation (str | None): Active lock operation, when present.
+    """
 
     status: str  # in_progress, completed, failed, none, unsupported
     current: int = 0
@@ -43,31 +72,89 @@ class RestoreStatusResponse(BaseModel):
 
 
 class DatabaseStatsResponse(BaseModel):
-    """Response model for provider database statistics."""
+    """
+    Response model for provider database statistics.
+
+    Attributes:
+        database_type (str): Active database provider type.
+        stats (dict): Provider-specific database statistics.
+    """
 
     database_type: str
     stats: dict
 
 
 def _delete_file_safe(path: Path) -> None:
+    """
+    Delete a temporary backup file when it still exists.
+
+    Args:
+        path (Path): Temporary file path to remove.
+
+    Returns:
+        None.
+
+    Side Effects:
+        Removes the file from disk when present.
+    """
     if path.exists():
         path.unlink()
 
 
 def _upload_suffix(service: BackupService, filename: str | None) -> str:
+    """
+    Return the temporary upload suffix for a restore file.
+
+    Args:
+        service (BackupService): Backup facade exposing active provider type.
+        filename (str | None): Uploaded filename, when provided.
+
+    Returns:
+        str: Provider-appropriate suffix, preserving gzip extension when used.
+
+    Side Effects:
+        None.
+    """
     is_gzip = bool(filename and filename.endswith(".gz"))
     base_suffix = ".cypher" if service.db_type == "neo4j" else ".sql"
     return f"{base_suffix}.gz" if is_gzip else base_suffix
 
 
 def get_service() -> BackupService:
-    """Get a database-aware backup capability service instance."""
+    """
+    Return a database-aware backup capability service instance.
+
+    Args:
+        None.
+
+    Returns:
+        BackupService: Provider-aware backup service facade.
+
+    Side Effects:
+        Instantiates the backup service for the current request.
+    """
     return BackupService()
 
 
 @router.get("/download")
 async def download_backup(compress: bool = True, _: str = Depends(verify_admin_key)):
-    """Create and download a backup file when supported by the current provider."""
+    """
+    Create and download a backup file when supported by the current provider.
+
+    Args:
+        compress (bool): Whether to request gzip-compressed backup output.
+        _ (str): Validated admin credential from ``verify_admin_key``.
+
+    Returns:
+        FileResponse: Temporary backup file response with cleanup callback.
+
+    Raises:
+        HTTPException: HTTP 400 when unsupported and HTTP 500 when generation
+            fails.
+
+    Side Effects:
+        Creates and later deletes a temporary backup file.
+    """
     service = get_service()
     if not service.capabilities.supports_backup_download:
         raise HTTPException(
@@ -100,7 +187,24 @@ async def restore_from_uploaded_backup(
     file: UploadFile = File(...),
     _: str = Depends(verify_restore_key),
 ):
-    """Start restore from uploaded backup file in background when supported."""
+    """
+    Start restore from an uploaded backup file in the background.
+
+    Args:
+        background_tasks (BackgroundTasks): FastAPI background task manager.
+        file (UploadFile): Uploaded backup file.
+        _ (str): Validated restore credential from ``verify_restore_key``.
+
+    Returns:
+        JSONResponse: HTTP 202 response when restore startup is accepted.
+
+    Raises:
+        HTTPException: HTTP 400 when unsupported, HTTP 409 when another
+            operation holds the database lock, and HTTP 500 on startup failure.
+
+    Side Effects:
+        Writes the upload to a temporary file and schedules restore execution.
+    """
     service = get_service()
     if not service.capabilities.supports_restore_upload:
         raise HTTPException(
@@ -143,7 +247,22 @@ async def restore_from_uploaded_backup(
 
 @router.get("/restore-status", response_model=RestoreStatusResponse)
 async def get_restore_status(_: str = Depends(verify_restore_key)):
-    """Get status for restore operations when supported by the provider."""
+    """
+    Return restore operation status when supported by the provider.
+
+    Args:
+        _ (str): Validated restore credential from ``verify_restore_key``.
+
+    Returns:
+        RestoreStatusResponse: Restore progress, unsupported status, or empty
+            status when no restore is active.
+
+    Raises:
+        HTTPException: HTTP 500 when status retrieval fails.
+
+    Side Effects:
+        Reads provider restore status and database lock state.
+    """
     service = get_service()
     if not service.capabilities.supports_restore_status:
         return RestoreStatusResponse(
@@ -168,7 +287,22 @@ async def get_restore_status(_: str = Depends(verify_restore_key)):
 
 @router.get("/stats", response_model=DatabaseStatsResponse)
 async def get_database_stats(_: str = Depends(verify_admin_key)):
-    """Get database statistics for the current provider."""
+    """
+    Return database statistics for the current provider.
+
+    Args:
+        _ (str): Validated admin credential from ``verify_admin_key``.
+
+    Returns:
+        DatabaseStatsResponse: Active provider type and statistics.
+
+    Raises:
+        HTTPException: HTTP 400 when unsupported and HTTP 500 when statistics
+            retrieval fails.
+
+    Side Effects:
+        Reads provider statistics through the backup service facade.
+    """
     service = get_service()
     if not service.capabilities.supports_stats:
         raise HTTPException(

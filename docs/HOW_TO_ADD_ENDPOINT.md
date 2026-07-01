@@ -1,345 +1,229 @@
-# How to Add a New Endpoint
+# How To Add A New Endpoint
 
-This guide shows you exactly how to add a new endpoint to the API.
+This guide shows the current app-slice-first workflow for adding backend
+endpoints. Product endpoints belong under `app/apps/<app_id>/`; shared reusable
+route groups belong under `app/api/shared_routes/`.
 
-## 3-Step Process
+Never add `/api/` as a route prefix in this API service.
 
-### Step 1: Create Backend Service
+## Choose The Owner
 
-Create your business logic in `app/backend/services/`
+| Endpoint type | Location | Registration |
+| --- | --- | --- |
+| Product-specific endpoint | `app/apps/<app_id>/routes/` | `RouteRegistration` in the app definition. |
+| Product endpoint using shared runtime | `app/apps/<app_id>/routes/` | App route facade imports shared service/schema contracts. |
+| Reusable platform/shared endpoint | `app/api/shared_routes/` | App opts in through `shared_route_groups`. |
+| Legacy compatibility endpoint | `app/api/routes/` | Do not add new endpoints here. |
 
-**Example:** `app/backend/services/user_service.py`
+## Add A Product Endpoint
 
-```python
-"""
-User service - handles user-related business logic.
-"""
-from typing import Dict, List
+The example below adds a product-owned `products` route to
+`app/apps/template_app/`.
 
+### 1. Create The Service
 
-class UserService:
-    """Service for user operations."""
-    
-    def get_users(self) -> Dict[str, List]:
-        """
-        Get all users.
-        
-        Returns:
-            Dictionary with list of users
-        """
-        # Your business logic here
-        users = [
-            {"id": 1, "name": "Alice"},
-            {"id": 2, "name": "Bob"}
-        ]
-        return {"users": users}
-    
-    def get_user_by_id(self, user_id: int) -> Dict:
-        """
-        Get user by ID.
-        
-        Args:
-            user_id: User ID
-            
-        Returns:
-            Dictionary with user data or error
-        """
-        # Your business logic here
-        if user_id == 1:
-            return {"user": {"id": 1, "name": "Alice"}}
-        return {"error": "User not found"}
-```
-
-### Step 2: Create Route Handler
-
-Create your HTTP endpoints in `app/api/routes/`
-
-**Example:** `app/api/routes/users.py`
+Create `app/apps/template_app/services/product_service.py`.
 
 ```python
 """
-Users route - handles user-related HTTP endpoints.
+Product service for the Template App slice.
 
-STRUCTURE:
-- This file: HTTP request/response handling only
-- Business logic: backend/services/user_service.py
+This module keeps product-specific behavior inside the owning app slice.
 """
-from fastapi import APIRouter
-from backend.services.user_service import UserService
-
-router = APIRouter(tags=["users"], prefix="/users")
-
-# Initialize service
-user_service = UserService()
-
-
-@router.get("/")
-def get_users():
-    """Get all users."""
-    return user_service.get_users()
-
-
-@router.get("/{user_id}")
-def get_user(user_id: int):
-    """Get user by ID."""
-    return user_service.get_user_by_id(user_id)
-```
-
-### Step 3: Register Route in Main
-
-Add your router to `app/main.py`
-
-```python
-# Import your new route
-from api.routes import test, files, users  # Add users here
-
-# Register the router
-app.include_router(test.router)
-app.include_router(files.router)
-app.include_router(users.router)  # Add this line
-```
-
-## Complete Example
-
-Let's create a "products" endpoint from scratch:
-
-### 1. Create Service: `app/backend/services/product_service.py`
-
-```python
-"""Product service - handles product business logic."""
-from typing import Dict, List, Optional
 
 
 class ProductService:
-    """Service for product operations."""
-    
-    def __init__(self):
-        # In real app, this would use database
+    """
+    Provide product catalog operations for Template App.
+
+    Attributes:
+        products (list[dict[str, object]]): In-memory example product rows.
+
+    Methods:
+        list_products: Return the product catalog.
+    """
+
+    def __init__(self) -> None:
+        """
+        Initialize the example product catalog.
+
+        Args:
+            None.
+
+        Returns:
+            None.
+
+        Side Effects:
+            Stores in-memory example data on the service instance.
+        """
         self.products = [
             {"id": 1, "name": "Laptop", "price": 999.99},
             {"id": 2, "name": "Mouse", "price": 29.99},
         ]
-    
-    def get_all_products(self) -> Dict[str, List]:
-        """Get all products."""
-        return {"products": self.products}
-    
-    def get_product(self, product_id: int) -> Dict:
-        """Get product by ID."""
-        product = next(
-            (p for p in self.products if p["id"] == product_id),
-            None
-        )
-        if product:
-            return {"product": product}
-        return {"error": "Product not found"}
-    
-    def search_products(self, query: str) -> Dict[str, List]:
-        """Search products by name."""
-        results = [
-            p for p in self.products 
-            if query.lower() in p["name"].lower()
-        ]
-        return {"products": results, "count": len(results)}
+
+    def list_products(self) -> dict[str, object]:
+        """
+        Return all products.
+
+        Args:
+            None.
+
+        Returns:
+            dict[str, object]: Product list and count.
+
+        Side Effects:
+            None.
+        """
+        return {"products": self.products, "count": len(self.products)}
 ```
 
-### 2. Create Route: `app/api/routes/products.py`
+### 2. Create The Route Facade
+
+Create `app/apps/template_app/routes/products.py`.
 
 ```python
 """
-Products route - handles product HTTP endpoints.
+Product routes owned by the Template App slice.
 
-STRUCTURE:
-- This file: HTTP request/response handling only
-- Schemas: api/schemas/products/ (Pydantic models)
-- Business logic: backend/services/product_service.py
+The router exposes Template App product behavior and is mounted only when the
+Template App definition registers it.
 """
-from fastapi import APIRouter, Query
-from backend.services.product_service import ProductService
-from api.schemas.products.requests import ProductSearchRequest
-from api.schemas.products.responses import ProductListResponse
+from fastapi import APIRouter
 
-router = APIRouter(tags=["products"], prefix="/products")
+from apps.template_app.services.product_service import ProductService
 
-# Initialize service
-product_service = ProductService()
+router = APIRouter(tags=["products"], prefix="/v1/products")
 
 
-@router.get("/", response_model=ProductListResponse)
-def get_products():
-    """Get all products."""
-    return ProductListResponse(**product_service.get_all_products())
+def get_service() -> ProductService:
+    """
+    Return the Template App product service.
+
+    Args:
+        None.
+
+    Returns:
+        ProductService: App-owned service facade.
+
+    Side Effects:
+        Instantiates the service for the current request.
+    """
+    return ProductService()
 
 
-@router.get("/search", response_model=ProductListResponse)
-def search_products(q: str = Query(..., description="Search query")):
-    """Search products by name."""
-    request = ProductSearchRequest(query=q)
-    return ProductListResponse(**product_service.search_products(request.query))
+@router.get("")
+def list_products() -> dict[str, object]:
+    """
+    Return the Template App product catalog.
 
+    Args:
+        None.
 
-@router.get("/{product_id}")
-def get_product(product_id: int):
-    """Get product by ID."""
-    return product_service.get_product(product_id)
+    Returns:
+        dict[str, object]: Product list and count.
+
+    Side Effects:
+        None.
+    """
+    return get_service().list_products()
 ```
 
-### 3. Register in `app/main.py`
+### 3. Register The Route In The App Definition
+
+Edit `app/apps/template_app/definition.py`.
 
 ```python
-from api.routes import test, files, products
+from apps.contracts import BackendAppDefinition, RouteRegistration
+from apps.template_app.config import TEMPLATE_APP_CONFIG
+from apps.template_app.routes import products, sync, wellness
 
-app.include_router(test.router)
-app.include_router(files.router)
-app.include_router(products.router)
+
+TEMPLATE_APP_DEFINITION = BackendAppDefinition(
+    app_id=TEMPLATE_APP_CONFIG.app_id,
+    display_name=TEMPLATE_APP_CONFIG.display_name,
+    backend_data_profile=TEMPLATE_APP_CONFIG.backend_data_profile,
+    route_registrations=(
+        RouteRegistration(
+            router=wellness.router,
+            external_prefix=TEMPLATE_APP_CONFIG.wellness_mount_prefix,
+            public_prefix=TEMPLATE_APP_CONFIG.wellness_public_prefix,
+        ),
+        RouteRegistration(
+            router=products.router,
+            external_prefix=TEMPLATE_APP_CONFIG.wellness_mount_prefix,
+            public_prefix="/template/v1/products",
+        ),
+        RouteRegistration(
+            router=sync.router,
+            external_prefix="",
+            public_prefix=TEMPLATE_APP_CONFIG.sync_public_prefix,
+        ),
+    ),
+)
 ```
 
-### 4. Test Your Endpoint
+Do not mount product routers directly in `app/main.py`.
+
+### 4. Test The Endpoint
 
 ```bash
-# Get all products
-curl http://localhost:8081/products/
-
-# Get specific product
-curl http://localhost:8081/products/1
-
-# Search products
-curl http://localhost:8081/products/search?q=laptop
-
-# View in Swagger UI
-open http://localhost:8081/docs
+curl http://localhost:8081/template/v1/products
 ```
 
-## Using Database in Your Service
+Use the selected app's actual mount prefix. Swagger UI is still available at
+`http://localhost:8081/docs`.
 
-If your service needs database access:
+## Add A Shared Route Group
+
+Create shared routes only when the route is product-neutral and reusable across
+apps. Place the module under `app/api/shared_routes/`.
 
 ```python
-"""Product service with database."""
-from backend.services.database_service import DatabaseService
+"""
+Shared operational ping routes.
+
+Apps opt in by listing the route group in shared_route_groups.
+"""
+from fastapi import APIRouter
+
+router = APIRouter(tags=["ops"], prefix="/ops")
 
 
-class ProductService:
-    """Service for product operations with database."""
-    
-    def __init__(self):
-        self.db_service = DatabaseService()
-    
-    async def get_products_from_db(self):
-        """Get products from database."""
-        # The database service automatically uses Neo4j or SQL
-        # based on your .env configuration
-        result = await self.db_service.execute_sample_query()
-        return result
+@router.get("/ping")
+def ping() -> dict[str, str]:
+    """
+    Return a lightweight operational ping.
+
+    Args:
+        None.
+
+    Returns:
+        dict[str, str]: Static status payload.
+
+    Side Effects:
+        None.
+    """
+    return {"status": "ok"}
 ```
 
-## Project Structure
-
-```
-app/
-├── api/
-│   ├── routes/
-│   │   ├── test.py          # Example: Database endpoints
-│   │   ├── files.py         # Example: File endpoints
-│   │   └── products.py      # Your new endpoint
-│   └── schemas/
-│       └── products/        # Pydantic request/response models
-├── backend/
-│   ├── database/            # Database layer (auto Neo4j/SQL)
-│   └── services/
-│       ├── database_service.py  # Database operations
-│       ├── file_service.py      # File operations
-│       └── product_service.py   # Your new service
-└── main.py                  # Register routes here
-```
-
-## Key Principles
-
-### ✅ DO
-
-- **Routes**: Only handle HTTP (request/response)
-- **Services**: Contain all business logic
-- **Separation**: Keep routes thin, services fat
-- **Reusability**: Services can be used by multiple routes
-
-### ❌ DON'T
-
-- Put business logic in routes
-- Access database directly from routes
-- Mix HTTP concerns with business logic
-- Duplicate code between routes
-
-## Real-World Example
-
-### Bad (Everything in Route)
+Then add the group to `_available_shared_route_groups()` in `app/main.py` and
+opt in from each app definition that needs it:
 
 ```python
-# ❌ DON'T DO THIS
-@router.get("/users")
-def get_users():
-    # Business logic in route - BAD!
-    if not db_connected:
-        return {"error": "Database not connected"}
-    
-    users = []
-    for row in db.execute("SELECT * FROM users"):
-        users.append({
-            "id": row[0],
-            "name": row[1],
-            "email": row[2]
-        })
-    
-    return {"users": users}
+BackendAppDefinition(
+    ...,
+    shared_route_groups=("ops", "users"),
+)
 ```
 
-### Good (Separated)
+## Endpoint Checklist
 
-```python
-# ✅ DO THIS
-
-# Route: app/api/routes/users.py
-@router.get("/users")
-async def get_users():
-    return await user_service.get_users()
-
-# Service: app/backend/services/user_service.py
-async def get_users(self):
-    if not await self.db_service.test_connection():
-        return {"error": "Database not connected"}
-    
-    users = await self.db_service.execute_query(
-        "SELECT * FROM users"
-    )
-    return {"users": users}
-```
-
-## Summary
-
-1. **Create service** in `app/backend/services/your_service.py`
-2. **Create route** in `app/api/routes/your_route.py`
-3. **Register route** in `app/main.py`
-4. **Test** at `http://localhost:8081/docs`
-
-That's it! The structure keeps everything clean and maintainable.
-
-## Database Handling
-
-The database layer automatically handles Neo4j vs SQL:
-
-```python
-# In your service
-from backend.services.database_service import DatabaseService
-
-class YourService:
-    def __init__(self):
-        self.db = DatabaseService()
-    
-    async def your_method(self):
-        # This works with BOTH Neo4j and SQL
-        # The database type is configured in .env
-        result = await self.db.test_connection()
-        return result
-```
-
-You don't need to worry about which database is being used - it's handled automatically!
-
+- Product name, app copy, app-only table, reward, Startlist, streak, or Sonnen
+  behavior: keep it under `app/apps/<app_id>/`.
+- Shared reusable HTTP surface: put it under `app/api/shared_routes/` and make
+  apps opt in explicitly.
+- Shared runtime without product semantics: `app/backend/` or `app/api/schemas/`
+  can be appropriate.
+- Product SQL migration: `app/apps/<app_id>/migrations/versions/`.
+- Provider-wide migration: `alembic/versions/`.
+- Route prefix starts with `/api/`: reject it.

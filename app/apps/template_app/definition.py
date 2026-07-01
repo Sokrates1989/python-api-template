@@ -30,4 +30,13 @@ TEMPLATE_APP_DEFINITION = BackendAppDefinition(
     ),
     exposes_sync_routes=TEMPLATE_APP_CONFIG.exposes_sync_routes,
     migration_version_locations=("migrations/versions",),
+    shared_route_groups=(
+        "cache",
+        "test",
+        "files",
+        "packages",
+        "database_lock",
+        "users",
+        "examples",
+    ),
 )

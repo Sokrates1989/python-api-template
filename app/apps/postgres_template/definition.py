@@ -1,4 +1,9 @@
-"""Postgres Template app backend definition."""
+"""
+Postgres Template app backend definition.
+
+This module declares app-owned route registrations, app-local migrations, and
+the explicit shared route groups exposed by the Postgres template profile.
+"""
 from __future__ import annotations
 
 from apps.contracts import (
@@ -32,6 +37,15 @@ POSTGRES_TEMPLATE_APP_DEFINITION = BackendAppDefinition(
     ),
     exposes_sync_routes=POSTGRES_TEMPLATE_APP_CONFIG.exposes_sync_routes,
     migration_version_locations=("migrations/versions",),
+    shared_route_groups=(
+        "cache",
+        "test",
+        "files",
+        "packages",
+        "database_lock",
+        "users",
+        "examples",
+    ),
     openapi_security_schemes=(
         OpenApiSecurityScheme(
             name="UserBearerAuth",

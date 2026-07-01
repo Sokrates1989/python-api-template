@@ -1,468 +1,197 @@
 # Project Structure Guide
 
-Clear explanation of the project structure and how everything fits together.
-
-## Current App/Global Boundary
-
-Product-specific backend code belongs under `app/apps/<app_id>/`. Global
-folders are for product-neutral infrastructure or explicitly shared feature
-runtimes only.
-
-Do not add product routes directly to `app/api/routes` or register app-specific
-routers directly in `app/main.py`. Add app-owned route facades under
-`app/apps/<app_id>/routes` and expose them through the app's
-`BackendAppDefinition`.
-
-Do not add product-specific SQL migrations to `alembic/versions`. Use
-`app/apps/<app_id>/migrations/versions` and declare the folder in
-`migration_version_locations`.
+This guide explains where backend code belongs in the multi-app template. The
+default rule is app-slice-first: product behavior lives under
+`app/apps/<app_id>/`, while global folders hold reusable infrastructure,
+contracts, provider adapters, shared route groups, and documented shared
+feature runtimes.
 
 See also: `docs/APP_SLICE_BOUNDARY_GUIDE.md`.
 
-## Directory Structure
+## Route Ownership
 
-```
+| Code type | Correct location | Notes |
+| --- | --- | --- |
+| Product route facade | `app/apps/<app_id>/routes/` | Register through the app definition. |
+| Product service facade | `app/apps/<app_id>/services/` | Keep product copy and app-specific behavior here. |
+| Product schema aliases | `app/apps/<app_id>/schemas/` | Re-export shared schemas here when an app uses a shared runtime. |
+| Product SQL migrations | `app/apps/<app_id>/migrations/versions/` | Declare with `migration_version_locations`. |
+| Shared route group | `app/api/shared_routes/` | Must be explicitly selected by an app definition. |
+| Shared feature runtime | `app/backend/` or `app/api/schemas/` | Allowed only when product-neutral and documented. |
+| Provider-wide migration | `alembic/versions/` | Use only for schema required by all SQL app profiles. |
+| Legacy route compatibility | `app/api/routes/` | Compatibility-only; do not add new product routes here. |
+
+Never add `/api/` as a route prefix in this API service.
+
+## Directory Overview
+
+```text
 python-api-template/
-├── app/                              # Application code
-│   ├── api/                          # 🌐 API Layer (HTTP)
-│   │   ├── routes/                   # Route handlers
-│   │   │   ├── __init__.py
-│   │   │   ├── test.py              # Database test endpoints
-│   │   │   ├── files.py             # File operation endpoints
-│   │   │   └── [your_route].py      # Your new endpoints here
-│   │   ├── schemas/                  # Request/response Pydantic models
-│   │   │   ├── sql/                 # SQL-specific schemas
-│   │   │   └── neo4j/               # Neo4j-specific schemas
-│   │   └── settings.py              # Configuration management
-│   │
-│   ├── backend/                      # 🔧 Backend Layer (Business Logic)
-│   │   ├── database/                 # Database abstraction
-│   │   │   ├── __init__.py
-│   │   │   ├── base.py              # Abstract interface
-│   │   │   ├── factory.py           # Database factory
-│   │   │   ├── neo4j_handler.py     # Neo4j implementation
-│   │   │   ├── sql_handler.py       # SQL implementation
-│   │   │   ├── init_db.py           # Initialization
-│   │   │   └── queries.py           # Query helpers
-│   │   │
-│   │   └── services/                 # Business logic services
-│   │       ├── __init__.py
-│   │       ├── database_service.py  # Database operations
-│   │       ├── file_service.py      # File operations
-│   │       └── [your_service].py    # Your new services here
-│   │
-│   ├── models/                       # 📊 Data Models
-│   │   ├── __init__.py
-│   │   └── sql/example_sql_models.py    # SQLAlchemy models
-│   │
-│   ├── apps/                         # 🧩 Backend app slices
-│   │   ├── template_app/             # Reference app slice
-│   │   │   ├── config/
-│   │   │   ├── definition.py
-│   │   │   ├── deployment/
-│   │   │   ├── env/
-│   │   │   ├── routes/
-│   │   │   ├── schemas/
-│   │   │   ├── services/
-│   │   │   ├── pyproject.toml
-│   │   │   └── pdm.lock
-│   │   └── [your_app]/               # Add new app slices here
-│   │
-│   ├── mounted_data/                 # Example data
-│   └── main.py                       # 🚀 Application entry point
-│
-├── docs/                             # 📚 Documentation
-│   ├── QUICK_START.md               # Quick start guide
-│   ├── HOW_TO_ADD_ENDPOINT.md       # How to add endpoints
-│   ├── DATABASE.md                  # Database guide
-│   ├── ARCHITECTURE.md              # Architecture overview
-│   ├── PROJECT_STRUCTURE.md         # This file
-│   └── README-DE.md                 # German documentation
-│
-├── .env.template                     # Environment template
-├── docker-compose.yml                # Docker configuration
-├── Dockerfile                        # Docker build
-├── pyproject.toml                    # Dependencies
-└── README.md                         # Main documentation
+|-- app/
+|   |-- apps/
+|   |   |-- contracts.py
+|   |   |-- registry.py
+|   |   |-- template_app/
+|   |   |   |-- config/
+|   |   |   |-- definition.py
+|   |   |   |-- deployment/
+|   |   |   |-- env/
+|   |   |   |-- migrations/versions/
+|   |   |   |-- routes/
+|   |   |   |-- schemas/
+|   |   |   `-- services/
+|   |   `-- <app_id>/
+|   |-- api/
+|   |   |-- shared_routes/
+|   |   |-- shared_dependencies/
+|   |   |-- shared_schemas/
+|   |   |-- schemas/
+|   |   |-- routes/
+|   |   |-- middleware/
+|   |   |-- config/
+|   |   `-- settings.py
+|   |-- backend/
+|   |   |-- adapters/
+|   |   |-- database/
+|   |   |-- ports/
+|   |   |-- services/
+|   |   `-- shared_services/
+|   |-- models/
+|   `-- main.py
+|-- alembic/versions/
+|-- docs/
+`-- tests/
 ```
 
-## Layer Responsibilities
+## Backend App Slices
 
-### 🧩 Backend App Slices (`app/apps/`)
+`app/apps/<app_id>/` contains selected-app code. Each slice owns its public
+route facades, service facades, schema aliases, config, deployment overrides,
+and app-owned migrations.
 
-**Purpose:** Self-contained backend applications that plug into the shared API
-runtime. Each slice owns its routes, services, schemas, configuration, and
-deployment overrides.
-
-**Contains:**
-- `template_app/` - Reference implementation
-- `[your_app]/` - New app slices
-
-**Responsibilities:**
-- Register route families under the app-specific prefix
-- Own app-specific schemas and service facades
-- Provide app-specific environment and compose overrides
-- Own app-specific SQL migrations under `migrations/versions`
-- Choose shared route groups explicitly
-
-**Adding a new app:**
-See `app/apps/README.md` for the copy-rename workflow from `template_app`.
-
-**Example:**
 ```python
-# app/apps/felix/definition.py
-from apps.contracts import BackendAppDefinition
+"""
+Felix backend definition.
+
+This module declares the route families owned by the Felix backend slice.
+"""
+from apps.contracts import BackendAppDefinition, RouteRegistration
 from apps.felix.config import FELIX_APP_CONFIG
 from apps.felix.routes import sync, wellness
 
+
 FELIX_APP_DEFINITION = BackendAppDefinition(
     app_id=FELIX_APP_CONFIG.app_id,
+    display_name=FELIX_APP_CONFIG.display_name,
+    backend_data_profile=FELIX_APP_CONFIG.backend_data_profile,
     route_registrations=(
         RouteRegistration(
             router=wellness.router,
             external_prefix=FELIX_APP_CONFIG.wellness_mount_prefix,
             public_prefix=FELIX_APP_CONFIG.wellness_public_prefix,
         ),
+        RouteRegistration(
+            router=sync.router,
+            external_prefix="",
+            public_prefix=FELIX_APP_CONFIG.sync_public_prefix,
+        ),
     ),
+    migration_version_locations=("migrations/versions",),
+    shared_route_groups=("cache", "users"),
 )
 ```
 
-### 🌐 API Layer (`app/api/`)
+## Shared Routes
 
-**Purpose:** Handle shared HTTP infrastructure and compatibility/reference
-routes.
+Shared route groups live under `app/api/shared_routes/`. They are reusable HTTP
+surfaces, not product routes. Apps opt in explicitly through
+`BackendAppDefinition.shared_route_groups`.
 
-**Contains:**
-- Route handlers (`routes/`)
-- Configuration (`settings.py`)
+Current shared groups include:
 
-**Responsibilities:**
-- Define shared or compatibility HTTP endpoints
-- Parse request parameters
-- Return HTTP responses
-- Input validation
-- Leave selected app product routes under `app/apps/<app_id>/routes`
+- `cache`: Redis cache diagnostics.
+- `database_lock`: database restore lock management.
+- `examples`: provider-neutral example CRUD routes.
+- `files`: file inspection helpers.
+- `packages`: package inspection helpers.
+- `test`: database test helpers.
+- `users`: shared user profile routes.
 
-**Example:**
-```python
-# app/api/routes/users.py
-@router.get("/users/{user_id}")
-def get_user(user_id: int):
-    return user_service.get_user_by_id(user_id)
-```
+Template and demo apps may expose broad helper groups. Product apps should list
+only the groups they actually need.
 
-### 🔧 Backend Layer (`app/backend/`)
+## Global API Folder
 
-**Purpose:** Business logic and data operations
+`app/api/` is for HTTP infrastructure, shared dependencies, shared schemas, and
+explicit shared route groups. `app/api/routes/` remains only for legacy
+compatibility modules. Do not add new product endpoints there.
 
-**Contains:**
-- Database handlers (`database/`)
-- Business services (`services/`)
+## Backend Runtime
 
-**Responsibilities:**
-- Business logic
-- Data processing
-- Database operations
-- External API calls
+`app/backend/` contains provider-neutral runtime code:
 
-**Example:**
-```python
-# app/backend/services/user_service.py
-def get_user_by_id(self, user_id: int):
-    # Business logic here
-    return {"user": {...}}
-```
+- `ports/`: contracts such as repository or capability interfaces.
+- `adapters/`: provider factory and adapter selection logic.
+- `shared_services/`: reusable service facades.
+- `services/`: provider-specific service implementations.
+- `database/`: database initialization, handlers, migrations, and probes.
 
-### 📊 Models Layer (`app/models/`)
-
-**Purpose:** Data structure definitions
-
-**Contains:**
-- SQLAlchemy models (for SQL databases)
-- Pydantic schemas (for validation)
-
-**Responsibilities:**
-- Define data structures
-- Database schema (ORM)
-- Data validation
+Shared runtimes must stay product-neutral. If a module mentions Felix rewards,
+Startlist, streaks, Sonnen copy, or a single product route, it belongs in the
+owning app slice unless a documented shared feature runtime justifies it.
 
 ## Request Flow
 
-```
-1. HTTP Request
-   ↓
-2. FastAPI Router (app/api/routes/)
-   ↓
-3. Route Handler
-   ↓
-4. Service (app/backend/services/)
-   ↓
-5. Database Handler (app/backend/database/)
-   ↓
-6. Database (Neo4j or SQL)
-   ↓
-7. Response flows back up
+```text
+HTTP request
+  -> FastAPI app in app/main.py
+  -> selected shared route group or app-owned RouteRegistration
+  -> app route facade under app/apps/<app_id>/routes/
+  -> app service facade under app/apps/<app_id>/services/
+  -> shared runtime or provider adapter
+  -> database/provider
 ```
 
-## Adding New Features
+`main.py` composes selected routes. It should not import product route modules
+directly or mount app-specific routers by hand.
 
-### Scenario 1: Add New Endpoint (No Database)
+## Adding Product Features
 
-**Example:** Add a calculator endpoint
+1. Put route handlers in `app/apps/<app_id>/routes/`.
+2. Put app-specific schemas in `app/apps/<app_id>/schemas/`.
+3. Put app-specific services in `app/apps/<app_id>/services/`.
+4. Put app-owned migrations in `app/apps/<app_id>/migrations/versions/`.
+5. Register route families in `app/apps/<app_id>/definition.py`.
+6. Add only necessary shared route groups to `shared_route_groups`.
 
-1. **Create Service:** `app/backend/services/calculator_service.py`
-   ```python
-   class CalculatorService:
-       def add(self, a: int, b: int):
-           return {"result": a + b}
-   ```
+Use global folders only for reusable infrastructure or product-neutral shared
+runtime code.
 
-2. **Create Route:** `app/api/routes/calculator.py`
-   ```python
-   from backend.services.calculator_service import CalculatorService
-   
-   calculator_service = CalculatorService()
-   
-   @router.get("/add")
-   def add(a: int, b: int):
-       return calculator_service.add(a, b)
-   ```
+## Migration Ownership
 
-3. **Register:** In `app/main.py`
-   ```python
-   from api.routes import calculator
-   app.include_router(calculator.router)
-   ```
+Global migrations in `alembic/versions/` apply to every SQL app profile.
+Product tables and selected-feature tables belong in the selected app's
+migration stream:
 
-### Scenario 2: Add Endpoint with Database
-
-**Example:** Add a users endpoint
-
-1. **Create Service:** `app/backend/services/user_service.py`
-   ```python
-   from backend.services.database_service import DatabaseService
-   
-   class UserService:
-       def __init__(self):
-           self.db = DatabaseService()
-       
-       async def get_users(self):
-           # Database automatically uses Neo4j or SQL
-           return await self.db.execute_sample_query()
-   ```
-
-2. **Create Route:** `app/api/routes/users.py`
-   ```python
-   from backend.services.user_service import UserService
-   
-   user_service = UserService()
-   
-   @router.get("/users")
-   async def get_users():
-       return await user_service.get_users()
-   ```
-
-3. **Register:** In `app/main.py`
-   ```python
-   from api.routes import users
-   app.include_router(users.router)
-   ```
-
-## Database Layer
-
-The database layer automatically handles Neo4j vs SQL based on `.env` configuration.
-
-### Configuration
-
-```bash
-# .env
-DB_TYPE=neo4j  # official: neo4j, postgresql/postgres, mongodb
+```text
+app/apps/<app_id>/migrations/versions/
 ```
 
-### Usage in Services
+Declare that stream in the app definition:
 
 ```python
-from backend.services.database_service import DatabaseService
-
-class YourService:
-    def __init__(self):
-        self.db = DatabaseService()
-    
-    async def your_method(self):
-        # Works with both Neo4j and SQL
-        result = await self.db.test_connection()
-        return result
+BackendAppDefinition(
+    ...,
+    migration_version_locations=("migrations/versions",),
+)
 ```
 
-### How It Works
-
-```
-Your Service
-    ↓
-DatabaseService (app/backend/services/database_service.py)
-    ↓
-DatabaseFactory (app/backend/database/factory.py)
-    ↓
-    ├─→ Neo4jHandler (if DB_TYPE=neo4j)
-    └─→ SQLHandler (if DB_TYPE=postgresql/postgres)
-```
-
-## File Organization Best Practices
-
-### ✅ DO
-
-```
-app/
-├── api/routes/
-│   ├── users.py          # User endpoints
-│   ├── products.py       # Product endpoints
-│   └── orders.py         # Order endpoints
-│
-└── backend/services/
-    ├── user_service.py   # User business logic
-    ├── product_service.py # Product business logic
-    └── order_service.py  # Order business logic
-```
-
-### ❌ DON'T
-
-```
-app/
-├── api/routes/
-│   └── everything.py     # All endpoints in one file
-│
-└── backend/
-    └── logic.py          # All logic in one file
-```
-
-## Common Patterns
-
-### Pattern 1: Simple CRUD
-
-```python
-# Service
-class UserService:
-    async def create_user(self, data): pass
-    async def get_user(self, user_id): pass
-    async def update_user(self, user_id, data): pass
-    async def delete_user(self, user_id): pass
-
-# Route
-@router.post("/users")
-async def create_user(data: UserCreate):
-    return await user_service.create_user(data)
-```
-
-### Pattern 2: With Validation
-
-```python
-# Service
-class ProductService:
-    def validate_price(self, price: float):
-        if price < 0:
-            raise ValueError("Price cannot be negative")
-        return True
-    
-    def create_product(self, data):
-        self.validate_price(data["price"])
-        # Create product
-
-# Route
-@router.post("/products")
-def create_product(data: ProductCreate):
-    try:
-        return product_service.create_product(data)
-    except ValueError as e:
-        return {"error": str(e)}
-```
-
-### Pattern 3: With Database
-
-```python
-# Service
-class OrderService:
-    def __init__(self):
-        self.db = DatabaseService()
-    
-    async def get_orders(self):
-        # Automatically uses correct database
-        return await self.db.execute_sample_query()
-
-# Route
-@router.get("/orders")
-async def get_orders():
-    return await order_service.get_orders()
-```
-
-## Testing Structure
-
-```
-tests/
-├── api/                  # Test routes
-│   ├── test_users.py
-│   └── test_products.py
-│
-├── backend/              # Test services
-│   ├── test_user_service.py
-│   └── test_product_service.py
-│
-└── database/             # Test database
-    ├── test_neo4j.py
-    └── test_sql.py
-```
-
-## Configuration Files
-
-### `.env` - Environment Configuration
-
-```bash
-# Database
-DB_TYPE=neo4j  # official: neo4j, postgresql/postgres, mongodb
-NEO4J_URL=bolt://localhost:7687
-DB_USER=neo4j
-DB_PASSWORD=password
-
-# API
-PORT=8000
-DEBUG=true
-```
-
-### `pyproject.toml` - Dependencies
-
-```toml
-[project]
-dependencies = [
-    "fastapi>=0.111.0",
-    "neo4j>=5.22.0",
-    "sqlalchemy>=2.0.25",
-    # ...
-]
-```
+The startup migration runner applies global migrations first, then the selected
+app's declared migration locations using an app-specific version table.
 
 ## Summary
 
-### Clear Separation
-
-- **Routes** (`app/api/routes/`): HTTP only
-- **Services** (`app/backend/services/`): Business logic
-- **Database** (`app/backend/database/`): Data access
-
-### Easy to Extend
-
-1. Add service in `backend/services/`
-2. Add route in `api/routes/`
-3. Register in `main.py`
-
-### Database Agnostic
-
-- Configure once in `.env`
-- Works with Neo4j or SQL
-- No code changes needed
-
-### Well Documented
-
-- `docs/HOW_TO_ADD_ENDPOINT.md` - Step-by-step guide
-- `docs/DATABASE.md` - Database configuration
-- `docs/ARCHITECTURE.md` - Architecture details
-
-This structure makes it easy to understand, maintain, and extend your application!
+Use app slices for product behavior, `app/api/shared_routes/` for opt-in shared
+HTTP groups, and global backend folders for product-neutral infrastructure.
+When in doubt, start inside `app/apps/<app_id>/` and extract globally only after
+the reusable boundary is clear.

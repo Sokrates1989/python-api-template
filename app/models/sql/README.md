@@ -22,8 +22,11 @@ This directory contains **SQLAlchemy ORM models** for SQL databases (PostgreSQL,
    ```bash
    docker compose exec app pdm run alembic revision --autogenerate -m "Add your_model table"
    ```
-4. Create a service in `backend/services/sql/`
-5. Create routes in `api/routes/sql/`
+4. Create provider-specific reusable service code in `backend/services/sql/`
+   only when the behavior is product-neutral.
+5. Create product route facades in `app/apps/<app_id>/routes/`, or create a
+   shared route group in `app/api/shared_routes/` when the endpoint is reusable
+   and explicitly opt-in.
 
 ## Example
 

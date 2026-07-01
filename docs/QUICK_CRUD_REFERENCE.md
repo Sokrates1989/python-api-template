@@ -116,13 +116,13 @@ class YourService:
                 return {"status": "error", "message": str(e)}
 ```
 
-### 3. Create Routes (`app/api/routes/your_routes.py`)
+### 3. Create App Routes (`app/apps/<app_id>/routes/your_routes.py`)
 
 ```python
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
-from backend.services.your_service import YourService
+from apps.your_app.services.your_service import YourService
 
 router = APIRouter(tags=["items"], prefix="/items")
 service = YourService()
@@ -170,12 +170,18 @@ async def delete(item_id: str):
     return result
 ```
 
-### 4. Register Routes (`app/main.py`)
+### 4. Register Routes (`app/apps/<app_id>/definition.py`)
 
 ```python
-from api.routes import your_routes
+from apps.contracts import BackendAppDefinition, RouteRegistration
+from apps.your_app.routes import your_routes
 
-app.include_router(your_routes.router)
+BACKEND_APP_DEFINITION = BackendAppDefinition(
+    ...,
+    route_registrations=(
+        RouteRegistration(router=your_routes.router),
+    ),
+)
 ```
 
 ---

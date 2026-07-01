@@ -16,4 +16,13 @@ BACKEND_APP_DEFINITION = BackendAppDefinition(
     backend_data_profile="mongodb",
     route_registrations=(),
     exposes_sync_routes=False,
+    shared_route_groups=(
+        "cache",
+        "test",
+        "files",
+        "packages",
+        "database_lock",
+        "users",
+        "examples",
+    ),
 )

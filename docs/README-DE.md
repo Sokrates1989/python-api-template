@@ -173,9 +173,9 @@ DB_PASSWORD=secret-password
 ## 🧪 API-Tests
 
 **Verfügbare Endpunkte:**
-- `GET /` - Besucher-Zähler (Redis)
-- `GET /cache/{key}` - Cache-Wert abrufen
-- `POST /cache/{key}` - Cache-Wert setzen
+- `GET /` - Besucher-Zähler, wenn das gewählte App-Profil Redis benötigt
+- `GET /cache/{key}` - Cache-Wert abrufen, wenn die App die Shared Route Group `cache` aktiviert
+- `POST /cache/{key}` - Cache-Wert setzen, wenn die App die Shared Route Group `cache` aktiviert
 - `GET /health` - Gesundheitscheck
 - `GET /version` - Version anzeigen
 

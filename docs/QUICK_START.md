@@ -126,7 +126,8 @@ python-api-template/
 ## Next Steps
 
 1. **Add your models**: Edit `app/models/` for SQL databases
-2. **Create routes**: Add new routes in `app/api/routes/`
+2. **Create routes**: Add product routes in `app/apps/<app_id>/routes/`, then
+   register them through the app definition
 3. **Read the docs**: Check `docs/DATABASE.md` for detailed database usage
 4. **Customize**: Modify the template to fit your needs
 

@@ -1,4 +1,9 @@
-"""MongoDB Template app backend definition."""
+"""
+MongoDB Template app backend definition.
+
+This module declares app-owned route registrations and explicitly selects the
+shared route groups that should remain available for the template profile.
+"""
 from __future__ import annotations
 
 from apps.contracts import BackendAppDefinition, RouteRegistration
@@ -18,4 +23,13 @@ MONGODB_TEMPLATE_APP_DEFINITION = BackendAppDefinition(
         ),
     ),
     exposes_sync_routes=MONGODB_TEMPLATE_APP_CONFIG.exposes_sync_routes,
+    shared_route_groups=(
+        "cache",
+        "test",
+        "files",
+        "packages",
+        "database_lock",
+        "users",
+        "examples",
+    ),
 )

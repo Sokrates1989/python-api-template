@@ -138,13 +138,12 @@ class BackendAppDefinition:
             initialization. Defaults to True for backward compatibility.
         requires_redis (bool): Whether the app requires Redis connection.
             Defaults to True for backward compatibility.
-        include_shared_routes (bool): Whether to mount shared routes (/users,
-            /database/*, /examples, /files, /packages). Defaults to True for
-            backward compatibility.
+        include_shared_routes (bool): Whether to mount explicitly selected
+            shared route groups. Defaults to True, but no shared routes are
+            selected unless ``shared_route_groups`` names them.
         shared_route_groups (tuple[str, ...]): Shared route group names this
-            app exposes when include_shared_routes is True. Use this to keep
-            product apps from inheriting demo, package, file, or database
-            maintenance routes by accident.
+            app exposes when include_shared_routes is True. Defaults to an
+            empty tuple so each app must opt in to shared HTTP surfaces.
         openapi_security_schemes (tuple[OpenApiSecurityScheme, ...]): Security
             schemes owned by this app and shown in Swagger UI only when this app
             is selected.
@@ -167,14 +166,7 @@ class BackendAppDefinition:
     requires_database: bool = True
     requires_redis: bool = True
     include_shared_routes: bool = True
-    shared_route_groups: tuple[str, ...] = (
-        "test",
-        "files",
-        "packages",
-        "database_lock",
-        "users",
-        "examples",
-    )
+    shared_route_groups: tuple[str, ...] = ()
     openapi_security_schemes: tuple[OpenApiSecurityScheme, ...] = ()
     openapi_route_security: tuple[RouteSecurityRequirement, ...] = ()
 

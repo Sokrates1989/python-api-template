@@ -17,6 +17,9 @@ app/apps/*/local.env.user
 app/apps/*/.git.nested-backup/
 .venv/
 venv/
+.mypy-test-venv/
+.mypy_cache/
+.pytest_cache/
 
 # Setup marker
 .setup-complete
