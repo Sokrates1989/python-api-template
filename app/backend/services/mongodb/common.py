@@ -86,6 +86,26 @@ def normalize_tag_keys(tag_keys: List[str]) -> List[str]:
     return normalized
 
 
+def normalize_metric_values(metrics: Optional[Dict[str, Any]]) -> Dict[str, int]:
+    """Normalize flexible metric values into persisted 0-10 integer scores.
+
+    Args:
+        metrics (Optional[Dict[str, Any]]): Raw metric map from an API request
+            or sync operation.
+
+    Returns:
+        Dict[str, int]: Captured metric values keyed by non-empty metric ids.
+
+    Side Effects:
+        None.
+    """
+    return {
+        str(key).strip(): max(0, min(10, int(value)))
+        for key, value in (metrics or {}).items()
+        if str(key).strip() and isinstance(value, (int, float))
+    }
+
+
 def starter_activities(user_id: str) -> List[Dict[str, Any]]:
     """Build the shared starter activity catalog for one user."""
     now = now_utc().replace(hour=9, minute=0, second=0, microsecond=0)

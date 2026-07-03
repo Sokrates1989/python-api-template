@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from api.schemas.sync.requests import SyncConflictResolveRequest, SyncOperationRequest
-from backend.services.neo4j.common import iso_utc, metric_state_key, normalize_tag_keys, now_utc, parse_iso, payload_datetime
+from backend.services.neo4j.common import iso_utc, metric_state_key, normalize_metric_values, normalize_tag_keys, now_utc, parse_iso, payload_datetime
 from backend.services.neo4j.sync_log_repository import get_existing_result, record_conflict, store_result
 from backend.services.neo4j.sync_result_helpers import (
     applied_result,
@@ -387,6 +387,8 @@ class SyncService:
         recorded_at = payload_datetime(operation.payload.get("recorded_at")) or now_utc()
         created_at = payload_datetime(operation.payload.get("created_at")) or recorded_at
         updated_at = now_utc()
+        tag_values = operation.payload.get("tag_keys") or operation.payload.get("tags") or []
+        metric_values = operation.payload.get("metrics") if isinstance(operation.payload.get("metrics"), dict) else {}
         document = {
             "id": operation.entity_id,
             "user_id": user_id,
@@ -394,6 +396,9 @@ class SyncService:
             "mood_score": int(operation.payload.get("mood_score") or 0),
             "stress_score": int(operation.payload.get("stress_score") or 0),
             "energy_score": int(operation.payload.get("energy_score") or 0),
+            "tag_keys": normalize_tag_keys([str(item) for item in tag_values]),
+            "metrics": normalize_metric_values(metric_values),
+            "activity_id": optional_text(operation.payload.get("activity_id")),
             "note": optional_text(operation.payload.get("note")),
             "created_at": iso_utc(created_at),
             "updated_at": iso_utc(updated_at),
@@ -488,7 +493,7 @@ class SyncService:
         MATCH (c:WellnessCheckIn {user_id: $user_id, id: $checkin_id})
         RETURN c {
             .id, .user_id, .recorded_at, .mood_score, .stress_score, .energy_score,
-            .note, .created_at, .updated_at
+            .tag_keys, .metrics, .activity_id, .note, .created_at, .updated_at
         } AS checkin
         LIMIT 1
         """

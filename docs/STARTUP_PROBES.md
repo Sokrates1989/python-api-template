@@ -43,6 +43,15 @@ HTTP debug middleware (when explicitly enabled) also emits structured events:
 - `event=http.request`
 - `event=http.response`
 
+Authentication failures emit a safe warning even when HTTP debug body/header
+logging is disabled:
+
+- `event=auth.failure`
+
+The auth event includes method, path, provider, status code, response detail,
+and whether an Authorization header was present. It does not log bearer token
+contents.
+
 ## Notes for external backup/restore integration
 
 The provider startup probe complements `GET /database/provider-info`:

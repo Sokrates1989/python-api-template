@@ -240,6 +240,10 @@ class WellnessService:
         stress_score: int,
         energy_score: int,
         note: Optional[str] = None,
+        recorded_at: Optional[str] = None,
+        tag_keys: Optional[List[str]] = None,
+        metrics: Optional[Dict[str, int]] = None,
+        activity_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Create a check-in for one user.
@@ -250,6 +254,10 @@ class WellnessService:
             stress_score (int): Numeric stress score.
             energy_score (int): Numeric energy score.
             note (Optional[str]): Optional user note.
+            recorded_at (Optional[str]): Optional ISO occurrence timestamp.
+            tag_keys (Optional[List[str]]): Semantic tags for the check-in.
+            metrics (Optional[Dict[str, int]]): Captured flexible metrics.
+            activity_id (Optional[str]): Optional linked activity id.
 
         Returns:
             Dict[str, Any]: Provider-normalized mutation result.
@@ -263,6 +271,10 @@ class WellnessService:
             stress_score=stress_score,
             energy_score=energy_score,
             note=note,
+            recorded_at=recorded_at,
+            tag_keys=tag_keys,
+            metrics=metrics,
+            activity_id=activity_id,
         )
 
     async def reset_user_data(

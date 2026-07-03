@@ -64,6 +64,26 @@ def _raise_result_error(result: dict) -> None:
     raise HTTPException(status_code=500, detail=message)
 
 
+def _checkin_tag_keys(request: WellnessCheckInCreateRequest) -> list[str]:
+    """Return normalized request tag candidates before service-level cleanup.
+
+    Args:
+        request (WellnessCheckInCreateRequest): Incoming check-in request that
+            may use either the canonical ``tag_keys`` field or the legacy
+            ``tags`` client alias.
+
+    Returns:
+        list[str]: Ordered tag candidates with duplicates removed. Provider
+        services still apply their own storage normalization.
+    """
+    tags: list[str] = []
+    for raw_tag in [*request.tag_keys, *request.tags]:
+        tag = str(raw_tag).strip()
+        if tag and tag not in tags:
+            tags.append(tag)
+    return tags
+
+
 @router.get("/dashboard")
 async def get_dashboard(current_user_id: str = Depends(get_user_id_from_token)) -> WellnessDashboardResponse:
     """Return the authenticated user's dashboard summary."""
@@ -266,6 +286,10 @@ async def create_checkin(
         stress_score=request.stress_score,
         energy_score=request.energy_score,
         note=request.note,
+        recorded_at=request.recorded_at,
+        tag_keys=_checkin_tag_keys(request),
+        metrics=request.metrics,
+        activity_id=request.activity_id,
     )
     if result.get("status") != "success":
         _raise_result_error(result)

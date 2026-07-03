@@ -60,6 +60,10 @@ class WellnessRepository(Protocol):
         stress_score: int,
         energy_score: int,
         note: Optional[str] = None,
+        recorded_at: Optional[str] = None,
+        tag_keys: Optional[List[str]] = None,
+        metrics: Optional[Dict[str, int]] = None,
+        activity_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         ...
 

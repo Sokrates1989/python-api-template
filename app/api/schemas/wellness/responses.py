@@ -1,7 +1,7 @@
 """Response schemas for wellness endpoints."""
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -165,6 +165,9 @@ class WellnessCheckInRecordResponse(BaseModel):
     mood_score: int = Field(ge=0, le=10)
     stress_score: int = Field(ge=0, le=10)
     energy_score: int = Field(ge=0, le=10)
+    tag_keys: List[str] = Field(default_factory=list)
+    metrics: Dict[str, int] = Field(default_factory=dict)
+    activity_id: Optional[str] = None
     note: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None

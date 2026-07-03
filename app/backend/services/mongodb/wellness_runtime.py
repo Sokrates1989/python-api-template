@@ -14,8 +14,10 @@ from backend.services.mongodb.common import (
     looks_like_legacy_seed_checkins,
     metric_state_key,
     normalize_document,
+    normalize_metric_values,
     normalize_tag_keys,
     now_utc,
+    parse_iso,
     starter_activities,
 )
 from backend.services.mongodb.query_helpers import build_diary_item, build_sync_change, find_activity_doc
@@ -233,18 +235,33 @@ class WellnessService:
         except Exception as exc:
             return {"status": "error", "message": f"Error updating activity: {str(exc)}", "data": None}
 
-    async def create_checkin(self, user_id: str, mood_score: int, stress_score: int, energy_score: int, note: Optional[str] = None) -> Dict[str, Any]:
+    async def create_checkin(
+        self,
+        user_id: str,
+        mood_score: int,
+        stress_score: int,
+        energy_score: int,
+        note: Optional[str] = None,
+        recorded_at: Optional[str] = None,
+        tag_keys: Optional[List[str]] = None,
+        metrics: Optional[Dict[str, int]] = None,
+        activity_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Create a new wellness check-in."""
         try:
             await self._ensure_seed_data(user_id)
             now = now_utc()
+            occurred_at = parse_iso(recorded_at) if recorded_at else now
             payload = {
                 "id": str(uuid4()),
                 "user_id": user_id,
-                "recorded_at": iso_utc(now),
+                "recorded_at": iso_utc(occurred_at),
                 "mood_score": mood_score,
                 "stress_score": stress_score,
                 "energy_score": energy_score,
+                "tag_keys": normalize_tag_keys(tag_keys or []),
+                "metrics": normalize_metric_values(metrics),
+                "activity_id": activity_id.strip() if isinstance(activity_id, str) and activity_id.strip() else None,
                 "note": note.strip() if isinstance(note, str) and note.strip() else None,
                 "created_at": iso_utc(now),
                 "updated_at": iso_utc(now),

@@ -18,6 +18,7 @@ from backend.services.neo4j.common import (
     build_weekly_trend,
     iso_utc,
     metric_state_key,
+    normalize_metric_values,
     normalize_tag_keys,
     now_utc,
     parse_iso,
@@ -266,7 +267,7 @@ class WellnessService:
             MATCH (c:WellnessCheckIn {user_id: $user_id})
             RETURN c {
                 .id, .recorded_at, .mood_score, .stress_score, .energy_score,
-                .note, .created_at, .updated_at
+                .tag_keys, .metrics, .activity_id, .note, .created_at, .updated_at
             } AS item
             ORDER BY c.recorded_at DESC
             LIMIT $limit
@@ -391,7 +392,18 @@ class WellnessService:
         except Exception as exc:
             return {"status": "error", "message": f"Error updating activity: {str(exc)}", "data": None}
 
-    async def create_checkin(self, user_id: str, mood_score: int, stress_score: int, energy_score: int, note: Optional[str] = None) -> Dict[str, Any]:
+    async def create_checkin(
+        self,
+        user_id: str,
+        mood_score: int,
+        stress_score: int,
+        energy_score: int,
+        note: Optional[str] = None,
+        recorded_at: Optional[str] = None,
+        tag_keys: Optional[List[str]] = None,
+        metrics: Optional[Dict[str, int]] = None,
+        activity_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Create a new check-in node for the authenticated user.
 
         Args:
@@ -400,20 +412,29 @@ class WellnessService:
             stress_score (int): Stress score to store.
             energy_score (int): Energy score to store.
             note (Optional[str]): Optional free-text note.
+            recorded_at (Optional[str]): Optional ISO occurrence timestamp.
+            tag_keys (Optional[List[str]]): Semantic tags to store.
+            metrics (Optional[Dict[str, int]]): Captured flexible metrics.
+            activity_id (Optional[str]): Optional linked activity identifier.
 
         Returns:
             Dict[str, Any]: Created check-in payload.
         """
         try:
             await self._ensure_seed_data(user_id)
-            now = iso_utc(now_utc())
+            now_dt = now_utc()
+            now = iso_utc(now_dt)
+            occurred_at = parse_iso(recorded_at) if recorded_at else now_dt
             payload = {
                 "id": str(uuid4()),
                 "user_id": user_id,
-                "recorded_at": now,
+                "recorded_at": iso_utc(occurred_at or now_dt),
                 "mood_score": int(mood_score),
                 "stress_score": int(stress_score),
                 "energy_score": int(energy_score),
+                "tag_keys": normalize_tag_keys(tag_keys or []),
+                "metrics": normalize_metric_values(metrics),
+                "activity_id": str(activity_id).strip() if isinstance(activity_id, str) and activity_id.strip() else None,
                 "note": str(note).strip() if isinstance(note, str) and note.strip() else None,
                 "created_at": now,
                 "updated_at": now,

@@ -189,7 +189,13 @@ class SyncService:
         if existing is not None:
             return self._applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=existing.to_dict())
         recorded_at = self._payload_datetime(operation.payload.get("recorded_at")) or self._now_utc()
-        checkin = WellnessCheckIn(user_id=user_id, id=operation.entity_id, recorded_at=recorded_at, mood_score=int(operation.payload.get("mood_score") or 0), stress_score=int(operation.payload.get("stress_score") or 0), energy_score=int(operation.payload.get("energy_score") or 0), note=self._optional_text(operation.payload.get("note")), created_at=self._payload_datetime(operation.payload.get("created_at")) or recorded_at, updated_at=self._now_utc())
+        tag_values = operation.payload.get("tag_keys") or operation.payload.get("tags") or []
+        metric_values = operation.payload.get("metrics") if isinstance(operation.payload.get("metrics"), dict) else {}
+        checkin = WellnessCheckIn(user_id=user_id, id=operation.entity_id, recorded_at=recorded_at, mood_score=int(operation.payload.get("mood_score") or 0), stress_score=int(operation.payload.get("stress_score") or 0), energy_score=int(operation.payload.get("energy_score") or 0), note=self._optional_text(operation.payload.get("note")), activity_id=self._optional_text(operation.payload.get("activity_id")), created_at=self._payload_datetime(operation.payload.get("created_at")) or recorded_at, updated_at=self._now_utc())
+        checkin.tag_keys = self.wellness_service._normalize_tag_keys(
+            [str(item) for item in tag_values]
+        )
+        checkin.metrics = self.wellness_service._normalize_metric_values(metric_values)
         session.add(checkin)
         return self._applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=checkin.to_dict())
 

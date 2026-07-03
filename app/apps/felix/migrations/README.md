@@ -16,3 +16,8 @@ Safe editing rules:
 - App migration revisions normally chain within this folder. The startup runner
   applies global migrations first, so app tables may reference shared global
   tables such as `users` without using the global revision as `down_revision`.
+- Local databases created while Felix wellness tables briefly lived in the
+  global stream may already contain `wellness_*` tables and the global revision
+  marker `010_create_wellness_tables`. The first Felix app migration is
+  intentionally tolerant of those tables so startup can stamp the app stream
+  and continue with later Felix-owned migrations.

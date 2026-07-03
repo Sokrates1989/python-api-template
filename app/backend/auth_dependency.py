@@ -5,6 +5,7 @@ Supports Cognito and Keycloak JWT validation with optional dual-provider fallbac
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict
 
 import requests
@@ -12,7 +13,42 @@ from fastapi import Depends, HTTPException, Request, status
 from jose.exceptions import JWTClaimsError, JWTError, ExpiredSignatureError
 
 from backend.auth_provider_utils import get_user_info_from_provider, resolve_provider_sequence
+from backend.observability import log_event
 from api.settings import settings
+
+logger = logging.getLogger("backend.auth")
+
+
+def _log_auth_failure(
+    request: Request,
+    *,
+    provider: str,
+    status_code: int,
+    detail: Any,
+) -> None:
+    """Log an authentication failure without exposing bearer tokens.
+
+    Args:
+        request: FastAPI request that failed authentication.
+        provider: Configured auth provider or provider branch that rejected the request.
+        status_code: HTTP status code returned to the client.
+        detail: Sanitized error detail sent with the HTTP response.
+
+    Returns:
+        None: The function only emits a structured warning log.
+    """
+    log_event(
+        logger,
+        logging.WARNING,
+        "auth.failure",
+        method=request.method,
+        path=request.url.path,
+        provider=provider,
+        status_code=status_code,
+        detail=str(detail),
+        has_authorization=bool(request.headers.get("Authorization")),
+    )
+
 
 def _extract_bearer_token(request: Request) -> str:
     """Extract the bearer token from the Authorization header.
@@ -158,7 +194,16 @@ async def verify_auth_dependency(request: Request) -> Dict[str, Any]:
     if not providers:
         return _build_debug_user_info(request)
 
-    token = _extract_bearer_token(request)
+    try:
+        token = _extract_bearer_token(request)
+    except HTTPException as exc:
+        _log_auth_failure(
+            request,
+            provider=provider,
+            status_code=exc.status_code,
+            detail=exc.detail,
+        )
+        raise
 
     errors: list[tuple[str, Exception]] = []
     for provider_name in providers:
@@ -168,9 +213,25 @@ async def verify_auth_dependency(request: Request) -> Dict[str, Any]:
             if provider == "dual":
                 errors.append((provider_name, exc))
                 continue
-            _raise_http_error_for_provider(provider_name, exc)
+            try:
+                _raise_http_error_for_provider(provider_name, exc)
+            except HTTPException as http_exc:
+                _log_auth_failure(
+                    request,
+                    provider=provider_name,
+                    status_code=http_exc.status_code,
+                    detail=http_exc.detail,
+                )
+                raise
 
-    raise _build_dual_auth_exception(errors)
+    dual_auth_exception = _build_dual_auth_exception(errors)
+    _log_auth_failure(
+        request,
+        provider="dual",
+        status_code=dual_auth_exception.status_code,
+        detail=dual_auth_exception.detail,
+    )
+    raise dual_auth_exception
 
 
 async def verify_jwt_token_dependency(request: Request) -> Dict[str, Any]:

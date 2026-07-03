@@ -18,6 +18,12 @@ Startup applies global migrations first with the `alembic_version` table, then
 applies only the selected app's declared `migration_version_locations` with an
 app-specific version table such as `alembic_version_felix`.
 
+Legacy Felix databases can contain the old global revision marker
+`010_create_wellness_tables`. That marker is now a no-op compatibility revision
+in the global stream; the Felix app migration stream owns the actual wellness
+tables and reuses pre-existing local tables before applying later Felix schema
+changes.
+
 See also:
 
 - `docs/APP_SLICE_BOUNDARY_GUIDE.md`

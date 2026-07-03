@@ -95,6 +95,27 @@ class WellnessService:
                 break
         return normalized
 
+    @staticmethod
+    def _normalize_metric_values(metrics: Optional[Dict[str, int]]) -> Dict[str, int]:
+        """Normalize flexible metric values before persistence.
+
+        Args:
+            metrics (Optional[Dict[str, int]]): Raw metric map from a request or
+                sync operation.
+
+        Returns:
+            Dict[str, int]: Metric values keyed by non-empty identifiers and
+            clamped to the inclusive 0-10 wellness scale.
+
+        Side Effects:
+            None.
+        """
+        return {
+            str(key).strip(): max(0, min(10, int(value)))
+            for key, value in (metrics or {}).items()
+            if str(key).strip()
+        }
+
     async def _ensure_user_exists(self, session, user_id: str) -> None:
         result = await session.execute(select(User.id).where(User.id == user_id))
         if result.scalar_one_or_none() is None:
@@ -279,12 +300,42 @@ class WellnessService:
         except Exception as exc:
             return {"status": "error", "message": f"Error updating activity: {str(exc)}", "data": None}
 
-    async def create_checkin(self, user_id: str, mood_score: int, stress_score: int, energy_score: int, note: Optional[str] = None) -> Dict[str, object]:
+    async def create_checkin(
+        self,
+        user_id: str,
+        mood_score: int,
+        stress_score: int,
+        energy_score: int,
+        note: Optional[str] = None,
+        recorded_at: Optional[str] = None,
+        tag_keys: Optional[List[str]] = None,
+        metrics: Optional[Dict[str, int]] = None,
+        activity_id: Optional[str] = None,
+    ) -> Dict[str, object]:
+        """Create a check-in row with optional activity execution metadata.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            mood_score (int): Legacy mood score for dashboard compatibility.
+            stress_score (int): Legacy stress score for dashboard compatibility.
+            energy_score (int): Legacy energy score for dashboard compatibility.
+            note (Optional[str]): Optional user note.
+            recorded_at (Optional[str]): Optional ISO occurrence timestamp.
+            tag_keys (Optional[List[str]]): Semantic tags to store.
+            metrics (Optional[Dict[str, int]]): Captured flexible metrics.
+            activity_id (Optional[str]): Optional linked activity identifier.
+
+        Returns:
+            Dict[str, object]: Provider-normalized mutation result.
+        """
         try:
             await self._ensure_seed_data(user_id)
             async with self.handler.AsyncSessionLocal() as session:
                 now = self._now_utc()
-                checkin = WellnessCheckIn(user_id=user_id, id=str(uuid4()), recorded_at=now, mood_score=mood_score, stress_score=stress_score, energy_score=energy_score, note=note.strip() if isinstance(note, str) and note.strip() else None, created_at=now, updated_at=now)
+                occurred_at = self._parse_iso(recorded_at) if recorded_at else now
+                checkin = WellnessCheckIn(user_id=user_id, id=str(uuid4()), recorded_at=occurred_at, mood_score=mood_score, stress_score=stress_score, energy_score=energy_score, note=note.strip() if isinstance(note, str) and note.strip() else None, activity_id=activity_id.strip() if isinstance(activity_id, str) and activity_id.strip() else None, created_at=now, updated_at=now)
+                checkin.tag_keys = self._normalize_tag_keys(tag_keys or [])
+                checkin.metrics = self._normalize_metric_values(metrics)
                 session.add(checkin)
                 await session.commit()
                 latest_payload = {"recorded_at": self._iso(checkin.recorded_at), "mood": {"state_key": self._metric_state_key("mood", mood_score), "score": mood_score}, "stress": {"state_key": self._metric_state_key("stress", stress_score), "score": stress_score}, "energy": {"state_key": self._metric_state_key("energy", energy_score), "score": energy_score}, "note": checkin.note}

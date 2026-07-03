@@ -109,7 +109,18 @@ class _WellnessRepositoryAdapterBase:
         """
         return await self._service.create_diary_entry(user_id=user_id, title=title, summary=summary, mood_score=mood_score, tag_keys=tag_keys, related_activity_id=related_activity_id)
 
-    async def create_checkin(self, user_id: str, mood_score: int, stress_score: int, energy_score: int, note: Optional[str] = None):
+    async def create_checkin(
+        self,
+        user_id: str,
+        mood_score: int,
+        stress_score: int,
+        energy_score: int,
+        note: Optional[str] = None,
+        recorded_at: Optional[str] = None,
+        tag_keys: Optional[List[str]] = None,
+        metrics: Optional[Dict[str, int]] = None,
+        activity_id: Optional[str] = None,
+    ):
         """Create a check-in for one user.
 
         Args:
@@ -118,11 +129,25 @@ class _WellnessRepositoryAdapterBase:
             stress_score (int): Stress score to record.
             energy_score (int): Energy score to record.
             note (Optional[str]): Optional note.
+            recorded_at (Optional[str]): Optional ISO occurrence timestamp.
+            tag_keys (Optional[List[str]]): Semantic tags for the check-in.
+            metrics (Optional[Dict[str, int]]): Captured flexible metrics.
+            activity_id (Optional[str]): Optional linked activity id.
 
         Returns:
             Any: Backend-specific check-in creation response.
         """
-        return await self._service.create_checkin(user_id=user_id, mood_score=mood_score, stress_score=stress_score, energy_score=energy_score, note=note)
+        return await self._service.create_checkin(
+            user_id=user_id,
+            mood_score=mood_score,
+            stress_score=stress_score,
+            energy_score=energy_score,
+            note=note,
+            recorded_at=recorded_at,
+            tag_keys=tag_keys,
+            metrics=metrics,
+            activity_id=activity_id,
+        )
 
     async def reset_user_data(self, user_id: str, *, keep_activity_catalog: bool = True):
         """Reset wellness data for one user.

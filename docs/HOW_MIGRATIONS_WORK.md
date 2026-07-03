@@ -110,6 +110,19 @@ BackendAppDefinition(
 The runner resolves the relative path against `app/apps/felix/` and tracks the
 stream in `alembic_version_felix`.
 
+## Legacy Felix Wellness Marker
+
+Some local Felix databases may have `010_create_wellness_tables` in the global
+`alembic_version` table from the short-lived period when Felix wellness tables
+were created by the shared migration stream. The global tree keeps that revision
+as a no-op compatibility marker, while the Felix app stream owns the actual
+`wellness_*` tables.
+
+When startup sees such a database, the global stream advances through the
+compatibility marker to the current shared head. The Felix app stream then
+reuses the existing wellness tables, stamps `alembic_version_felix`, and applies
+new Felix-owned migrations such as check-in metadata columns.
+
 ## Revision Chains
 
 Each migration points to its predecessor:

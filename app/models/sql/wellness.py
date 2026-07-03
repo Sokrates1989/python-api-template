@@ -8,7 +8,7 @@ provider-wide.
 from __future__ import annotations
 
 import json
-from typing import List
+from typing import Dict, List
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.sql import func
@@ -53,6 +53,54 @@ def _encode_string_list(values: List[str] | None) -> str:
         None.
     """
     payload = [str(item) for item in (values or []) if str(item).strip()]
+    return json.dumps(payload, separators=(",", ":"))
+
+
+def _decode_int_map(value: str | None) -> Dict[str, int]:
+    """Decode a JSON string column into a clean integer metric map.
+
+    Args:
+        value (str | None): Raw JSON object stored in a text column.
+
+    Returns:
+        Dict[str, int]: Metric values keyed by non-empty strings. Values outside
+        the 0-10 wellness score range are clamped defensively.
+
+    Side Effects:
+        None.
+    """
+    if not value:
+        return {}
+    try:
+        decoded = json.loads(value)
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(decoded, dict):
+        return {}
+    return {
+        str(key): max(0, min(10, int(raw_value)))
+        for key, raw_value in decoded.items()
+        if str(key).strip() and isinstance(raw_value, (int, float))
+    }
+
+
+def _encode_int_map(values: Dict[str, int] | None) -> str:
+    """Encode metric values for storage in text JSON columns.
+
+    Args:
+        values (Dict[str, int] | None): Optional metric map to normalize.
+
+    Returns:
+        str: Compact JSON object containing 0-10 integer metric values.
+
+    Side Effects:
+        None.
+    """
+    payload = {
+        str(key): max(0, min(10, int(value)))
+        for key, value in (values or {}).items()
+        if str(key).strip()
+    }
     return json.dumps(payload, separators=(",", ":"))
 
 
@@ -263,6 +311,9 @@ class WellnessCheckIn(Base):
         mood_score (int): Numeric mood value.
         stress_score (int): Numeric stress value.
         energy_score (int): Numeric energy value.
+        tag_keys (List[str]): Semantic tags describing the check-in.
+        metrics (Dict[str, int]): Flexible captured metrics.
+        activity_id (str | None): Optional linked activity id.
         note (str | None): Optional user note.
         created_at (datetime): Row creation timestamp.
         updated_at (datetime): Row update timestamp.
@@ -284,9 +335,66 @@ class WellnessCheckIn(Base):
     mood_score = Column(Integer, nullable=False)
     stress_score = Column(Integer, nullable=False)
     energy_score = Column(Integer, nullable=False)
+    _tag_keys = Column("tag_keys", Text, nullable=False, server_default="[]")
+    _metrics = Column("metrics", Text, nullable=False, server_default="{}")
+    activity_id = Column(String(128), nullable=True)
     note = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    @property
+    def tag_keys(self) -> List[str]:
+        """Return decoded check-in tag keys.
+
+        Returns:
+            List[str]: Tag identifiers, or an empty list when none are stored.
+
+        Side Effects:
+            None.
+        """
+        return _decode_string_list(self._tag_keys)
+
+    @tag_keys.setter
+    def tag_keys(self, values: List[str] | None) -> None:
+        """Store check-in tag keys as compact JSON text.
+
+        Args:
+            values (List[str] | None): Tag identifiers to persist.
+
+        Returns:
+            None.
+
+        Side Effects:
+            Updates the mapped ``tag_keys`` column value.
+        """
+        self._tag_keys = _encode_string_list(values)
+
+    @property
+    def metrics(self) -> Dict[str, int]:
+        """Return decoded flexible check-in metrics.
+
+        Returns:
+            Dict[str, int]: Captured metric values keyed by metric id.
+
+        Side Effects:
+            None.
+        """
+        return _decode_int_map(self._metrics)
+
+    @metrics.setter
+    def metrics(self, values: Dict[str, int] | None) -> None:
+        """Store flexible check-in metrics as compact JSON text.
+
+        Args:
+            values (Dict[str, int] | None): Metric values to persist.
+
+        Returns:
+            None.
+
+        Side Effects:
+            Updates the mapped ``metrics`` column value.
+        """
+        self._metrics = _encode_int_map(values)
 
     def to_dict(self) -> dict:
         """Serialize the check-in row into an API-friendly dictionary.
@@ -306,6 +414,9 @@ class WellnessCheckIn(Base):
             "mood_score": self.mood_score,
             "stress_score": self.stress_score,
             "energy_score": self.energy_score,
+            "tag_keys": self.tag_keys,
+            "metrics": self.metrics,
+            "activity_id": self.activity_id,
             "note": self.note,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

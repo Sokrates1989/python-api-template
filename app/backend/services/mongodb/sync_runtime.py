@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from pymongo.errors import DuplicateKeyError
 
 from api.schemas.sync.requests import SyncConflictResolveRequest, SyncOperationRequest
-from backend.services.mongodb.common import metric_state_key, normalize_document, normalize_tag_keys
+from backend.services.mongodb.common import metric_state_key, normalize_document, normalize_metric_values, normalize_tag_keys
 from backend.services.mongodb.query_helpers import build_diary_item, find_activity_doc
 from backend.services.mongodb.sync_log_repository import get_existing_result, record_conflict, store_result
 from backend.services.mongodb.sync_result_helpers import (
@@ -270,6 +270,8 @@ class SyncService:
         recorded_at = payload_datetime(operation.payload.get("recorded_at")) or now_utc()
         created_at = payload_datetime(operation.payload.get("created_at")) or recorded_at
         updated_at = now_utc()
+        tag_values = operation.payload.get("tag_keys") or operation.payload.get("tags") or []
+        metric_values = operation.payload.get("metrics") if isinstance(operation.payload.get("metrics"), dict) else {}
         document = {
             "id": operation.entity_id,
             "user_id": user_id,
@@ -277,6 +279,9 @@ class SyncService:
             "mood_score": int(operation.payload.get("mood_score") or 0),
             "stress_score": int(operation.payload.get("stress_score") or 0),
             "energy_score": int(operation.payload.get("energy_score") or 0),
+            "tag_keys": normalize_tag_keys([str(item) for item in tag_values]),
+            "metrics": normalize_metric_values(metric_values),
+            "activity_id": optional_text(operation.payload.get("activity_id")),
             "note": optional_text(operation.payload.get("note")),
             "created_at": iso_utc(created_at),
             "updated_at": iso_utc(updated_at),

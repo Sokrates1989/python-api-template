@@ -45,6 +45,7 @@ services:
       - ../app/backend:/app/backend
       - ../app/models:/app/models
       - ../app/apps:/app/apps
+      - ../alembic:/app/alembic
       - ../app/mounted_data:/mnt/data
       # Mount backups directory to host for persistence and easy access
       - ../backups:/app/backups

@@ -37,7 +37,7 @@ def run_migrations(fail_on_error: bool = False) -> bool:
         return True
 
     current_file = Path(__file__).resolve()
-    project_root = current_file.parent.parent.parent
+    project_root = _resolve_project_root(current_file)
     alembic_ini_path = project_root / "alembic.ini"
     if not alembic_ini_path.exists():
         log_event(
@@ -120,7 +120,7 @@ def _configure_selected_app_alembic_paths(alembic_cfg: "Config", project_root: P
         migrations.
     """
     selected_app = settings.get_backend_app_definition()
-    app_root = project_root / "app" / "apps" / selected_app.app_id
+    app_root = _resolve_apps_root(project_root) / selected_app.app_id
     version_locations = []
 
     for location in selected_app.migration_version_locations:
@@ -155,6 +155,47 @@ def _configure_selected_app_alembic_paths(alembic_cfg: "Config", project_root: P
         locations=[str(path) for path in version_locations],
     )
     return True
+
+
+def _resolve_project_root(current_file: Path) -> Path:
+    """
+    Locate the runtime root that contains the Alembic configuration.
+
+    Args:
+        current_file (Path): Resolved path of the migration utility module.
+
+    Returns:
+        Path: Directory containing ``alembic.ini``.
+
+    Raises:
+        FileNotFoundError: When no parent directory contains ``alembic.ini``.
+
+    Side Effects:
+        None.
+    """
+    for parent in (current_file.parent, *current_file.parents):
+        if (parent / "alembic.ini").exists():
+            return parent
+    raise FileNotFoundError(f"Alembic configuration not found above: {current_file}")
+
+
+def _resolve_apps_root(project_root: Path) -> Path:
+    """
+    Locate the backend app registry directory for source and container layouts.
+
+    Args:
+        project_root (Path): Runtime root containing ``alembic.ini``.
+
+    Returns:
+        Path: Directory containing selected-app folders such as ``felix``.
+
+    Side Effects:
+        None.
+    """
+    flattened_apps_root = project_root / "apps"
+    if flattened_apps_root.exists():
+        return flattened_apps_root
+    return project_root / "app" / "apps"
 
 
 def _set_alembic_paths(
@@ -345,7 +386,7 @@ def create_migration(message: str):
     from alembic import command
     from alembic.config import Config
 
-    project_root = Path(__file__).parent.parent.parent.parent
+    project_root = _resolve_project_root(Path(__file__).resolve())
     alembic_ini_path = project_root / "alembic.ini"
 
     if not alembic_ini_path.exists():

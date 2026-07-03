@@ -161,6 +161,24 @@ def normalize_tag_keys(tag_keys: List[str]) -> List[str]:
 
 
 
+def normalize_metric_values(metrics: Optional[Dict[str, Any]]) -> Dict[str, int]:
+    """Normalize flexible metric values into persisted 0-10 integer scores.
+
+    Args:
+        metrics (Optional[Dict[str, Any]]): Raw metric map from an API request
+            or sync operation.
+
+    Returns:
+        Dict[str, int]: Captured metric values keyed by non-empty metric ids.
+    """
+    return {
+        str(key).strip(): max(0, min(10, int(value)))
+        for key, value in (metrics or {}).items()
+        if str(key).strip() and isinstance(value, (int, float))
+    }
+
+
+
 def normalize_record(record: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """Return a plain dictionary copy for Neo4j record payloads.
 
