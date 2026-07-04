@@ -159,10 +159,38 @@ class SyncService:
         return self._conflict_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, base_payload=base_payload, client_payload=dict(operation.payload), server_payload=existing.to_dict(), conflict_fields=["favorite"], server_version=self._version_for_payload(existing.to_dict()))
 
     async def _process_diary_operation(self, *, session, user_id: str, operation: SyncOperationRequest) -> Dict[str, Any]:
-        if operation.action not in {"create", "upsert"}:
+        if operation.action not in {"create", "upsert", "update", "delete"}:
             return self._rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message=f"Unsupported action for {self._DIARY_ENTITY}: {operation.action}")
         result = await session.execute(select(WellnessDiaryEntry).where(and_(WellnessDiaryEntry.user_id == user_id, WellnessDiaryEntry.id == operation.entity_id)))
         existing = result.scalar_one_or_none()
+        if operation.action == "delete":
+            if existing is None:
+                return self._applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=None)
+            await session.delete(existing)
+            return self._applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=None)
+        if operation.action == "update":
+            if existing is None:
+                return self._rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message="Diary entry not found")
+            patch = dict(operation.payload)
+            if isinstance(patch.get("title"), str):
+                existing.title = patch["title"].strip()
+                existing.title_key = None
+            if isinstance(patch.get("summary"), str):
+                existing.summary = patch["summary"].strip()
+                existing.summary_key = None
+            if "mood_score" in patch and patch["mood_score"] is not None:
+                existing.mood_score = int(patch["mood_score"])
+                existing.mood_state_key = self.wellness_service._metric_state_key("mood", existing.mood_score)
+            if isinstance(patch.get("tag_keys"), list):
+                existing.tag_keys = self.wellness_service._normalize_tag_keys([str(item) for item in patch["tag_keys"]])
+            if "related_activity_id" in patch:
+                related_activity_id = self._optional_text(patch.get("related_activity_id"))
+                if related_activity_id and await self.wellness_service._find_activity(session, user_id, related_activity_id) is None:
+                    return self._rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message="Related activity not found.")
+                existing.related_activity_id = related_activity_id
+            existing.updated_at = self._now_utc()
+            payload = await self.wellness_service._build_diary_item(session, user_id, existing)
+            return self._applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=payload)
         if existing is not None:
             payload = await self.wellness_service._build_diary_item(session, user_id, existing)
             return self._applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=payload)
@@ -182,10 +210,34 @@ class SyncService:
         return self._applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=payload)
 
     async def _process_checkin_operation(self, *, session, user_id: str, operation: SyncOperationRequest) -> Dict[str, Any]:
-        if operation.action not in {"create", "upsert"}:
+        if operation.action not in {"create", "upsert", "update", "delete"}:
             return self._rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message=f"Unsupported action for {self._CHECKIN_ENTITY}: {operation.action}")
         result = await session.execute(select(WellnessCheckIn).where(and_(WellnessCheckIn.user_id == user_id, WellnessCheckIn.id == operation.entity_id)))
         existing = result.scalar_one_or_none()
+        if operation.action == "delete":
+            if existing is None:
+                return self._applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=None)
+            await session.delete(existing)
+            return self._applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=None)
+        if operation.action == "update":
+            if existing is None:
+                return self._rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message="Check-in not found")
+            patch = dict(operation.payload)
+            if patch.get("recorded_at"):
+                existing.recorded_at = self._payload_datetime(patch.get("recorded_at")) or existing.recorded_at
+            for field_name in ("mood_score", "stress_score", "energy_score"):
+                if field_name in patch and patch[field_name] is not None:
+                    setattr(existing, field_name, int(patch[field_name]))
+            if "note" in patch:
+                existing.note = self._optional_text(patch.get("note"))
+            if "activity_id" in patch:
+                existing.activity_id = self._optional_text(patch.get("activity_id"))
+            if isinstance(patch.get("tag_keys"), list):
+                existing.tag_keys = self.wellness_service._normalize_tag_keys([str(item) for item in patch["tag_keys"]])
+            if isinstance(patch.get("metrics"), dict):
+                existing.metrics = self.wellness_service._normalize_metric_values(patch["metrics"])
+            existing.updated_at = self._now_utc()
+            return self._applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=existing.to_dict())
         if existing is not None:
             return self._applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=existing.to_dict())
         recorded_at = self._payload_datetime(operation.payload.get("recorded_at")) or self._now_utc()

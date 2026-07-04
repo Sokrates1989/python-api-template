@@ -116,6 +116,24 @@ class WellnessService:
             if str(key).strip()
         }
 
+    @staticmethod
+    def _optional_text(value: object) -> Optional[str]:
+        """Normalize optional free-form text values.
+
+        Args:
+            value (object): Raw request value.
+
+        Returns:
+            Optional[str]: Trimmed text, or ``None`` when the value is empty.
+
+        Side Effects:
+            None.
+        """
+        if not isinstance(value, str):
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
     async def _ensure_user_exists(self, session, user_id: str) -> None:
         result = await session.execute(select(User.id).where(User.id == user_id))
         if result.scalar_one_or_none() is None:
@@ -343,6 +361,92 @@ class WellnessService:
         except Exception as exc:
             return {"status": "error", "message": f"Error creating check-in: {str(exc)}", "data": None}
 
+    async def update_checkin(
+        self,
+        user_id: str,
+        checkin_id: str,
+        patch: Dict[str, object],
+    ) -> Dict[str, object]:
+        """Update one existing check-in row.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            checkin_id (str): Check-in identifier scoped by user.
+            patch (Dict[str, object]): Mutable check-in fields to replace.
+
+        Returns:
+            Dict[str, object]: Provider-normalized mutation result.
+        """
+        try:
+            await self._ensure_seed_data(user_id)
+            async with self.handler.AsyncSessionLocal() as session:
+                result = await session.execute(
+                    select(WellnessCheckIn).where(
+                        and_(
+                            WellnessCheckIn.user_id == user_id,
+                            WellnessCheckIn.id == checkin_id,
+                        ),
+                    ),
+                )
+                checkin = result.scalar_one_or_none()
+                if checkin is None:
+                    return {"status": "error", "message": "Check-in not found", "data": None}
+
+                if "recorded_at" in patch and patch["recorded_at"]:
+                    checkin.recorded_at = self._parse_iso(str(patch["recorded_at"]))
+                if "mood_score" in patch and patch["mood_score"] is not None:
+                    checkin.mood_score = int(patch["mood_score"])
+                if "stress_score" in patch and patch["stress_score"] is not None:
+                    checkin.stress_score = int(patch["stress_score"])
+                if "energy_score" in patch and patch["energy_score"] is not None:
+                    checkin.energy_score = int(patch["energy_score"])
+                if "note" in patch:
+                    checkin.note = self._optional_text(patch["note"])
+                if "activity_id" in patch:
+                    checkin.activity_id = self._optional_text(patch["activity_id"])
+                if "tag_keys" in patch and isinstance(patch["tag_keys"], list):
+                    checkin.tag_keys = self._normalize_tag_keys(
+                        [str(item) for item in patch["tag_keys"]]
+                    )
+                if "metrics" in patch and isinstance(patch["metrics"], dict):
+                    checkin.metrics = self._normalize_metric_values(patch["metrics"])
+                checkin.updated_at = self._now_utc()
+                await session.commit()
+                await session.refresh(checkin)
+                return {"status": "success", "message": "Check-in updated successfully", "data": checkin.to_dict()}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error updating check-in: {str(exc)}", "data": None}
+
+    async def delete_checkin(self, user_id: str, checkin_id: str) -> Dict[str, object]:
+        """Delete one existing check-in row.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            checkin_id (str): Check-in identifier scoped by user.
+
+        Returns:
+            Dict[str, object]: Provider-normalized deletion result.
+        """
+        try:
+            await self._ensure_seed_data(user_id)
+            async with self.handler.AsyncSessionLocal() as session:
+                result = await session.execute(
+                    select(WellnessCheckIn).where(
+                        and_(
+                            WellnessCheckIn.user_id == user_id,
+                            WellnessCheckIn.id == checkin_id,
+                        ),
+                    ),
+                )
+                checkin = result.scalar_one_or_none()
+                if checkin is None:
+                    return {"status": "error", "message": "Check-in not found", "data": None}
+                await session.delete(checkin)
+                await session.commit()
+                return {"status": "success", "message": "Check-in deleted successfully", "data": {"id": checkin_id}}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error deleting check-in: {str(exc)}", "data": None}
+
     async def list_diary_entries(self, user_id: str, limit: int = 20) -> Dict[str, object]:
         try:
             await self._ensure_seed_data(user_id)
@@ -369,3 +473,93 @@ class WellnessService:
                 return {"status": "success", "message": "Diary entry created successfully", "data": payload}
         except Exception as exc:
             return {"status": "error", "message": f"Error creating diary entry: {str(exc)}", "data": None}
+
+    async def update_diary_entry(
+        self,
+        user_id: str,
+        entry_id: str,
+        patch: Dict[str, object],
+    ) -> Dict[str, object]:
+        """Update one existing diary entry row.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            entry_id (str): Diary entry identifier scoped by user.
+            patch (Dict[str, object]): Mutable diary fields to replace.
+
+        Returns:
+            Dict[str, object]: Provider-normalized mutation result.
+        """
+        try:
+            await self._ensure_seed_data(user_id)
+            async with self.handler.AsyncSessionLocal() as session:
+                result = await session.execute(
+                    select(WellnessDiaryEntry).where(
+                        and_(
+                            WellnessDiaryEntry.user_id == user_id,
+                            WellnessDiaryEntry.id == entry_id,
+                        ),
+                    ),
+                )
+                entry = result.scalar_one_or_none()
+                if entry is None:
+                    return {"status": "error", "message": "Diary entry not found", "data": None}
+
+                if "title" in patch and isinstance(patch["title"], str):
+                    entry.title = patch["title"].strip()
+                    entry.title_key = None
+                if "summary" in patch and isinstance(patch["summary"], str):
+                    entry.summary = patch["summary"].strip()
+                    entry.summary_key = None
+                if "mood_score" in patch and patch["mood_score"] is not None:
+                    entry.mood_score = int(patch["mood_score"])
+                    entry.mood_state_key = self._metric_state_key("mood", entry.mood_score)
+                if "tag_keys" in patch and isinstance(patch["tag_keys"], list):
+                    entry.tag_keys = self._normalize_tag_keys(
+                        [str(item) for item in patch["tag_keys"]]
+                    )
+                if "related_activity_id" in patch:
+                    related_activity_id = self._optional_text(patch["related_activity_id"])
+                    if (
+                        related_activity_id
+                        and await self._find_activity(session, user_id, related_activity_id) is None
+                    ):
+                        return {"status": "error", "message": "Related activity not found", "data": None}
+                    entry.related_activity_id = related_activity_id
+                entry.updated_at = self._now_utc()
+                await session.commit()
+                await session.refresh(entry)
+                payload = await self._build_diary_item(session, user_id, entry)
+                return {"status": "success", "message": "Diary entry updated successfully", "data": payload}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error updating diary entry: {str(exc)}", "data": None}
+
+    async def delete_diary_entry(self, user_id: str, entry_id: str) -> Dict[str, object]:
+        """Delete one existing diary entry row.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            entry_id (str): Diary entry identifier scoped by user.
+
+        Returns:
+            Dict[str, object]: Provider-normalized deletion result.
+        """
+        try:
+            await self._ensure_seed_data(user_id)
+            async with self.handler.AsyncSessionLocal() as session:
+                result = await session.execute(
+                    select(WellnessDiaryEntry).where(
+                        and_(
+                            WellnessDiaryEntry.user_id == user_id,
+                            WellnessDiaryEntry.id == entry_id,
+                        ),
+                    ),
+                )
+                entry = result.scalar_one_or_none()
+                if entry is None:
+                    return {"status": "error", "message": "Diary entry not found", "data": None}
+                await session.delete(entry)
+                await session.commit()
+                return {"status": "success", "message": "Diary entry deleted successfully", "data": {"id": entry_id}}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error deleting diary entry: {str(exc)}", "data": None}

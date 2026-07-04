@@ -53,6 +53,36 @@ class WellnessRepository(Protocol):
     ) -> Dict[str, Any]:
         ...
 
+    async def update_diary_entry(
+        self,
+        user_id: str,
+        entry_id: str,
+        patch: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Update one diary entry for a user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            entry_id (str): Diary entry identifier scoped by user.
+            patch (Dict[str, Any]): Mutable fields to replace.
+
+        Returns:
+            Dict[str, Any]: Provider-normalized mutation result.
+        """
+        ...
+
+    async def delete_diary_entry(self, user_id: str, entry_id: str) -> Dict[str, Any]:
+        """Delete one diary entry for a user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            entry_id (str): Diary entry identifier scoped by user.
+
+        Returns:
+            Dict[str, Any]: Provider-normalized deletion result.
+        """
+        ...
+
     async def create_checkin(
         self,
         user_id: str,
@@ -65,6 +95,36 @@ class WellnessRepository(Protocol):
         metrics: Optional[Dict[str, int]] = None,
         activity_id: Optional[str] = None,
     ) -> Dict[str, Any]:
+        ...
+
+    async def update_checkin(
+        self,
+        user_id: str,
+        checkin_id: str,
+        patch: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Update one check-in for a user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            checkin_id (str): Check-in identifier scoped by user.
+            patch (Dict[str, Any]): Mutable fields to replace.
+
+        Returns:
+            Dict[str, Any]: Provider-normalized mutation result.
+        """
+        ...
+
+    async def delete_checkin(self, user_id: str, checkin_id: str) -> Dict[str, Any]:
+        """Delete one check-in for a user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            checkin_id (str): Check-in identifier scoped by user.
+
+        Returns:
+            Dict[str, Any]: Provider-normalized deletion result.
+        """
         ...
 
     async def reset_user_data(

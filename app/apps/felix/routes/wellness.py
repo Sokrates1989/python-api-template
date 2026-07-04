@@ -8,6 +8,9 @@ from apps.felix.schemas.wellness import (
     FelixRewardsMutationResponse,
     FelixRewardsResponse,
     FelixRewardsStateUpdateRequest,
+    FelixWellnessCheckInRecordMutationResponse,
+    FelixWellnessCheckInUpdateRequest,
+    FelixWellnessDiaryEntryUpdateRequest,
     WellnessActivitiesResponse,
     WellnessActivityMutationResponse,
     WellnessActivityUpdateRequest,
@@ -82,6 +85,29 @@ def _checkin_tag_keys(request: WellnessCheckInCreateRequest) -> list[str]:
         if tag and tag not in tags:
             tags.append(tag)
     return tags
+
+
+def _checkin_patch_payload(request: FelixWellnessCheckInUpdateRequest) -> dict:
+    """Return a normalized check-in patch payload for the service layer.
+
+    Args:
+        request (FelixWellnessCheckInUpdateRequest): Incoming Felix-owned
+            check-in update request.
+
+    Returns:
+        dict: Patch fields with canonical ``tag_keys`` when either tag alias was
+        supplied.
+    """
+    payload = request.model_dump(exclude_unset=True)
+    if "tag_keys" in payload or "tags" in payload:
+        tags: list[str] = []
+        for raw_tag in [*(request.tag_keys or []), *(request.tags or [])]:
+            tag = str(raw_tag).strip()
+            if tag and tag not in tags:
+                tags.append(tag)
+        payload["tag_keys"] = tags
+        payload.pop("tags", None)
+    return payload
 
 
 @router.get("/dashboard")
@@ -273,6 +299,66 @@ async def create_diary_entry(
     return WellnessDiaryMutationResponse(**result)
 
 
+@router.patch("/diary/{entry_id}")
+async def update_diary_entry(
+    entry_id: str,
+    request: FelixWellnessDiaryEntryUpdateRequest,
+    current_user_id: str = Depends(get_user_id_from_token),
+) -> WellnessDiaryMutationResponse:
+    """Update one authenticated Felix diary entry.
+
+    Args:
+        entry_id (str): Diary entry identifier scoped to the current user.
+        request (FelixWellnessDiaryEntryUpdateRequest): Felix-owned partial
+            diary update payload.
+        current_user_id (str): Authenticated user id from the bearer token.
+
+    Returns:
+        WellnessDiaryMutationResponse: Updated diary entry envelope.
+
+    Raises:
+        HTTPException: When the provider rejects the update or the entry cannot
+            be found.
+    """
+    service = get_service()
+    result = await service.update_diary_entry(
+        user_id=current_user_id,
+        entry_id=entry_id,
+        patch=request.model_dump(exclude_unset=True),
+    )
+    if result.get("status") != "success":
+        _raise_result_error(result)
+    return WellnessDiaryMutationResponse(**result)
+
+
+@router.delete("/diary/{entry_id}")
+async def delete_diary_entry(
+    entry_id: str,
+    current_user_id: str = Depends(get_user_id_from_token),
+) -> dict:
+    """Delete one authenticated Felix diary entry.
+
+    Args:
+        entry_id (str): Diary entry identifier scoped to the current user.
+        current_user_id (str): Authenticated user id from the bearer token.
+
+    Returns:
+        dict: Provider-normalized deletion result with the removed id.
+
+    Raises:
+        HTTPException: When the provider rejects the deletion or the entry
+            cannot be found.
+    """
+    service = get_service()
+    result = await service.delete_diary_entry(
+        user_id=current_user_id,
+        entry_id=entry_id,
+    )
+    if result.get("status") != "success":
+        _raise_result_error(result)
+    return result
+
+
 @router.post("/check-ins", status_code=status.HTTP_201_CREATED)
 async def create_checkin(
     request: WellnessCheckInCreateRequest,
@@ -294,3 +380,64 @@ async def create_checkin(
     if result.get("status") != "success":
         _raise_result_error(result)
     return WellnessCheckInMutationResponse(**result)
+
+
+@router.patch("/check-ins/{checkin_id}")
+async def update_checkin(
+    checkin_id: str,
+    request: FelixWellnessCheckInUpdateRequest,
+    current_user_id: str = Depends(get_user_id_from_token),
+) -> FelixWellnessCheckInRecordMutationResponse:
+    """Update one authenticated Felix check-in.
+
+    Args:
+        checkin_id (str): Check-in identifier scoped to the current user.
+        request (FelixWellnessCheckInUpdateRequest): Felix-owned partial
+            check-in update payload.
+        current_user_id (str): Authenticated user id from the bearer token.
+
+    Returns:
+        FelixWellnessCheckInRecordMutationResponse: Updated raw check-in record
+        envelope used by the Flutter sync snapshot.
+
+    Raises:
+        HTTPException: When the provider rejects the update or the check-in
+            cannot be found.
+    """
+    service = get_service()
+    result = await service.update_checkin(
+        user_id=current_user_id,
+        checkin_id=checkin_id,
+        patch=_checkin_patch_payload(request),
+    )
+    if result.get("status") != "success":
+        _raise_result_error(result)
+    return FelixWellnessCheckInRecordMutationResponse(**result)
+
+
+@router.delete("/check-ins/{checkin_id}")
+async def delete_checkin(
+    checkin_id: str,
+    current_user_id: str = Depends(get_user_id_from_token),
+) -> dict:
+    """Delete one authenticated Felix check-in.
+
+    Args:
+        checkin_id (str): Check-in identifier scoped to the current user.
+        current_user_id (str): Authenticated user id from the bearer token.
+
+    Returns:
+        dict: Provider-normalized deletion result with the removed id.
+
+    Raises:
+        HTTPException: When the provider rejects the deletion or the check-in
+            cannot be found.
+    """
+    service = get_service()
+    result = await service.delete_checkin(
+        user_id=current_user_id,
+        checkin_id=checkin_id,
+    )
+    if result.get("status") != "success":
+        _raise_result_error(result)
+    return result

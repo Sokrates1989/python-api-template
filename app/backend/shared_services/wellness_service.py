@@ -30,7 +30,11 @@ class WellnessService:
         update_activity: Persist mutable activity state.
         list_diary_entries: Return diary timeline entries.
         create_diary_entry: Persist one diary entry.
+        update_diary_entry: Persist mutable diary entry fields.
+        delete_diary_entry: Remove one diary entry.
         create_checkin: Persist one check-in.
+        update_checkin: Persist mutable check-in fields.
+        delete_checkin: Remove one check-in.
         reset_user_data: Reset user-owned wellness data.
     """
 
@@ -233,6 +237,55 @@ class WellnessService:
             related_activity_id=related_activity_id,
         )
 
+    async def update_diary_entry(
+        self,
+        user_id: str,
+        entry_id: str,
+        patch: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Update an existing diary entry for one user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            entry_id (str): Diary entry identifier scoped by user.
+            patch (Dict[str, Any]): Mutable diary fields to replace.
+
+        Returns:
+            Dict[str, Any]: Provider-normalized mutation result.
+
+        Side Effects:
+            Writes to the configured wellness repository.
+        """
+        return await self._repository.update_diary_entry(
+            user_id=user_id,
+            entry_id=entry_id,
+            patch=patch,
+        )
+
+    async def delete_diary_entry(
+        self,
+        user_id: str,
+        entry_id: str,
+    ) -> Dict[str, Any]:
+        """
+        Delete an existing diary entry for one user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            entry_id (str): Diary entry identifier scoped by user.
+
+        Returns:
+            Dict[str, Any]: Provider-normalized deletion result.
+
+        Side Effects:
+            Deletes from the configured wellness repository.
+        """
+        return await self._repository.delete_diary_entry(
+            user_id=user_id,
+            entry_id=entry_id,
+        )
+
     async def create_checkin(
         self,
         user_id: str,
@@ -275,6 +328,55 @@ class WellnessService:
             tag_keys=tag_keys,
             metrics=metrics,
             activity_id=activity_id,
+        )
+
+    async def update_checkin(
+        self,
+        user_id: str,
+        checkin_id: str,
+        patch: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Update an existing check-in for one user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            checkin_id (str): Check-in identifier scoped by user.
+            patch (Dict[str, Any]): Mutable check-in fields to replace.
+
+        Returns:
+            Dict[str, Any]: Provider-normalized mutation result.
+
+        Side Effects:
+            Writes to the configured wellness repository.
+        """
+        return await self._repository.update_checkin(
+            user_id=user_id,
+            checkin_id=checkin_id,
+            patch=patch,
+        )
+
+    async def delete_checkin(
+        self,
+        user_id: str,
+        checkin_id: str,
+    ) -> Dict[str, Any]:
+        """
+        Delete an existing check-in for one user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            checkin_id (str): Check-in identifier scoped by user.
+
+        Returns:
+            Dict[str, Any]: Provider-normalized deletion result.
+
+        Side Effects:
+            Deletes from the configured wellness repository.
+        """
+        return await self._repository.delete_checkin(
+            user_id=user_id,
+            checkin_id=checkin_id,
         )
 
     async def reset_user_data(

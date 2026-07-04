@@ -109,6 +109,38 @@ class _WellnessRepositoryAdapterBase:
         """
         return await self._service.create_diary_entry(user_id=user_id, title=title, summary=summary, mood_score=mood_score, tag_keys=tag_keys, related_activity_id=related_activity_id)
 
+    async def update_diary_entry(self, user_id: str, entry_id: str, patch: Dict[str, object]):
+        """Update one diary entry for a user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            entry_id (str): Diary entry identifier scoped by user.
+            patch (Dict[str, object]): Mutable diary fields to replace.
+
+        Returns:
+            Any: Backend-specific diary update response.
+        """
+        return await self._service.update_diary_entry(
+            user_id=user_id,
+            entry_id=entry_id,
+            patch=patch,
+        )
+
+    async def delete_diary_entry(self, user_id: str, entry_id: str):
+        """Delete one diary entry for a user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            entry_id (str): Diary entry identifier scoped by user.
+
+        Returns:
+            Any: Backend-specific diary deletion response.
+        """
+        return await self._service.delete_diary_entry(
+            user_id=user_id,
+            entry_id=entry_id,
+        )
+
     async def create_checkin(
         self,
         user_id: str,
@@ -147,6 +179,38 @@ class _WellnessRepositoryAdapterBase:
             tag_keys=tag_keys,
             metrics=metrics,
             activity_id=activity_id,
+        )
+
+    async def update_checkin(self, user_id: str, checkin_id: str, patch: Dict[str, object]):
+        """Update one check-in for a user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            checkin_id (str): Check-in identifier scoped by user.
+            patch (Dict[str, object]): Mutable check-in fields to replace.
+
+        Returns:
+            Any: Backend-specific check-in update response.
+        """
+        return await self._service.update_checkin(
+            user_id=user_id,
+            checkin_id=checkin_id,
+            patch=patch,
+        )
+
+    async def delete_checkin(self, user_id: str, checkin_id: str):
+        """Delete one check-in for a user.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            checkin_id (str): Check-in identifier scoped by user.
+
+        Returns:
+            Any: Backend-specific check-in deletion response.
+        """
+        return await self._service.delete_checkin(
+            user_id=user_id,
+            checkin_id=checkin_id,
         )
 
     async def reset_user_data(self, user_id: str, *, keep_activity_catalog: bool = True):

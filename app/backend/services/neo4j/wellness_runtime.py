@@ -445,6 +445,94 @@ class WellnessService:
         except Exception as exc:
             return {"status": "error", "message": f"Error creating check-in: {str(exc)}", "data": None}
 
+    async def update_checkin(
+        self,
+        user_id: str,
+        checkin_id: str,
+        patch: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Update one existing check-in node.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            checkin_id (str): Check-in identifier scoped by user.
+            patch (Dict[str, Any]): Mutable check-in fields to replace.
+
+        Returns:
+            Dict[str, Any]: Provider-normalized mutation result.
+        """
+        try:
+            await self._ensure_seed_data(user_id)
+            update_payload: Dict[str, Any] = {"updated_at": iso_utc(now_utc())}
+            if patch.get("recorded_at"):
+                parsed = parse_iso(str(patch["recorded_at"]))
+                if parsed is not None:
+                    update_payload["recorded_at"] = iso_utc(parsed)
+            for field in ("mood_score", "stress_score", "energy_score"):
+                if field in patch and patch[field] is not None:
+                    update_payload[field] = int(patch[field])
+            if "note" in patch:
+                note = patch["note"]
+                update_payload["note"] = str(note).strip() if isinstance(note, str) and note.strip() else None
+            if "activity_id" in patch:
+                activity_id = patch["activity_id"]
+                update_payload["activity_id"] = str(activity_id).strip() if isinstance(activity_id, str) and activity_id.strip() else None
+            if isinstance(patch.get("tag_keys"), list):
+                update_payload["tag_keys"] = normalize_tag_keys([str(item) for item in patch["tag_keys"]])
+            if isinstance(patch.get("metrics"), dict):
+                update_payload["metrics"] = normalize_metric_values(patch["metrics"])
+
+            query = """
+            MATCH (c:WellnessCheckIn {user_id: $user_id, id: $checkin_id})
+            SET c += $patch
+            RETURN c {
+                .id, .recorded_at, .mood_score, .stress_score, .energy_score,
+                .tag_keys, .metrics, .activity_id, .note, .created_at, .updated_at
+            } AS item
+            """
+            with self.driver.session() as session:
+                record = session.run(
+                    query,
+                    user_id=user_id,
+                    checkin_id=checkin_id,
+                    patch=update_payload,
+                ).single()
+            if record is None:
+                return {"status": "error", "message": "Check-in not found", "data": None}
+            return {"status": "success", "message": "Check-in updated successfully", "data": dict(record["item"])}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error updating check-in: {str(exc)}", "data": None}
+
+    async def delete_checkin(self, user_id: str, checkin_id: str) -> Dict[str, Any]:
+        """Delete one existing check-in node.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            checkin_id (str): Check-in identifier scoped by user.
+
+        Returns:
+            Dict[str, Any]: Provider-normalized deletion result.
+        """
+        try:
+            await self._ensure_seed_data(user_id)
+            query = """
+            MATCH (c:WellnessCheckIn {user_id: $user_id, id: $checkin_id})
+            WITH c, c.id AS deleted_id
+            DETACH DELETE c
+            RETURN deleted_id
+            """
+            with self.driver.session() as session:
+                record = session.run(
+                    query,
+                    user_id=user_id,
+                    checkin_id=checkin_id,
+                ).single()
+            if record is None:
+                return {"status": "error", "message": "Check-in not found", "data": None}
+            return {"status": "success", "message": "Check-in deleted successfully", "data": {"id": checkin_id}}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error deleting check-in: {str(exc)}", "data": None}
+
     async def list_diary_entries(self, user_id: str, limit: int = 20) -> Dict[str, Any]:
         """Return the authenticated user's diary entries.
 
@@ -512,3 +600,92 @@ class WellnessService:
             return {"status": "success", "message": "Diary entry created successfully", "data": item}
         except Exception as exc:
             return {"status": "error", "message": f"Error creating diary entry: {str(exc)}", "data": None}
+
+    async def update_diary_entry(
+        self,
+        user_id: str,
+        entry_id: str,
+        patch: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Update one existing diary entry node.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            entry_id (str): Diary entry identifier scoped by user.
+            patch (Dict[str, Any]): Mutable diary fields to replace.
+
+        Returns:
+            Dict[str, Any]: Provider-normalized mutation result.
+        """
+        try:
+            await self._ensure_seed_data(user_id)
+            update_payload: Dict[str, Any] = {"updated_at": iso_utc(now_utc())}
+            if isinstance(patch.get("title"), str):
+                update_payload["title"] = patch["title"].strip()
+                update_payload["title_key"] = None
+            if isinstance(patch.get("summary"), str):
+                update_payload["summary"] = patch["summary"].strip()
+                update_payload["summary_key"] = None
+            if "mood_score" in patch and patch["mood_score"] is not None:
+                update_payload["mood_score"] = int(patch["mood_score"])
+                update_payload["mood_state_key"] = metric_state_key("mood", int(patch["mood_score"]))
+            if isinstance(patch.get("tag_keys"), list):
+                update_payload["tag_keys"] = normalize_tag_keys([str(item) for item in patch["tag_keys"]])
+            if "related_activity_id" in patch:
+                related_activity_id = patch["related_activity_id"]
+                normalized_activity_id = str(related_activity_id).strip() if isinstance(related_activity_id, str) and related_activity_id.strip() else None
+                if normalized_activity_id and await find_activity_doc(self.driver, user_id=user_id, activity_id=normalized_activity_id) is None:
+                    return {"status": "error", "message": "Related activity not found", "data": None}
+                update_payload["related_activity_id"] = normalized_activity_id
+
+            query = """
+            MATCH (d:WellnessDiaryEntry {user_id: $user_id, id: $entry_id})
+            SET d += $patch
+            RETURN d {
+                .id, .title_key, .title, .summary_key, .summary, .mood_state_key,
+                .mood_score, .tag_keys, .related_activity_id, .created_at, .updated_at
+            } AS item
+            """
+            with self.driver.session() as session:
+                record = session.run(
+                    query,
+                    user_id=user_id,
+                    entry_id=entry_id,
+                    patch=update_payload,
+                ).single()
+            if record is None:
+                return {"status": "error", "message": "Diary entry not found", "data": None}
+            payload = await build_diary_item(self.driver, user_id=user_id, entry=dict(record["item"]))
+            return {"status": "success", "message": "Diary entry updated successfully", "data": payload}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error updating diary entry: {str(exc)}", "data": None}
+
+    async def delete_diary_entry(self, user_id: str, entry_id: str) -> Dict[str, Any]:
+        """Delete one existing diary entry node.
+
+        Args:
+            user_id (str): Authenticated user identifier.
+            entry_id (str): Diary entry identifier scoped by user.
+
+        Returns:
+            Dict[str, Any]: Provider-normalized deletion result.
+        """
+        try:
+            await self._ensure_seed_data(user_id)
+            query = """
+            MATCH (d:WellnessDiaryEntry {user_id: $user_id, id: $entry_id})
+            WITH d, d.id AS deleted_id
+            DETACH DELETE d
+            RETURN deleted_id
+            """
+            with self.driver.session() as session:
+                record = session.run(
+                    query,
+                    user_id=user_id,
+                    entry_id=entry_id,
+                ).single()
+            if record is None:
+                return {"status": "error", "message": "Diary entry not found", "data": None}
+            return {"status": "success", "message": "Diary entry deleted successfully", "data": {"id": entry_id}}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error deleting diary entry: {str(exc)}", "data": None}
