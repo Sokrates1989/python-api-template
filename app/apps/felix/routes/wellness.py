@@ -30,7 +30,20 @@ from apps.felix.services.access_readiness_service import FelixAccessReadinessSer
 from apps.felix.services.rewards_service import FelixRewardsService
 from apps.felix.services.wellness_service import FelixWellnessService
 
-router = APIRouter(tags=["wellness"], prefix="/v1/wellness")
+dashboard_router = APIRouter(tags=["dashboard"], prefix="/v1/dashboard")
+activities_router = APIRouter(tags=["activities"], prefix="/v1/activities")
+app_sync_router = APIRouter(tags=["sync"], prefix="/v1/sync")
+rewards_router = APIRouter(tags=["rewards"], prefix="/v1/rewards")
+setup_router = APIRouter(tags=["setup"], prefix="/v1/setup")
+dev_router = APIRouter(tags=["dev"], prefix="/v1/dev")
+recovery_router = APIRouter(tags=["recovery"], prefix="/v1/recovery")
+diary_router = APIRouter(tags=["diary"], prefix="/v1/diary")
+checkins_router = APIRouter(tags=["check-ins"], prefix="/v1/check-ins")
+legacy_wellness_router = APIRouter(
+    prefix="/v1/wellness",
+    include_in_schema=False,
+)
+router = APIRouter()
 
 
 def get_service() -> FelixWellnessService:
@@ -129,7 +142,8 @@ def _checkin_patch_payload(request: FelixWellnessCheckInUpdateRequest) -> dict:
     return payload
 
 
-@router.get("/dashboard")
+@legacy_wellness_router.get("/dashboard")
+@dashboard_router.get("")
 async def get_dashboard(current_user_id: str = Depends(get_user_id_from_token)) -> WellnessDashboardResponse:
     """Return the authenticated user's dashboard summary."""
     service = get_service()
@@ -139,7 +153,8 @@ async def get_dashboard(current_user_id: str = Depends(get_user_id_from_token)) 
     return WellnessDashboardResponse(**result)
 
 
-@router.get("/activities")
+@legacy_wellness_router.get("/activities")
+@activities_router.get("")
 async def list_activities(current_user_id: str = Depends(get_user_id_from_token)) -> WellnessActivitiesResponse:
     """Return the authenticated user's activity catalog."""
     service = get_service()
@@ -149,7 +164,8 @@ async def list_activities(current_user_id: str = Depends(get_user_id_from_token)
     return WellnessActivitiesResponse(**result)
 
 
-@router.get("/sync-bootstrap")
+@legacy_wellness_router.get("/sync-bootstrap")
+@app_sync_router.get("/bootstrap")
 async def get_sync_bootstrap(
     diary_limit: int = Query(50, ge=1, le=200, description="Maximum number of diary entries"),
     checkin_limit: int = Query(50, ge=1, le=200, description="Maximum number of check-ins"),
@@ -167,7 +183,8 @@ async def get_sync_bootstrap(
     return WellnessSyncBootstrapResponse(**result)
 
 
-@router.get("/sync-changes")
+@legacy_wellness_router.get("/sync-changes")
+@app_sync_router.get("/changes")
 async def get_sync_changes(
     cursor: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
@@ -187,7 +204,8 @@ async def get_sync_changes(
     return WellnessSyncChangesResponse(**result)
 
 
-@router.get("/rewards")
+@legacy_wellness_router.get("/rewards")
+@rewards_router.get("")
 async def get_rewards_state(
     current_user_id: str = Depends(get_user_id_from_token),
 ) -> FelixRewardsResponse:
@@ -210,7 +228,8 @@ async def get_rewards_state(
     return FelixRewardsResponse(**result)
 
 
-@router.patch("/rewards")
+@legacy_wellness_router.patch("/rewards")
+@rewards_router.patch("")
 async def update_rewards_state(
     request: FelixRewardsStateUpdateRequest,
     current_user_id: str = Depends(get_user_id_from_token),
@@ -238,7 +257,8 @@ async def update_rewards_state(
 
 
 
-@router.get("/access-readiness")
+@legacy_wellness_router.get("/access-readiness")
+@setup_router.get("/access-readiness")
 async def get_access_readiness_state(
     current_user_id: str = Depends(get_user_id_from_token),
 ) -> FelixAccessReadinessResponse:
@@ -261,7 +281,8 @@ async def get_access_readiness_state(
     return FelixAccessReadinessResponse(**result)
 
 
-@router.patch("/access-readiness")
+@legacy_wellness_router.patch("/access-readiness")
+@setup_router.patch("/access-readiness")
 async def update_access_readiness_state(
     request: FelixAccessReadinessUpdateRequest,
     current_user_id: str = Depends(get_user_id_from_token),
@@ -290,7 +311,8 @@ async def update_access_readiness_state(
     return FelixAccessReadinessMutationResponse(**result)
 
 
-@router.post("/dev/reset")
+@legacy_wellness_router.post("/dev/reset")
+@dev_router.post("/reset")
 async def reset_current_user_wellness_data(
     user_id: str = Query(..., min_length=1, description="User id to reset in local DEBUG mode"),
 ) -> dict:
@@ -305,7 +327,8 @@ async def reset_current_user_wellness_data(
     return result
 
 
-@router.post("/recovery/reset-backend-state")
+@legacy_wellness_router.post("/recovery/reset-backend-state")
+@recovery_router.post("/reset-backend-state")
 async def reset_backend_state_for_recovery(
     current_user_id: str = Depends(get_user_id_from_token),
 ) -> dict:
@@ -317,7 +340,8 @@ async def reset_backend_state_for_recovery(
     return result
 
 
-@router.patch("/activities/{activity_id}")
+@legacy_wellness_router.patch("/activities/{activity_id}")
+@activities_router.patch("/{activity_id}")
 async def update_activity(
     activity_id: str,
     request: WellnessActivityUpdateRequest,
@@ -338,7 +362,8 @@ async def update_activity(
     return WellnessActivityMutationResponse(**result)
 
 
-@router.get("/diary")
+@legacy_wellness_router.get("/diary")
+@diary_router.get("/entries")
 async def list_diary_entries(
     limit: int = Query(20, ge=1, le=100, description="Maximum number of diary entries"),
     current_user_id: str = Depends(get_user_id_from_token),
@@ -351,7 +376,8 @@ async def list_diary_entries(
     return WellnessDiaryResponse(**result)
 
 
-@router.post("/diary", status_code=status.HTTP_201_CREATED)
+@legacy_wellness_router.post("/diary", status_code=status.HTTP_201_CREATED)
+@diary_router.post("/entries", status_code=status.HTTP_201_CREATED)
 async def create_diary_entry(
     request: WellnessDiaryEntryCreateRequest,
     current_user_id: str = Depends(get_user_id_from_token),
@@ -371,7 +397,8 @@ async def create_diary_entry(
     return WellnessDiaryMutationResponse(**result)
 
 
-@router.patch("/diary/{entry_id}")
+@legacy_wellness_router.patch("/diary/{entry_id}")
+@diary_router.patch("/entries/{entry_id}")
 async def update_diary_entry(
     entry_id: str,
     request: FelixWellnessDiaryEntryUpdateRequest,
@@ -403,7 +430,8 @@ async def update_diary_entry(
     return WellnessDiaryMutationResponse(**result)
 
 
-@router.delete("/diary/{entry_id}")
+@legacy_wellness_router.delete("/diary/{entry_id}")
+@diary_router.delete("/entries/{entry_id}")
 async def delete_diary_entry(
     entry_id: str,
     current_user_id: str = Depends(get_user_id_from_token),
@@ -431,7 +459,8 @@ async def delete_diary_entry(
     return result
 
 
-@router.post("/check-ins", status_code=status.HTTP_201_CREATED)
+@legacy_wellness_router.post("/check-ins", status_code=status.HTTP_201_CREATED)
+@checkins_router.post("", status_code=status.HTTP_201_CREATED)
 async def create_checkin(
     request: WellnessCheckInCreateRequest,
     current_user_id: str = Depends(get_user_id_from_token),
@@ -454,7 +483,8 @@ async def create_checkin(
     return WellnessCheckInMutationResponse(**result)
 
 
-@router.patch("/check-ins/{checkin_id}")
+@legacy_wellness_router.patch("/check-ins/{checkin_id}")
+@checkins_router.patch("/{checkin_id}")
 async def update_checkin(
     checkin_id: str,
     request: FelixWellnessCheckInUpdateRequest,
@@ -487,7 +517,8 @@ async def update_checkin(
     return FelixWellnessCheckInRecordMutationResponse(**result)
 
 
-@router.delete("/check-ins/{checkin_id}")
+@legacy_wellness_router.delete("/check-ins/{checkin_id}")
+@checkins_router.delete("/{checkin_id}")
 async def delete_checkin(
     checkin_id: str,
     current_user_id: str = Depends(get_user_id_from_token),
@@ -513,3 +544,15 @@ async def delete_checkin(
     if result.get("status") != "success":
         _raise_result_error(result)
     return result
+
+
+router.include_router(dashboard_router)
+router.include_router(activities_router)
+router.include_router(app_sync_router)
+router.include_router(rewards_router)
+router.include_router(setup_router)
+router.include_router(dev_router)
+router.include_router(recovery_router)
+router.include_router(diary_router)
+router.include_router(checkins_router)
+router.include_router(legacy_wellness_router)

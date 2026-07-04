@@ -2,8 +2,8 @@
 Felix backend definition.
 
 This module declares the route families owned by the Felix backend
-slice. Felix mounts wellness under the /felix prefix and exposes
-sync endpoints for offline-first support.
+slice. Felix mounts app-domain endpoints under the /felix prefix and
+exposes sync endpoints for offline-first support.
 """
 from __future__ import annotations
 
@@ -19,8 +19,8 @@ FELIX_APP_DEFINITION = BackendAppDefinition(
     route_registrations=(
         RouteRegistration(
             router=wellness.router,
-            external_prefix=FELIX_APP_CONFIG.wellness_mount_prefix,
-            public_prefix=FELIX_APP_CONFIG.wellness_public_prefix,
+            external_prefix=FELIX_APP_CONFIG.felix_mount_prefix,
+            public_prefix=FELIX_APP_CONFIG.felix_public_prefix,
         ),
         RouteRegistration(
             router=sync.router,
