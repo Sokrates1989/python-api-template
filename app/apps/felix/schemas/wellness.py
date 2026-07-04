@@ -1,4 +1,4 @@
-"""Wellness schemas owned by the Felix backend app.
+﻿"""Wellness schemas owned by the Felix backend app.
 
 Felix route request and response contracts live here so product-specific
 wellness fields, metric semantics, reward persistence, and diary/check-in
@@ -6,7 +6,7 @@ mutation envelopes do not leak into the Python API template's global layer.
 """
 from __future__ import annotations
 
-from typing import Annotated, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -527,6 +527,88 @@ class FelixWellnessCheckInRecordMutationResponse(BaseModel):
     message: str
     data: WellnessCheckInRecordResponse
 
+class FelixAccessReadinessUpdateRequest(BaseModel):
+    """Request model for partial Felix access-readiness updates.
+
+    Attributes:
+        setup_completed (Optional[bool]): Whether setup has been completed.
+        setup_completed_at (Optional[str]): ISO timestamp for setup
+            completion.
+        legal_accepted_version (Optional[str]): Accepted legal content version.
+        legal_accepted_at (Optional[str]): ISO timestamp for legal acceptance.
+        setup_payload (Optional[Dict[str, Any]]): PWA-compatible setupPayload
+            patch for privacy, metrics, notifications, and later slices.
+    """
+
+    setup_completed: Optional[bool] = Field(None, alias="setupCompleted")
+    setup_completed_at: Optional[str] = Field(None, alias="setupCompletedAt")
+    legal_accepted_version: Optional[str] = Field(None, alias="legalAcceptedVersion", max_length=128)
+    legal_accepted_at: Optional[str] = Field(None, alias="legalAcceptedAt")
+    setup_payload: Optional[Dict[str, Any]] = Field(None, alias="setupPayload")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    @model_validator(mode="after")
+    def require_mutable_field(self) -> "FelixAccessReadinessUpdateRequest":
+        """Ensure the request contains at least one readiness field.
+
+        Returns:
+            FelixAccessReadinessUpdateRequest: The validated request.
+
+        Raises:
+            ValueError: When no mutable field was supplied.
+        """
+        if not self.model_fields_set:
+            raise ValueError("At least one access-readiness field must be provided")
+        return self
+
+
+class FelixAccessReadinessStateResponse(BaseModel):
+    """Response model for a complete Felix access-readiness record.
+
+    Attributes:
+        setup_completed (bool): Whether setup has been completed.
+        setup_completed_at (Optional[str]): ISO timestamp for setup
+            completion.
+        legal_accepted_version (Optional[str]): Accepted legal content version.
+        legal_accepted_at (Optional[str]): ISO timestamp for legal acceptance.
+        setup_payload (Optional[Dict[str, Any]]): PWA-compatible setupPayload
+            state shared across devices.
+    """
+
+    setup_completed: bool = Field(alias="setupCompleted")
+    setup_completed_at: Optional[str] = Field(None, alias="setupCompletedAt")
+    legal_accepted_version: Optional[str] = Field(None, alias="legalAcceptedVersion")
+    legal_accepted_at: Optional[str] = Field(None, alias="legalAcceptedAt")
+    setup_payload: Optional[Dict[str, Any]] = Field(None, alias="setupPayload")
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+
+class FelixAccessReadinessResponse(BaseModel):
+    """Envelope for Felix access-readiness reads.
+
+    Attributes:
+        status (str): Operation status.
+        data (FelixAccessReadinessStateResponse): Complete readiness state.
+    """
+
+    status: str
+    data: FelixAccessReadinessStateResponse
+
+
+class FelixAccessReadinessMutationResponse(BaseModel):
+    """Envelope for Felix access-readiness mutations.
+
+    Attributes:
+        status (str): Operation status.
+        message (str): Human-readable mutation result.
+        data (FelixAccessReadinessStateResponse): Updated readiness state.
+    """
+
+    status: str
+    message: str
+    data: FelixAccessReadinessStateResponse
 
 class FelixRewardMediaPreferencesRequest(BaseModel):
     """Request model for reward media preference patches.
@@ -655,6 +737,10 @@ class FelixRewardsMutationResponse(BaseModel):
 
 
 __all__ = [
+    "FelixAccessReadinessMutationResponse",
+    "FelixAccessReadinessResponse",
+    "FelixAccessReadinessStateResponse",
+    "FelixAccessReadinessUpdateRequest",
     "FelixRewardMediaPreferencesRequest",
     "FelixRewardMediaPreferencesResponse",
     "FelixRewardsMutationResponse",

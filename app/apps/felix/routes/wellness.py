@@ -1,10 +1,13 @@
-"""Wellness routes owned by the Felix backend app."""
+﻿"""Wellness routes owned by the Felix backend app."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from api.shared_dependencies.auth import get_user_id_from_token
 from apps.felix.schemas.wellness import (
+    FelixAccessReadinessMutationResponse,
+    FelixAccessReadinessResponse,
+    FelixAccessReadinessUpdateRequest,
     FelixRewardsMutationResponse,
     FelixRewardsResponse,
     FelixRewardsStateUpdateRequest,
@@ -23,6 +26,7 @@ from apps.felix.schemas.wellness import (
     WellnessSyncBootstrapResponse,
     WellnessSyncChangesResponse,
 )
+from apps.felix.services.access_readiness_service import FelixAccessReadinessService
 from apps.felix.services.rewards_service import FelixRewardsService
 from apps.felix.services.wellness_service import FelixWellnessService
 
@@ -48,6 +52,21 @@ def get_rewards_service() -> FelixRewardsService:
     """
     return FelixRewardsService()
 
+
+def get_access_readiness_service() -> FelixAccessReadinessService:
+    """Return the Felix access-readiness service.
+
+    Args:
+        None.
+
+    Returns:
+        FelixAccessReadinessService: App-owned service for setup readiness
+        persistence.
+
+    Side Effects:
+        Resolves the active database handler through the service constructor.
+    """
+    return FelixAccessReadinessService()
 
 def get_runtime_settings():
     """Return settings lazily to avoid import cycles during route registration."""
@@ -216,6 +235,59 @@ async def update_rewards_state(
     if result.get("status") != "success":
         _raise_result_error(result)
     return FelixRewardsMutationResponse(**result)
+
+
+
+@router.get("/access-readiness")
+async def get_access_readiness_state(
+    current_user_id: str = Depends(get_user_id_from_token),
+) -> FelixAccessReadinessResponse:
+    """Return the authenticated user's Felix access-readiness state.
+
+    Args:
+        current_user_id (str): Authenticated user id from the bearer token.
+
+    Returns:
+        FelixAccessReadinessResponse: Complete setup/legal readiness state.
+
+    Raises:
+        HTTPException: When the configured database backend cannot serve the
+        readiness state.
+    """
+    service = get_access_readiness_service()
+    result = await service.get_access_readiness_state(current_user_id)
+    if result.get("status") != "success":
+        _raise_result_error(result)
+    return FelixAccessReadinessResponse(**result)
+
+
+@router.patch("/access-readiness")
+async def update_access_readiness_state(
+    request: FelixAccessReadinessUpdateRequest,
+    current_user_id: str = Depends(get_user_id_from_token),
+) -> FelixAccessReadinessMutationResponse:
+    """Patch the authenticated user's Felix access-readiness state.
+
+    Args:
+        request (FelixAccessReadinessUpdateRequest): Partial readiness patch in
+            the PWA camelCase contract.
+        current_user_id (str): Authenticated user id from the bearer token.
+
+    Returns:
+        FelixAccessReadinessMutationResponse: Updated setup/legal readiness
+        state.
+
+    Raises:
+        HTTPException: When the configured database backend rejects the update.
+    """
+    service = get_access_readiness_service()
+    result = await service.update_access_readiness_state(
+        current_user_id,
+        request.model_dump(exclude_unset=True, by_alias=True),
+    )
+    if result.get("status") != "success":
+        _raise_result_error(result)
+    return FelixAccessReadinessMutationResponse(**result)
 
 
 @router.post("/dev/reset")
