@@ -13,6 +13,19 @@ services:
       # Allow the Flutter web dev server to make cross-origin requests.
       # Port 3000 is the default Flutter web port used by quick-start.ps1.
       CORS_ORIGINS: "http://localhost:3000,http://localhost:5173,http://localhost:8080,http://localhost:4200"
+      # Felix AI chat is backend-only. Configure these values on the API
+      # service to enable live provider answers; leave them empty to use the
+      # deterministic fallback without exposing any AI key to Flutter.
+      # AI_CHAT_COMPLETIONS_ENDPOINT: "https://provider.example/v1/chat/completions"
+      # AI_CHAT_API_KEY_FILE: "/run/secrets/felix_ai_chat_api_key"
+      # AI_CHAT_MODEL: "provider-model-name"
+      # Local-only AI diagnostics. Production compose templates should leave
+      # this disabled unless an operator explicitly opts in.
+      AI_CHAT_DEBUG_ENABLED: "true"
+      AI_CHAT_DEBUG_INCLUDE_PROMPTS: "true"
+      AI_CHAT_LOG_DIR: "/app/ai_chat_logs"
+    volumes:
+      - ../../logs/ai_chat:/app/ai_chat_logs
 
   postgres:
     volumes:

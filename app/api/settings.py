@@ -60,6 +60,21 @@ class Settings(BaseSettings):
     APP_NAME: str = "Python API Template"
     APP_DESCRIPTION: str = "A flexible API template with SQL, Neo4j, and MongoDB support"
 
+    # Backend-owned AI chat provider configuration.
+    # Frontends must never receive these credentials or call provider endpoints
+    # directly. Apps opt into AI by setting an OpenAI-compatible completions
+    # endpoint and, when required by the provider, an API key or API key file.
+    AI_CHAT_COMPLETIONS_ENDPOINT: str = ""
+    AI_CHAT_API_KEY: str = ""
+    AI_CHAT_API_KEY_FILE: str = ""
+    AI_CHAT_MODEL: str = ""
+    AI_CHAT_TEMPERATURE: float = 0.35
+    AI_CHAT_MAX_TOKENS: int = 900
+    AI_CHAT_TIMEOUT_SECONDS: float = 30.0
+    AI_CHAT_DEBUG_ENABLED: bool = False
+    AI_CHAT_DEBUG_INCLUDE_PROMPTS: bool = False
+    AI_CHAT_LOG_DIR: str = ""
+
     # Keycloak Configuration
     KEYCLOAK_SERVER_URL: Optional[str] = None
     KEYCLOAK_INTERNAL_URL: Optional[str] = None
@@ -150,6 +165,21 @@ class Settings(BaseSettings):
         if self.AWS_SECRET_ACCESS_KEY_FILE and Path(self.AWS_SECRET_ACCESS_KEY_FILE).exists():
             return Path(self.AWS_SECRET_ACCESS_KEY_FILE).read_text().strip()
         return self.AWS_SECRET_ACCESS_KEY
+
+    def get_ai_chat_api_key(self) -> str:
+        """Return the backend-only AI chat provider API key.
+
+        Args:
+            None.
+
+        Returns:
+            str: API key read from ``AI_CHAT_API_KEY_FILE`` when configured,
+            otherwise ``AI_CHAT_API_KEY``.
+
+        Raises:
+            ValueError: When ``AI_CHAT_API_KEY_FILE`` is configured but missing.
+        """
+        return self.read_env_or_file(self.AI_CHAT_API_KEY, self.AI_CHAT_API_KEY_FILE)
 
     def get_auth_provider(self) -> str:
         """Return the configured authentication provider.

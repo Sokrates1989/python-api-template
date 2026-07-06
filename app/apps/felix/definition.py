@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from apps.contracts import BackendAppDefinition, RouteRegistration
 from apps.felix.config import FELIX_APP_CONFIG
-from apps.felix.routes import sync, wellness
+from apps.felix.routes import ai_chat, sync, wellness
 
 
 FELIX_APP_DEFINITION = BackendAppDefinition(
@@ -21,6 +21,11 @@ FELIX_APP_DEFINITION = BackendAppDefinition(
             router=wellness.router,
             external_prefix=FELIX_APP_CONFIG.felix_mount_prefix,
             public_prefix=FELIX_APP_CONFIG.felix_public_prefix,
+        ),
+        RouteRegistration(
+            router=ai_chat.router,
+            external_prefix=FELIX_APP_CONFIG.felix_mount_prefix,
+            public_prefix=f"{FELIX_APP_CONFIG.felix_public_prefix}/ai-chat",
         ),
         RouteRegistration(
             router=sync.router,
