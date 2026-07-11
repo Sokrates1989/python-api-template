@@ -12,7 +12,7 @@ from backend.database.sql_handler import SQLHandler
 from models.sql.sync_conflict_log import SyncConflictLog
 from models.sql.sync_operation_log import SyncOperationLog
 from models.sql.user import User
-from models.sql.wellness import WellnessActivity, WellnessCheckIn, WellnessDiaryEntry
+from models.sql.wellness import WellnessActivity, WellnessActivityCategory, WellnessCheckIn, WellnessDiaryEntry, WellnessSyncTombstone
 
 
 class WellnessService:
@@ -149,7 +149,7 @@ class WellnessService:
             {"id": "pause-and-tea", "icon_key": "local_cafe", "title_key": "app_shell.activities.seed_tea_title", "summary_key": "app_shell.activities.seed_tea_summary", "duration_minutes": 10, "favorite": False, "category_keys": ["calm"], "energy_impact": "ease"},
         ]
         activities: List[WellnessActivity] = []
-        for item in payloads:
+        for sort_order, item in enumerate(payloads):
             activity = WellnessActivity(
                 user_id=user_id,
                 id=item["id"],
@@ -160,6 +160,8 @@ class WellnessService:
                 summary=None,
                 duration_minutes=item["duration_minutes"],
                 favorite=item["favorite"],
+                harmful=False,
+                sort_order=sort_order,
                 energy_impact=item["energy_impact"],
                 created_at=now,
                 updated_at=now,
@@ -168,13 +170,38 @@ class WellnessService:
             activities.append(activity)
         return activities
 
+    def _starter_categories(self, user_id: str) -> List[WellnessActivityCategory]:
+        """Build the default persisted category rows for a user.
+
+        Args:
+            user_id (str): Owner identifier applied to every category.
+
+        Returns:
+            List[WellnessActivityCategory]: Ordered default category rows.
+        """
+        return [
+            WellnessActivityCategory(
+                user_id=user_id,
+                key=key,
+                title_key=definition["title_key"],
+                title=None,
+                description_key=definition["description_key"],
+                description=None,
+                icon_key={"calm": "self_improvement", "focus": "center_focus_strong", "energy": "bolt"}.get(key, "category"),
+                sort_order=sort_order,
+            )
+            for sort_order, (key, definition) in enumerate(self._CATEGORY_DEFINITIONS.items())
+        ]
+
     async def _ensure_seed_data(self, user_id: str) -> None:
         async with self.handler.AsyncSessionLocal() as session:
             await self._ensure_user_exists(session, user_id)
             existing = await session.execute(select(WellnessActivity.pk).where(WellnessActivity.user_id == user_id).limit(1))
-            if existing.scalar_one_or_none() is not None:
-                return
-            session.add_all(self._starter_activities(user_id))
+            if existing.scalar_one_or_none() is None:
+                session.add_all(self._starter_activities(user_id))
+            existing_category = await session.execute(select(WellnessActivityCategory.pk).where(WellnessActivityCategory.user_id == user_id).limit(1))
+            if existing_category.scalar_one_or_none() is None:
+                session.add_all(self._starter_categories(user_id))
             await session.commit()
 
     async def _find_activity(self, session, user_id: str, activity_id: Optional[str]) -> Optional[WellnessActivity]:
@@ -182,6 +209,64 @@ class WellnessService:
             return None
         result = await session.execute(select(WellnessActivity).where(and_(WellnessActivity.user_id == user_id, WellnessActivity.id == activity_id)))
         return result.scalar_one_or_none()
+
+    async def _find_category(self, session, user_id: str, category_key: Optional[str]) -> Optional[WellnessActivityCategory]:
+        """Find one category scoped to a user."""
+        if not category_key:
+            return None
+        result = await session.execute(select(WellnessActivityCategory).where(and_(WellnessActivityCategory.user_id == user_id, WellnessActivityCategory.key == category_key)))
+        return result.scalar_one_or_none()
+
+    async def _record_tombstone(self, session, user_id: str, entity_type: str, entity_id: str) -> None:
+        """Create or refresh an incremental deletion marker."""
+        result = await session.execute(select(WellnessSyncTombstone).where(and_(WellnessSyncTombstone.user_id == user_id, WellnessSyncTombstone.entity_type == entity_type, WellnessSyncTombstone.entity_id == entity_id)))
+        tombstone = result.scalar_one_or_none()
+        if tombstone is None:
+            session.add(WellnessSyncTombstone(user_id=user_id, entity_type=entity_type, entity_id=entity_id, deleted_at=self._now_utc()))
+        else:
+            tombstone.deleted_at = self._now_utc()
+
+    @staticmethod
+    def _clean_keys(values: object) -> List[str]:
+        """Normalize a sequence of stable keys while preserving order."""
+        if not isinstance(values, list):
+            return []
+        cleaned: List[str] = []
+        for value in values:
+            key = str(value).strip()
+            if key and key not in cleaned:
+                cleaned.append(key)
+        return cleaned
+
+    async def _validate_category_keys(self, session, user_id: str, values: object) -> List[str]:
+        """Return normalized category keys or raise for missing categories."""
+        keys = self._clean_keys(values)
+        if not keys:
+            raise ValueError("Activity requires at least one category")
+        result = await session.execute(select(WellnessActivityCategory.key).where(and_(WellnessActivityCategory.user_id == user_id, WellnessActivityCategory.key.in_(keys))))
+        existing = set(result.scalars().all())
+        missing = [key for key in keys if key not in existing]
+        if missing:
+            raise ValueError(f"Unknown activity categories: {', '.join(missing)}")
+        return keys
+
+    def _apply_activity_patch(self, activity: WellnessActivity, patch: Dict[str, object]) -> None:
+        """Apply normalized mutable catalogue fields to an activity row."""
+        for field in ("title_key", "title", "summary_key", "summary", "activity_reminder", "energy_impact"):
+            if field in patch:
+                setattr(activity, field, self._optional_text(patch.get(field)))
+        if "icon_key" in patch and self._optional_text(patch.get("icon_key")):
+            activity.icon_key = self._optional_text(patch.get("icon_key")) or activity.icon_key
+        if "duration_minutes" in patch:
+            activity.duration_minutes = max(0, int(patch["duration_minutes"]))
+        if "favorite" in patch:
+            activity.favorite = bool(patch["favorite"])
+        if "harmful" in patch:
+            activity.harmful = bool(patch["harmful"])
+        if "sort_order" in patch:
+            activity.sort_order = int(patch["sort_order"])
+        if "tags" in patch:
+            activity.tags = self._clean_keys(patch["tags"])
 
     async def _build_diary_item(self, session, user_id: str, entry: WellnessDiaryEntry) -> Dict[str, object]:
         item = entry.to_dict()
@@ -196,7 +281,7 @@ class WellnessService:
             normalized = await self._build_diary_item(session, user_id, payload)
         return {
             "entity_type": entity_type,
-            "entity_id": normalized.get("id", ""),
+            "entity_id": normalized.get("id") or normalized.get("key", ""),
             "action": "upsert",
             "updated_at": normalized.get("updated_at") or normalized.get("created_at"),
             "payload": normalized,
@@ -211,6 +296,8 @@ class WellnessService:
                 operation_log_result = await session.execute(delete(SyncOperationLog).where(SyncOperationLog.user_id == user_id))
                 conflict_log_result = await session.execute(delete(SyncConflictLog).where(SyncConflictLog.user_id == user_id))
                 await session.execute(delete(WellnessActivity).where(WellnessActivity.user_id == user_id))
+                await session.execute(delete(WellnessActivityCategory).where(WellnessActivityCategory.user_id == user_id))
+                await session.execute(delete(WellnessSyncTombstone).where(WellnessSyncTombstone.user_id == user_id))
                 await session.commit()
             activity_count = 0
             if keep_activity_catalog:
@@ -252,12 +339,10 @@ class WellnessService:
         try:
             await self._ensure_seed_data(user_id)
             async with self.handler.AsyncSessionLocal() as session:
-                result = await session.execute(select(WellnessActivity).where(WellnessActivity.user_id == user_id).order_by(WellnessActivity.favorite.desc(), WellnessActivity.duration_minutes.asc(), WellnessActivity.title_key.asc()))
+                result = await session.execute(select(WellnessActivity).where(WellnessActivity.user_id == user_id).order_by(WellnessActivity.favorite.desc(), WellnessActivity.sort_order.asc(), WellnessActivity.title_key.asc()))
                 activities = [item.to_dict() for item in result.scalars().all()]
-                categories = []
-                for category_key, definition in self._CATEGORY_DEFINITIONS.items():
-                    count = sum(1 for item in activities if category_key in item.get("category_keys", []))
-                    categories.append({"key": category_key, "title_key": definition["title_key"], "description_key": definition["description_key"], "item_count": count})
+                category_result = await session.execute(select(WellnessActivityCategory).where(WellnessActivityCategory.user_id == user_id).order_by(WellnessActivityCategory.sort_order.asc(), WellnessActivityCategory.key.asc()))
+                categories = [category.to_dict(item_count=sum(1 for item in activities if category.key in item.get("category_keys", []))) for category in category_result.scalars().all()]
                 return {"status": "success", "data": {"categories": categories, "items": activities}}
         except Exception as exc:
             return {"status": "error", "message": f"Error loading activities: {str(exc)}", "data": None}
@@ -266,20 +351,22 @@ class WellnessService:
         try:
             await self._ensure_seed_data(user_id)
             async with self.handler.AsyncSessionLocal() as session:
-                activity_result = await session.execute(select(WellnessActivity).where(WellnessActivity.user_id == user_id).order_by(WellnessActivity.favorite.desc(), WellnessActivity.duration_minutes.asc(), WellnessActivity.title_key.asc()))
+                activity_result = await session.execute(select(WellnessActivity).where(WellnessActivity.user_id == user_id).order_by(WellnessActivity.favorite.desc(), WellnessActivity.sort_order.asc(), WellnessActivity.title_key.asc()))
                 activities = [item.to_dict() for item in activity_result.scalars().all()]
+                category_result = await session.execute(select(WellnessActivityCategory).where(WellnessActivityCategory.user_id == user_id).order_by(WellnessActivityCategory.sort_order.asc(), WellnessActivityCategory.key.asc()))
+                categories = [item.to_dict() for item in category_result.scalars().all()]
                 diary_result = await session.execute(select(WellnessDiaryEntry).where(WellnessDiaryEntry.user_id == user_id).order_by(WellnessDiaryEntry.created_at.desc()).limit(diary_limit))
                 diary_entries = [await self._build_diary_item(session, user_id, entry) for entry in diary_result.scalars().all()]
                 checkin_result = await session.execute(select(WellnessCheckIn).where(WellnessCheckIn.user_id == user_id).order_by(WellnessCheckIn.recorded_at.desc()).limit(checkin_limit))
                 checkins = [item.to_dict() for item in checkin_result.scalars().all()]
-                return {"status": "success", "data": {"server_timestamp": self._iso(self._now_utc()), "activities": activities, "diary_entries": diary_entries, "checkins": checkins}}
+                return {"status": "success", "data": {"server_timestamp": self._iso(self._now_utc()), "activity_categories": categories, "activities": activities, "diary_entries": diary_entries, "checkins": checkins}}
         except Exception as exc:
             return {"status": "error", "message": f"Error loading sync bootstrap: {str(exc)}", "data": None}
 
     async def get_sync_changes(self, user_id: str, cursor: Optional[str] = None, limit: int = 100, entity_type: Optional[str] = None) -> Dict[str, object]:
         try:
             await self._ensure_seed_data(user_id)
-            allowed_entity_types = {"wellness_activity": WellnessActivity, "wellness_diary_entry": WellnessDiaryEntry, "wellness_checkin": WellnessCheckIn}
+            allowed_entity_types = {"wellness_activity": WellnessActivity, "wellness_activity_category": WellnessActivityCategory, "wellness_diary_entry": WellnessDiaryEntry, "wellness_checkin": WellnessCheckIn}
             if entity_type and entity_type not in allowed_entity_types:
                 return {"status": "error", "message": f"Unsupported entity_type: {entity_type}", "data": None}
             cursor_dt = self._parse_iso(cursor) if cursor else None
@@ -292,9 +379,17 @@ class WellnessService:
                     filters = [model.user_id == user_id]
                     if cursor_dt is not None:
                         filters.append(model.updated_at > cursor_dt)
-                    result = await session.execute(select(model).where(and_(*filters)).order_by(model.updated_at.asc(), model.id.asc()).limit(query_limit))
+                    identity_column = model.key if selected_type == "wellness_activity_category" else model.id
+                    result = await session.execute(select(model).where(and_(*filters)).order_by(model.updated_at.asc(), identity_column.asc()).limit(query_limit))
                     for item in result.scalars().all():
                         changes.append(await self._build_sync_change(session=session, user_id=user_id, entity_type=selected_type, payload=item))
+                tombstone_filters = [WellnessSyncTombstone.user_id == user_id]
+                if entity_type:
+                    tombstone_filters.append(WellnessSyncTombstone.entity_type == entity_type)
+                if cursor_dt is not None:
+                    tombstone_filters.append(WellnessSyncTombstone.deleted_at > cursor_dt)
+                tombstones = await session.execute(select(WellnessSyncTombstone).where(and_(*tombstone_filters)).order_by(WellnessSyncTombstone.deleted_at.asc()).limit(query_limit))
+                changes.extend(item.to_sync_change() for item in tombstones.scalars().all())
             changes.sort(key=lambda item: (item.get("updated_at") or "", item.get("entity_type") or "", item.get("entity_id") or ""))
             selected_changes = changes[:limit]
             next_cursor = selected_changes[-1]["updated_at"] if selected_changes else cursor
@@ -302,21 +397,119 @@ class WellnessService:
         except Exception as exc:
             return {"status": "error", "message": f"Error loading sync changes: {str(exc)}", "data": None}
 
-    async def update_activity(self, user_id: str, activity_id: str, favorite: Optional[bool] = None) -> Dict[str, object]:
+    async def create_activity(self, user_id: str, payload: Dict[str, object]) -> Dict[str, object]:
+        """Create a user-owned activity and validate all category references."""
+        try:
+            await self._ensure_seed_data(user_id)
+            async with self.handler.AsyncSessionLocal() as session:
+                activity_id = str(payload.get("id") or uuid4()).strip()
+                if await self._find_activity(session, user_id, activity_id) is not None:
+                    return {"status": "error", "message": "Activity already exists", "data": None}
+                title = self._optional_text(payload.get("title"))
+                title_key = self._optional_text(payload.get("title_key"))
+                if not title and not title_key:
+                    return {"status": "error", "message": "Activity title is required", "data": None}
+                category_keys = await self._validate_category_keys(session, user_id, payload.get("category_keys"))
+                now = self._now_utc()
+                activity = WellnessActivity(user_id=user_id, id=activity_id, icon_key=self._optional_text(payload.get("icon_key")) or "auto_awesome", title_key=title_key, title=title, summary_key=None, summary=None, duration_minutes=0, favorite=False, harmful=False, sort_order=0, created_at=now, updated_at=now)
+                self._apply_activity_patch(activity, payload)
+                activity.category_keys = category_keys
+                session.add(activity)
+                await session.commit()
+                await session.refresh(activity)
+                return {"status": "success", "message": "Activity created successfully", "data": activity.to_dict()}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error creating activity: {str(exc)}", "data": None}
+
+    async def update_activity(self, user_id: str, activity_id: str, patch: Dict[str, object]) -> Dict[str, object]:
         try:
             await self._ensure_seed_data(user_id)
             async with self.handler.AsyncSessionLocal() as session:
                 activity = await self._find_activity(session, user_id, activity_id)
                 if activity is None:
                     return {"status": "error", "message": "Activity not found", "data": None}
-                if favorite is not None:
-                    activity.favorite = favorite
+                self._apply_activity_patch(activity, patch)
+                if "category_keys" in patch:
+                    activity.category_keys = await self._validate_category_keys(session, user_id, patch["category_keys"])
                 activity.updated_at = self._now_utc()
                 await session.commit()
                 await session.refresh(activity)
                 return {"status": "success", "message": "Activity updated successfully", "data": activity.to_dict()}
         except Exception as exc:
             return {"status": "error", "message": f"Error updating activity: {str(exc)}", "data": None}
+
+    async def delete_activity(self, user_id: str, activity_id: str) -> Dict[str, object]:
+        """Delete one activity idempotently."""
+        try:
+            async with self.handler.AsyncSessionLocal() as session:
+                activity = await self._find_activity(session, user_id, activity_id)
+                await self._record_tombstone(session, user_id, "wellness_activity", activity_id)
+                if activity is not None:
+                    await session.delete(activity)
+                await session.commit()
+                return {"status": "success", "message": "Activity deleted successfully", "data": {"id": activity_id}}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error deleting activity: {str(exc)}", "data": None}
+
+    async def create_activity_category(self, user_id: str, payload: Dict[str, object]) -> Dict[str, object]:
+        """Create one persisted activity category."""
+        try:
+            await self._ensure_seed_data(user_id)
+            async with self.handler.AsyncSessionLocal() as session:
+                key = str(payload.get("key") or uuid4()).strip()
+                if await self._find_category(session, user_id, key) is not None:
+                    return {"status": "error", "message": "Activity category already exists", "data": None}
+                title = self._optional_text(payload.get("title"))
+                title_key = self._optional_text(payload.get("title_key"))
+                if not title and not title_key:
+                    return {"status": "error", "message": "Activity category title is required", "data": None}
+                now = self._now_utc()
+                category = WellnessActivityCategory(user_id=user_id, key=key, title_key=title_key, title=title, description_key=self._optional_text(payload.get("description_key")), description=self._optional_text(payload.get("description")), icon_key=self._optional_text(payload.get("icon_key")) or "category", sort_order=int(payload.get("sort_order") or 0), created_at=now, updated_at=now)
+                session.add(category)
+                await session.commit()
+                await session.refresh(category)
+                return {"status": "success", "message": "Activity category created successfully", "data": category.to_dict()}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error creating activity category: {str(exc)}", "data": None}
+
+    async def update_activity_category(self, user_id: str, category_key: str, patch: Dict[str, object]) -> Dict[str, object]:
+        """Patch one persisted activity category."""
+        try:
+            await self._ensure_seed_data(user_id)
+            async with self.handler.AsyncSessionLocal() as session:
+                category = await self._find_category(session, user_id, category_key)
+                if category is None:
+                    return {"status": "error", "message": "Activity category not found", "data": None}
+                for field in ("title_key", "title", "description_key", "description"):
+                    if field in patch:
+                        setattr(category, field, self._optional_text(patch.get(field)))
+                if "icon_key" in patch and self._optional_text(patch.get("icon_key")):
+                    category.icon_key = self._optional_text(patch.get("icon_key")) or category.icon_key
+                if "sort_order" in patch:
+                    category.sort_order = int(patch["sort_order"])
+                category.updated_at = self._now_utc()
+                await session.commit()
+                await session.refresh(category)
+                return {"status": "success", "message": "Activity category updated successfully", "data": category.to_dict()}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error updating activity category: {str(exc)}", "data": None}
+
+    async def delete_activity_category(self, user_id: str, category_key: str) -> Dict[str, object]:
+        """Delete a category only when no activity still references it."""
+        try:
+            await self._ensure_seed_data(user_id)
+            async with self.handler.AsyncSessionLocal() as session:
+                activities = (await session.execute(select(WellnessActivity).where(WellnessActivity.user_id == user_id))).scalars().all()
+                if any(category_key in activity.category_keys for activity in activities):
+                    return {"status": "error", "message": "Activity category is still in use", "data": None}
+                category = await self._find_category(session, user_id, category_key)
+                await self._record_tombstone(session, user_id, "wellness_activity_category", category_key)
+                if category is not None:
+                    await session.delete(category)
+                await session.commit()
+                return {"status": "success", "message": "Activity category deleted successfully", "data": {"key": category_key}}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error deleting activity category: {str(exc)}", "data": None}
 
     async def create_checkin(
         self,
@@ -442,6 +635,7 @@ class WellnessService:
                 if checkin is None:
                     return {"status": "error", "message": "Check-in not found", "data": None}
                 await session.delete(checkin)
+                await self._record_tombstone(session, user_id, "wellness_checkin", checkin_id)
                 await session.commit()
                 return {"status": "success", "message": "Check-in deleted successfully", "data": {"id": checkin_id}}
         except Exception as exc:
@@ -559,6 +753,7 @@ class WellnessService:
                 if entry is None:
                     return {"status": "error", "message": "Diary entry not found", "data": None}
                 await session.delete(entry)
+                await self._record_tombstone(session, user_id, "wellness_diary_entry", entry_id)
                 await session.commit()
                 return {"status": "success", "message": "Diary entry deleted successfully", "data": {"id": entry_id}}
         except Exception as exc:

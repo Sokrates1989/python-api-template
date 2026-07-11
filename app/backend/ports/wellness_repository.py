@@ -35,8 +35,28 @@ class WellnessRepository(Protocol):
         self,
         user_id: str,
         activity_id: str,
-        favorite: Optional[bool] = None,
+        patch: Dict[str, Any],
     ) -> Dict[str, Any]:
+        ...
+
+    async def create_activity(self, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Create one user-owned activity from a validated catalogue payload."""
+        ...
+
+    async def delete_activity(self, user_id: str, activity_id: str) -> Dict[str, Any]:
+        """Delete one user-owned activity and return an idempotent result."""
+        ...
+
+    async def create_activity_category(self, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Create one user-owned activity category."""
+        ...
+
+    async def update_activity_category(self, user_id: str, category_key: str, patch: Dict[str, Any]) -> Dict[str, Any]:
+        """Patch one user-owned activity category."""
+        ...
+
+    async def delete_activity_category(self, user_id: str, category_key: str) -> Dict[str, Any]:
+        """Delete an unused category or return a validation error."""
         ...
 
     async def list_diary_entries(self, user_id: str, limit: int = 20) -> Dict[str, Any]:

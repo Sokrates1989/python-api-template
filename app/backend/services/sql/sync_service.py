@@ -17,12 +17,13 @@ from backend.services.sql.wellness_service import WellnessService as SQLWellness
 from models.sql.sync_conflict_log import SyncConflictLog
 from models.sql.sync_operation_log import SyncOperationLog
 from models.sql.user import User
-from models.sql.wellness import WellnessActivity, WellnessCheckIn, WellnessDiaryEntry
+from models.sql.wellness import WellnessActivity, WellnessActivityCategory, WellnessCheckIn, WellnessDiaryEntry
 
 
 class SyncService:
     USER_PROFILE_ENTITY = "user_profile"
     _ACTIVITY_ENTITY = "wellness_activity"
+    _ACTIVITY_CATEGORY_ENTITY = "wellness_activity_category"
     _DIARY_ENTITY = "wellness_diary_entry"
     _CHECKIN_ENTITY = "wellness_checkin"
 
@@ -92,6 +93,8 @@ class SyncService:
                 result = await self._process_user_profile_operation(session=session, user_id=user_id, operation=operation)
             elif operation.entity_type == self._ACTIVITY_ENTITY:
                 result = await self._process_activity_operation(session=session, user_id=user_id, operation=operation)
+            elif operation.entity_type == self._ACTIVITY_CATEGORY_ENTITY:
+                result = await self._process_activity_category_operation(session=session, user_id=user_id, operation=operation)
             elif operation.entity_type == self._DIARY_ENTITY:
                 result = await self._process_diary_operation(session=session, user_id=user_id, operation=operation)
             elif operation.entity_type == self._CHECKIN_ENTITY:
@@ -100,6 +103,11 @@ class SyncService:
                 result = self._rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message=f"Unsupported entity_type: {operation.entity_type}")
             if result.get("status") == "conflict":
                 await self._record_conflict(session=session, user_id=user_id, operation=operation, result=result)
+            await self._store_result_and_commit(session=session, operation=operation, user_id=user_id, result=result)
+            return result
+        except ValueError as exc:
+            await session.rollback()
+            result = self._rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message=str(exc))
             await self._store_result_and_commit(session=session, operation=operation, user_id=user_id, result=result)
             return result
         except IntegrityError as exc:
@@ -137,26 +145,73 @@ class SyncService:
         return {"op_id": operation.op_id, "status": "applied", "entity_type": operation.entity_type, "entity_id": operation.entity_id, "new_version": int(user.version or 1), "server_payload": user.to_dict(), "conflict": None, "error_code": None, "error_message": None}
 
     async def _process_activity_operation(self, *, session, user_id: str, operation: SyncOperationRequest) -> Dict[str, Any]:
-        if operation.action not in {"update", "upsert"}:
+        if operation.action not in {"create", "update", "upsert", "delete"}:
             return self._rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message=f"Unsupported action for {self._ACTIVITY_ENTITY}: {operation.action}")
         existing = await self.wellness_service._find_activity(session, user_id, operation.entity_id)
-        if existing is None:
+        if operation.action == "delete":
+            await self.wellness_service._record_tombstone(session, user_id, self._ACTIVITY_ENTITY, operation.entity_id)
+            if existing is not None:
+                await session.delete(existing)
+            return self._applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=None)
+        if existing is None and operation.action == "update":
             return self._rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message="Activity not found")
-        if operation.base_updated_at is None:
-            return self._rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message="wellness activity updates require base_updated_at")
-        client_favorite = bool(operation.payload.get("favorite", existing.favorite))
-        current_updated_at = self._normalize_dt(existing.updated_at or existing.created_at)
-        base_updated_at = self._normalize_dt(operation.base_updated_at)
-        if current_updated_at == base_updated_at:
-            existing.favorite = client_favorite
-            existing.updated_at = self._now_utc()
-            return self._applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=existing.to_dict())
-        base_payload = operation.base_payload or {}
-        if base_payload.get("favorite") == bool(existing.favorite):
-            existing.favorite = client_favorite
-            existing.updated_at = self._now_utc()
-            return self._merged_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=existing.to_dict())
-        return self._conflict_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, base_payload=base_payload, client_payload=dict(operation.payload), server_payload=existing.to_dict(), conflict_fields=["favorite"], server_version=self._version_for_payload(existing.to_dict()))
+        if existing is not None and operation.action == "update" and operation.base_updated_at is not None:
+            current_updated_at = self._normalize_dt(existing.updated_at or existing.created_at)
+            if current_updated_at != self._normalize_dt(operation.base_updated_at):
+                return self._conflict_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, base_payload=operation.base_payload or {}, client_payload=dict(operation.payload), server_payload=existing.to_dict(), conflict_fields=sorted(set(operation.payload).intersection(existing.to_dict())), server_version=self._version_for_payload(existing.to_dict()))
+        category_keys = await self.wellness_service._validate_category_keys(session, user_id, operation.payload.get("category_keys") if "category_keys" in operation.payload else existing.category_keys if existing else None)
+        if existing is None:
+            title = self.wellness_service._optional_text(operation.payload.get("title"))
+            title_key = self.wellness_service._optional_text(operation.payload.get("title_key"))
+            if not title and not title_key:
+                return self._rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message="Activity title is required")
+            now = self._now_utc()
+            existing = WellnessActivity(user_id=user_id, id=operation.entity_id, icon_key="auto_awesome", title_key=title_key, title=title, summary_key=None, summary=None, duration_minutes=0, favorite=False, harmful=False, sort_order=0, created_at=now, updated_at=now)
+            session.add(existing)
+        self.wellness_service._apply_activity_patch(existing, dict(operation.payload))
+        existing.category_keys = category_keys
+        existing.updated_at = self._now_utc()
+        await session.flush()
+        return self._applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=existing.to_dict())
+
+    async def _process_activity_category_operation(self, *, session, user_id: str, operation: SyncOperationRequest) -> Dict[str, Any]:
+        """Replay category create, update, and delete operations."""
+        if operation.action not in {"create", "update", "upsert", "delete"}:
+            return self._rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message=f"Unsupported action for {self._ACTIVITY_CATEGORY_ENTITY}: {operation.action}")
+        existing = await self.wellness_service._find_category(session, user_id, operation.entity_id)
+        if operation.action == "delete":
+            activities = (await session.execute(select(WellnessActivity).where(WellnessActivity.user_id == user_id))).scalars().all()
+            if any(operation.entity_id in activity.category_keys for activity in activities):
+                return self._rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message="Activity category is still in use")
+            await self.wellness_service._record_tombstone(session, user_id, self._ACTIVITY_CATEGORY_ENTITY, operation.entity_id)
+            if existing is not None:
+                await session.delete(existing)
+            return self._applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=None)
+        if existing is None and operation.action == "update":
+            return self._rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message="Activity category not found")
+        if existing is not None and operation.action == "update" and operation.base_updated_at is not None:
+            current_updated_at = self._normalize_dt(existing.updated_at or existing.created_at)
+            if current_updated_at != self._normalize_dt(operation.base_updated_at):
+                server_payload = existing.to_dict()
+                return self._conflict_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, base_payload=operation.base_payload or {}, client_payload=dict(operation.payload), server_payload=server_payload, conflict_fields=sorted(set(operation.payload).intersection(server_payload)), server_version=self._version_for_payload(server_payload))
+        if existing is None:
+            title = self.wellness_service._optional_text(operation.payload.get("title"))
+            title_key = self.wellness_service._optional_text(operation.payload.get("title_key"))
+            if not title and not title_key:
+                return self._rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message="Activity category title is required")
+            now = self._now_utc()
+            existing = WellnessActivityCategory(user_id=user_id, key=operation.entity_id, title_key=title_key, title=title, icon_key="category", sort_order=0, created_at=now, updated_at=now)
+            session.add(existing)
+        for field in ("title_key", "title", "description_key", "description"):
+            if field in operation.payload:
+                setattr(existing, field, self.wellness_service._optional_text(operation.payload.get(field)))
+        if "icon_key" in operation.payload and self.wellness_service._optional_text(operation.payload.get("icon_key")):
+            existing.icon_key = self.wellness_service._optional_text(operation.payload.get("icon_key")) or existing.icon_key
+        if "sort_order" in operation.payload:
+            existing.sort_order = int(operation.payload["sort_order"])
+        existing.updated_at = self._now_utc()
+        await session.flush()
+        return self._applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=existing.to_dict())
 
     async def _process_diary_operation(self, *, session, user_id: str, operation: SyncOperationRequest) -> Dict[str, Any]:
         if operation.action not in {"create", "upsert", "update", "delete"}:
@@ -164,6 +219,7 @@ class SyncService:
         result = await session.execute(select(WellnessDiaryEntry).where(and_(WellnessDiaryEntry.user_id == user_id, WellnessDiaryEntry.id == operation.entity_id)))
         existing = result.scalar_one_or_none()
         if operation.action == "delete":
+            await self.wellness_service._record_tombstone(session, user_id, self._DIARY_ENTITY, operation.entity_id)
             if existing is None:
                 return self._applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=None)
             await session.delete(existing)
@@ -215,6 +271,7 @@ class SyncService:
         result = await session.execute(select(WellnessCheckIn).where(and_(WellnessCheckIn.user_id == user_id, WellnessCheckIn.id == operation.entity_id)))
         existing = result.scalar_one_or_none()
         if operation.action == "delete":
+            await self.wellness_service._record_tombstone(session, user_id, self._CHECKIN_ENTITY, operation.entity_id)
             if existing is None:
                 return self._applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=None)
             await session.delete(existing)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from backend.ports.wellness_repository import WellnessRepository
 
@@ -68,18 +68,38 @@ class _WellnessRepositoryAdapterBase:
         """
         return await self._service.get_sync_changes(user_id=user_id, cursor=cursor, limit=limit, entity_type=entity_type)
 
-    async def update_activity(self, user_id: str, activity_id: str, favorite: Optional[bool] = None):
+    async def update_activity(self, user_id: str, activity_id: str, patch: Dict[str, Any]):
         """Update one activity record for the user.
 
         Args:
             user_id (str): Authenticated user identifier.
             activity_id (str): Activity identifier.
-            favorite (Optional[bool]): Updated favorite state.
+            patch (Dict[str, Any]): Validated mutable activity fields.
 
         Returns:
             Any: Backend-specific activity update response.
         """
-        return await self._service.update_activity(user_id=user_id, activity_id=activity_id, favorite=favorite)
+        return await self._service.update_activity(user_id=user_id, activity_id=activity_id, patch=patch)
+
+    async def create_activity(self, user_id: str, payload: Dict[str, Any]):
+        """Create one activity through the selected provider."""
+        return await self._service.create_activity(user_id=user_id, payload=payload)
+
+    async def delete_activity(self, user_id: str, activity_id: str):
+        """Delete one activity through the selected provider."""
+        return await self._service.delete_activity(user_id=user_id, activity_id=activity_id)
+
+    async def create_activity_category(self, user_id: str, payload: Dict[str, Any]):
+        """Create one activity category through the selected provider."""
+        return await self._service.create_activity_category(user_id=user_id, payload=payload)
+
+    async def update_activity_category(self, user_id: str, category_key: str, patch: Dict[str, Any]):
+        """Patch one activity category through the selected provider."""
+        return await self._service.update_activity_category(user_id=user_id, category_key=category_key, patch=patch)
+
+    async def delete_activity_category(self, user_id: str, category_key: str):
+        """Delete one activity category through the selected provider."""
+        return await self._service.delete_activity_category(user_id=user_id, category_key=category_key)
 
     async def list_diary_entries(self, user_id: str, limit: int = 20):
         """Return diary entries for one user.

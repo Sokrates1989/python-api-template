@@ -58,14 +58,70 @@ class WellnessDiaryEntryCreateRequest(BaseModel):
     related_activity_id: Optional[str] = Field(None, max_length=120)
 
 
-class WellnessActivityUpdateRequest(BaseModel):
-    """Request model for updating mutable Felix activity state.
+class WellnessActivityCatalogFields(BaseModel):
+    """Mutable Felix activity catalogue fields shared by create and patch."""
 
-    Attributes:
-        favorite (Optional[bool]): Optional favorite-state replacement.
-    """
-
+    icon_key: Optional[str] = Field(None, min_length=1, max_length=64)
+    title_key: Optional[str] = Field(None, max_length=255)
+    title: Optional[str] = Field(None, max_length=255)
+    summary_key: Optional[str] = Field(None, max_length=255)
+    summary: Optional[str] = Field(None, max_length=2000)
+    activity_reminder: Optional[str] = Field(None, max_length=2000)
+    duration_minutes: Optional[int] = Field(None, ge=0, le=1440)
     favorite: Optional[bool] = None
+    harmful: Optional[bool] = None
+    category_keys: Optional[List[str]] = Field(None, min_length=1, max_length=24)
+    tags: Optional[List[str]] = Field(None, max_length=24)
+    sort_order: Optional[int] = Field(None, ge=0)
+    energy_impact: Optional[str] = Field(None, max_length=64)
+
+
+class WellnessActivityCreateRequest(WellnessActivityCatalogFields):
+    """Request model for creating a user-owned Felix activity."""
+
+    id: Optional[str] = Field(None, min_length=1, max_length=128)
+    title: str = Field(..., min_length=1, max_length=255)
+    category_keys: List[str] = Field(..., min_length=1, max_length=24)
+
+
+class WellnessActivityUpdateRequest(WellnessActivityCatalogFields):
+    """Request model for patching mutable Felix activity state."""
+
+    @model_validator(mode="after")
+    def require_mutable_field(self) -> "WellnessActivityUpdateRequest":
+        """Reject empty activity patches."""
+        if not self.model_fields_set:
+            raise ValueError("At least one mutable activity field must be provided")
+        return self
+
+
+class WellnessActivityCategoryFields(BaseModel):
+    """Mutable persisted Felix activity category fields."""
+
+    title_key: Optional[str] = Field(None, max_length=255)
+    title: Optional[str] = Field(None, max_length=255)
+    description_key: Optional[str] = Field(None, max_length=255)
+    description: Optional[str] = Field(None, max_length=2000)
+    icon_key: Optional[str] = Field(None, min_length=1, max_length=64)
+    sort_order: Optional[int] = Field(None, ge=0)
+
+
+class WellnessActivityCategoryCreateRequest(WellnessActivityCategoryFields):
+    """Request model for creating a user-owned activity category."""
+
+    key: Optional[str] = Field(None, min_length=1, max_length=128)
+    title: str = Field(..., min_length=1, max_length=255)
+
+
+class WellnessActivityCategoryUpdateRequest(WellnessActivityCategoryFields):
+    """Request model for patching one activity category."""
+
+    @model_validator(mode="after")
+    def require_mutable_field(self) -> "WellnessActivityCategoryUpdateRequest":
+        """Reject empty category patches."""
+        if not self.model_fields_set:
+            raise ValueError("At least one mutable activity category field must be provided")
+        return self
 
 
 class FelixWellnessCheckInUpdateRequest(BaseModel):
@@ -228,9 +284,15 @@ class WellnessActivityCategoryResponse(BaseModel):
     """
 
     key: str
-    title_key: str
-    description_key: str
+    title_key: Optional[str] = None
+    title: Optional[str] = None
+    description_key: Optional[str] = None
+    description: Optional[str] = None
+    icon_key: str = "category"
+    sort_order: int = 0
     item_count: int
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -259,9 +321,13 @@ class WellnessActivityItemResponse(BaseModel):
     title: Optional[str] = None
     summary_key: Optional[str] = None
     summary: Optional[str] = None
+    activity_reminder: Optional[str] = None
     duration_minutes: int
     favorite: bool = False
+    harmful: bool = False
     category_keys: List[str] = []
+    tags: List[str] = []
+    sort_order: int = 0
     energy_impact: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -397,6 +463,14 @@ class WellnessActivityMutationResponse(BaseModel):
     data: WellnessActivityItemResponse
 
 
+class WellnessActivityCategoryMutationResponse(BaseModel):
+    """Envelope for Felix activity category create and update mutations."""
+
+    status: str
+    message: str
+    data: WellnessActivityCategoryResponse
+
+
 class WellnessCheckInRecordResponse(BaseModel):
     """Raw Felix check-in record used by sync snapshots.
 
@@ -434,12 +508,15 @@ class WellnessSyncBootstrapDataResponse(BaseModel):
 
     Attributes:
         server_timestamp (str): Backend timestamp for the snapshot.
+        activity_categories (List[WellnessActivityCategoryResponse]): Persisted
+            category rows required before replaying activity references.
         activities (List[WellnessActivityItemResponse]): Activity rows.
         diary_entries (List[WellnessDiaryEntryResponse]): Diary rows.
         checkins (List[WellnessCheckInRecordResponse]): Check-in rows.
     """
 
     server_timestamp: str
+    activity_categories: List[WellnessActivityCategoryResponse] = []
     activities: List[WellnessActivityItemResponse] = []
     diary_entries: List[WellnessDiaryEntryResponse] = []
     checkins: List[WellnessCheckInRecordResponse] = []
@@ -472,6 +549,7 @@ class WellnessSyncChangeResponse(BaseModel):
 
     entity_type: Literal[
         "wellness_activity",
+        "wellness_activity_category",
         "wellness_diary_entry",
         "wellness_checkin",
     ]
@@ -751,6 +829,10 @@ __all__ = [
     "FelixWellnessCheckInUpdateRequest",
     "FelixWellnessDiaryEntryUpdateRequest",
     "WellnessActivitiesResponse",
+    "WellnessActivityCategoryCreateRequest",
+    "WellnessActivityCategoryMutationResponse",
+    "WellnessActivityCategoryUpdateRequest",
+    "WellnessActivityCreateRequest",
     "WellnessActivityMutationResponse",
     "WellnessActivityUpdateRequest",
     "WellnessCheckInCreateRequest",

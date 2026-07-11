@@ -104,6 +104,54 @@ def _encode_int_map(values: Dict[str, int] | None) -> str:
     return json.dumps(payload, separators=(",", ":"))
 
 
+class WellnessActivityCategory(Base):
+    """SQL category row for a user-owned wellness activity catalog.
+
+    Categories are persisted independently so custom names, icons, and ordering
+    survive local, online, and hybrid runtime transitions.
+    """
+
+    __tablename__ = "wellness_activity_categories"
+    __table_args__ = (
+        UniqueConstraint("user_id", "key", name="uq_wellness_activity_categories_user_key"),
+        Index("ix_wellness_activity_categories_user_order", "user_id", "sort_order"),
+    )
+
+    pk = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(255), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    key = Column(String(128), nullable=False)
+    title_key = Column(String(255), nullable=True)
+    title = Column(String(255), nullable=True)
+    description_key = Column(String(255), nullable=True)
+    description = Column(Text, nullable=True)
+    icon_key = Column(String(64), nullable=False, server_default="category")
+    sort_order = Column(Integer, nullable=False, server_default="0")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    def to_dict(self, *, item_count: int = 0) -> dict:
+        """Serialize category metadata with its computed activity count.
+
+        Args:
+            item_count (int): Number of activities assigned to this category.
+
+        Returns:
+            dict: API-friendly category fields.
+        """
+        return {
+            "key": self.key,
+            "title_key": self.title_key,
+            "title": self.title,
+            "description_key": self.description_key,
+            "description": self.description,
+            "icon_key": self.icon_key,
+            "sort_order": int(self.sort_order or 0),
+            "item_count": item_count,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class WellnessActivity(Base):
     """SQL activity row used by apps that opt into shared wellness.
 
@@ -141,8 +189,12 @@ class WellnessActivity(Base):
     title = Column(String(255), nullable=True)
     summary_key = Column(String(255), nullable=True)
     summary = Column(Text, nullable=True)
+    activity_reminder = Column(Text, nullable=True)
     duration_minutes = Column(Integer, nullable=False)
     favorite = Column(Boolean, nullable=False, server_default="false")
+    harmful = Column(Boolean, nullable=False, server_default="false")
+    sort_order = Column(Integer, nullable=False, server_default="0")
+    _tags = Column("tags", Text, nullable=False, server_default="[]")
     _category_keys = Column("category_keys", Text, nullable=False, server_default="[]")
     energy_impact = Column(String(64), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -176,6 +228,24 @@ class WellnessActivity(Base):
         """
         self._category_keys = _encode_string_list(values)
 
+    @property
+    def tags(self) -> List[str]:
+        """Return decoded activity tags.
+
+        Returns:
+            List[str]: Stable activity tags.
+        """
+        return _decode_string_list(self._tags)
+
+    @tags.setter
+    def tags(self, values: List[str] | None) -> None:
+        """Store activity tags as compact JSON text.
+
+        Args:
+            values (List[str] | None): Activity tags to persist.
+        """
+        self._tags = _encode_string_list(values)
+
     def to_dict(self) -> dict:
         """Serialize the activity row into an API-friendly dictionary.
 
@@ -195,13 +265,38 @@ class WellnessActivity(Base):
             "title": self.title,
             "summary_key": self.summary_key,
             "summary": self.summary,
+            "activity_reminder": self.activity_reminder,
             "duration_minutes": self.duration_minutes,
             "favorite": bool(self.favorite),
+            "harmful": bool(self.harmful),
             "category_keys": self.category_keys,
+            "tags": self.tags,
+            "sort_order": int(self.sort_order or 0),
             "energy_impact": self.energy_impact,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+class WellnessSyncTombstone(Base):
+    """SQL deletion marker consumed by incremental wellness synchronization."""
+
+    __tablename__ = "wellness_sync_tombstones"
+    __table_args__ = (
+        UniqueConstraint("user_id", "entity_type", "entity_id", name="uq_wellness_sync_tombstones_entity"),
+        Index("ix_wellness_sync_tombstones_user_deleted", "user_id", "deleted_at"),
+    )
+
+    pk = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(255), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    entity_type = Column(String(64), nullable=False)
+    entity_id = Column(String(128), nullable=False)
+    deleted_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    def to_sync_change(self) -> dict:
+        """Serialize the marker into a shared incremental delete envelope."""
+        timestamp = self.deleted_at.isoformat() if self.deleted_at else None
+        return {"entity_type": self.entity_type, "entity_id": self.entity_id, "action": "delete", "updated_at": timestamp, "payload": {}}
 
 
 class WellnessDiaryEntry(Base):

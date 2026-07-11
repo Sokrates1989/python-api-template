@@ -14,7 +14,6 @@ from backend.services.neo4j.sync_log_repository import get_existing_result, reco
 from backend.services.neo4j.sync_result_helpers import (
     applied_result,
     conflict_result,
-    merged_result,
     optional_text,
     rejected_result,
     retryable_result,
@@ -29,6 +28,7 @@ class SyncService:
     USER_PROFILE_ENTITY = "user_profile"
     _WELLNESS_FEATURE = "wellness"
     _ACTIVITY_ENTITY = "wellness_activity"
+    _ACTIVITY_CATEGORY_ENTITY = "wellness_activity_category"
     _DIARY_ENTITY = "wellness_diary_entry"
     _CHECKIN_ENTITY = "wellness_checkin"
 
@@ -147,6 +147,8 @@ class SyncService:
 
             if operation.entity_type == self._ACTIVITY_ENTITY:
                 result = await self._process_activity_operation(user_id=user_id, operation=operation)
+            elif operation.entity_type == self._ACTIVITY_CATEGORY_ENTITY:
+                result = await self._process_activity_category_operation(user_id=user_id, operation=operation)
             elif operation.entity_type == self._DIARY_ENTITY:
                 result = await self._process_diary_operation(user_id=user_id, operation=operation)
             elif operation.entity_type == self._CHECKIN_ENTITY:
@@ -190,7 +192,7 @@ class SyncService:
         user_id: str,
         operation: SyncOperationRequest,
     ) -> Dict[str, Any]:
-        """Replay one activity favorite toggle operation.
+        """Replay one activity catalogue operation.
 
         Args:
             user_id (str): Authenticated user identifier.
@@ -199,7 +201,7 @@ class SyncService:
         Returns:
             Dict[str, Any]: Sync result for the activity update.
         """
-        if operation.action not in {"update", "upsert"}:
+        if operation.action not in {"create", "update", "upsert", "delete"}:
             return rejected_result(
                 op_id=operation.op_id,
                 entity_type=operation.entity_type,
@@ -208,64 +210,48 @@ class SyncService:
                 error_message=f"Unsupported action for {self._ACTIVITY_ENTITY}: {operation.action}",
             )
 
+        payload = {**operation.payload, "id": operation.entity_id}
         existing = await find_activity_doc(self.driver, user_id=user_id, activity_id=operation.entity_id)
-        if existing is None:
-            return rejected_result(
-                op_id=operation.op_id,
-                entity_type=operation.entity_type,
-                entity_id=operation.entity_id,
-                error_code="SYNC_VALIDATION_FAILED",
-                error_message="Activity not found",
-            )
-        if operation.base_updated_at is None:
-            return rejected_result(
-                op_id=operation.op_id,
-                entity_type=operation.entity_type,
-                entity_id=operation.entity_id,
-                error_code="SYNC_VALIDATION_FAILED",
-                error_message="wellness activity updates require base_updated_at",
-            )
+        if existing is not None and operation.action == "update" and operation.base_updated_at is not None:
+            current_updated_at = parse_iso(existing.get("updated_at"))
+            if current_updated_at is not None and current_updated_at != operation.base_updated_at:
+                return conflict_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, base_payload=operation.base_payload or {}, client_payload=dict(operation.payload), server_payload=existing, conflict_fields=sorted(set(operation.payload).intersection(existing)), error_message="Activity changed on the server while offline.")
+        if operation.action == "delete":
+            response = await self.wellness_service.delete_activity(user_id, operation.entity_id)
+        elif operation.action == "update":
+            response = await self.wellness_service.update_activity(user_id, operation.entity_id, payload)
+        else:
+            response = ({"status": "success", "data": existing} if existing else await self.wellness_service.create_activity(user_id, payload))
+        if response.get("status") != "success":
+            return rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message=str(response.get("message") or "Activity mutation failed"))
+        return applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=None if operation.action == "delete" else response.get("data"))
 
-        client_favorite = bool(operation.payload.get("favorite", existing.get("favorite", False)))
-        current_updated_at = parse_iso(existing.get("updated_at"))
-        base_updated_at = operation.base_updated_at
-        if current_updated_at is not None and current_updated_at == base_updated_at:
-            updated = await self._apply_activity_update(
-                user_id=user_id,
-                activity_id=operation.entity_id,
-                favorite=client_favorite,
-            )
-            return applied_result(
-                op_id=operation.op_id,
-                entity_type=operation.entity_type,
-                entity_id=operation.entity_id,
-                server_payload=updated,
-            )
-
-        base_payload = operation.base_payload or {}
-        if base_payload.get("favorite") == existing.get("favorite"):
-            updated = await self._apply_activity_update(
-                user_id=user_id,
-                activity_id=operation.entity_id,
-                favorite=client_favorite,
-            )
-            return merged_result(
-                op_id=operation.op_id,
-                entity_type=operation.entity_type,
-                entity_id=operation.entity_id,
-                server_payload=updated,
-            )
-
-        return conflict_result(
-            op_id=operation.op_id,
-            entity_type=operation.entity_type,
-            entity_id=operation.entity_id,
-            base_payload=base_payload,
-            client_payload=dict(operation.payload),
-            server_payload=existing,
-            conflict_fields=["favorite"],
-            error_message="Activity changed on the server while offline.",
-        )
+    async def _process_activity_category_operation(
+        self,
+        *,
+        user_id: str,
+        operation: SyncOperationRequest,
+    ) -> Dict[str, Any]:
+        """Replay one activity category catalogue operation."""
+        if operation.action not in {"create", "update", "upsert", "delete"}:
+            return rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message=f"Unsupported action for {self._ACTIVITY_CATEGORY_ENTITY}: {operation.action}")
+        payload = {**operation.payload, "key": operation.entity_id}
+        with self.driver.session() as session:
+            record = session.run("MATCH (c:WellnessActivityCategory {user_id: $user_id, key: $key}) RETURN properties(c) AS category", user_id=user_id, key=operation.entity_id).single()
+        existing = dict(record["category"]) if record else None
+        if existing is not None and operation.action == "update" and operation.base_updated_at is not None:
+            current_updated_at = parse_iso(existing.get("updated_at"))
+            if current_updated_at is not None and current_updated_at != operation.base_updated_at:
+                return conflict_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, base_payload=operation.base_payload or {}, client_payload=dict(operation.payload), server_payload=existing, conflict_fields=sorted(set(operation.payload).intersection(existing)), error_message="Activity category changed on the server while offline.")
+        if operation.action == "delete":
+            response = await self.wellness_service.delete_activity_category(user_id, operation.entity_id)
+        elif operation.action == "update":
+            response = await self.wellness_service.update_activity_category(user_id, operation.entity_id, payload)
+        else:
+            response = ({"status": "success", "data": existing} if existing else await self.wellness_service.create_activity_category(user_id, payload))
+        if response.get("status") != "success":
+            return rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message=str(response.get("message") or "Activity category mutation failed"))
+        return applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=None if operation.action == "delete" else response.get("data"))
 
     async def _process_diary_operation(
         self,
@@ -282,7 +268,7 @@ class SyncService:
         Returns:
             Dict[str, Any]: Sync result for the diary operation.
         """
-        if operation.action not in {"create", "upsert"}:
+        if operation.action not in {"create", "update", "upsert", "delete"}:
             return rejected_result(
                 op_id=operation.op_id,
                 entity_type=operation.entity_type,
@@ -292,7 +278,19 @@ class SyncService:
             )
 
         existing = await self._find_diary_doc(user_id=user_id, entry_id=operation.entity_id)
+        if operation.action == "delete":
+            if existing is None:
+                return applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=None)
+            response = await self.wellness_service.delete_diary_entry(user_id, operation.entity_id)
+            if response.get("status") != "success":
+                return rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message=str(response.get("message")))
+            return applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=None)
         if existing is not None:
+            if operation.action in {"update", "upsert"}:
+                response = await self.wellness_service.update_diary_entry(user_id, operation.entity_id, dict(operation.payload))
+                if response.get("status") != "success":
+                    return rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message=str(response.get("message")))
+                return applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=response.get("data"))
             payload = await build_diary_item(self.driver, user_id=user_id, entry=existing)
             return applied_result(
                 op_id=operation.op_id,
@@ -300,6 +298,8 @@ class SyncService:
                 entity_id=operation.entity_id,
                 server_payload=payload,
             )
+        if operation.action == "update":
+            return rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message="Diary entry not found")
 
         title = str(operation.payload.get("title") or "").strip()
         summary = str(operation.payload.get("summary") or "").strip()
@@ -366,7 +366,7 @@ class SyncService:
         Returns:
             Dict[str, Any]: Sync result for the check-in operation.
         """
-        if operation.action not in {"create", "upsert"}:
+        if operation.action not in {"create", "update", "upsert", "delete"}:
             return rejected_result(
                 op_id=operation.op_id,
                 entity_type=operation.entity_type,
@@ -376,13 +376,27 @@ class SyncService:
             )
 
         existing = await self._find_checkin_doc(user_id=user_id, checkin_id=operation.entity_id)
+        if operation.action == "delete":
+            if existing is None:
+                return applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=None)
+            response = await self.wellness_service.delete_checkin(user_id, operation.entity_id)
+            if response.get("status") != "success":
+                return rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message=str(response.get("message")))
+            return applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=None)
         if existing is not None:
+            if operation.action in {"update", "upsert"}:
+                response = await self.wellness_service.update_checkin(user_id, operation.entity_id, dict(operation.payload))
+                if response.get("status") != "success":
+                    return rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message=str(response.get("message")))
+                return applied_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, server_payload=response.get("data"))
             return applied_result(
                 op_id=operation.op_id,
                 entity_type=operation.entity_type,
                 entity_id=operation.entity_id,
                 server_payload=existing,
             )
+        if operation.action == "update":
+            return rejected_result(op_id=operation.op_id, entity_type=operation.entity_type, entity_id=operation.entity_id, error_code="SYNC_VALIDATION_FAILED", error_message="Check-in not found")
 
         recorded_at = payload_datetime(operation.payload.get("recorded_at")) or now_utc()
         created_at = payload_datetime(operation.payload.get("created_at")) or recorded_at
@@ -411,49 +425,6 @@ class SyncService:
             entity_id=operation.entity_id,
             server_payload=document,
         )
-
-    async def _apply_activity_update(
-        self,
-        *,
-        user_id: str,
-        activity_id: str,
-        favorite: bool,
-    ) -> Dict[str, Any]:
-        """Persist a favorite-state update for one activity.
-
-        Args:
-            user_id (str): Authenticated user identifier.
-            activity_id (str): Activity identifier to update.
-            favorite (bool): Favorite flag to persist.
-
-        Returns:
-            Dict[str, Any]: Reloaded activity payload.
-
-        Raises:
-            ValueError: If the updated activity cannot be reloaded.
-        """
-        now = iso_utc(now_utc())
-        query = """
-        MATCH (a:WellnessActivity {user_id: $user_id, id: $activity_id})
-        SET a.favorite = $favorite,
-            a.updated_at = $updated_at
-        RETURN a {
-            .id, .user_id, .icon_key, .title_key, .title, .summary_key, .summary,
-            .duration_minutes, .favorite, .category_keys, .energy_impact,
-            .created_at, .updated_at
-        } AS activity
-        """
-        with self.driver.session() as session:
-            record = session.run(
-                query,
-                user_id=user_id,
-                activity_id=activity_id,
-                favorite=favorite,
-                updated_at=now,
-            ).single()
-        if record is None:
-            raise ValueError("Updated activity could not be reloaded.")
-        return dict(record["activity"])
 
     async def _find_diary_doc(self, *, user_id: str, entry_id: str) -> Optional[Dict[str, Any]]:
         """Load one diary entry payload for replay idempotency checks.

@@ -163,6 +163,7 @@ class WellnessService:
         self,
         user_id: str,
         activity_id: str,
+        patch: Optional[Dict[str, Any]] = None,
         favorite: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """
@@ -171,7 +172,9 @@ class WellnessService:
         Args:
             user_id (str): Authenticated user identifier.
             activity_id (str): Activity identifier scoped by user.
-            favorite (Optional[bool]): Optional favorite state to persist.
+            patch (Optional[Dict[str, Any]]): Validated mutable activity fields.
+            favorite (Optional[bool]): Backward-compatible favorite shortcut
+                used by template apps that have not adopted catalogue CRUD.
 
         Returns:
             Dict[str, Any]: Provider-normalized mutation result.
@@ -179,11 +182,34 @@ class WellnessService:
         Side Effects:
             Writes to the configured wellness repository.
         """
+        normalized_patch = dict(patch or {})
+        if favorite is not None:
+            normalized_patch["favorite"] = favorite
         return await self._repository.update_activity(
             user_id=user_id,
             activity_id=activity_id,
-            favorite=favorite,
+            patch=normalized_patch,
         )
+
+    async def create_activity(self, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Create one activity through the configured provider repository."""
+        return await self._repository.create_activity(user_id=user_id, payload=payload)
+
+    async def delete_activity(self, user_id: str, activity_id: str) -> Dict[str, Any]:
+        """Delete one activity through the configured provider repository."""
+        return await self._repository.delete_activity(user_id=user_id, activity_id=activity_id)
+
+    async def create_activity_category(self, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Create one activity category through the configured repository."""
+        return await self._repository.create_activity_category(user_id=user_id, payload=payload)
+
+    async def update_activity_category(self, user_id: str, category_key: str, patch: Dict[str, Any]) -> Dict[str, Any]:
+        """Patch one activity category through the configured repository."""
+        return await self._repository.update_activity_category(user_id=user_id, category_key=category_key, patch=patch)
+
+    async def delete_activity_category(self, user_id: str, category_key: str) -> Dict[str, Any]:
+        """Delete one activity category through the configured repository."""
+        return await self._repository.delete_activity_category(user_id=user_id, category_key=category_key)
 
     async def list_diary_entries(self, user_id: str, limit: int = 20) -> Dict[str, Any]:
         """

@@ -52,6 +52,8 @@ class WellnessService:
         statements = [
             "CREATE INDEX wellness_activity_user_id IF NOT EXISTS FOR (n:WellnessActivity) ON (n.user_id)",
             "CREATE INDEX wellness_activity_lookup IF NOT EXISTS FOR (n:WellnessActivity) ON (n.user_id, n.id)",
+            "CREATE INDEX wellness_activity_category_lookup IF NOT EXISTS FOR (n:WellnessActivityCategory) ON (n.user_id, n.key)",
+            "CREATE INDEX wellness_sync_tombstone_lookup IF NOT EXISTS FOR (n:WellnessSyncTombstone) ON (n.user_id, n.entity_type, n.entity_id)",
             "CREATE INDEX wellness_diary_user_id IF NOT EXISTS FOR (n:WellnessDiaryEntry) ON (n.user_id)",
             "CREATE INDEX wellness_diary_lookup IF NOT EXISTS FOR (n:WellnessDiaryEntry) ON (n.user_id, n.id)",
             "CREATE INDEX wellness_diary_created_at IF NOT EXISTS FOR (n:WellnessDiaryEntry) ON (n.user_id, n.created_at)",
@@ -81,6 +83,11 @@ class WellnessService:
             if result.single() is None:
                 raise ValueError("User not found")
 
+    async def _record_tombstone(self, user_id: str, entity_type: str, entity_id: str) -> None:
+        """Create or refresh an incremental deletion marker node."""
+        with self.driver.session() as session:
+            session.run("MERGE (t:WellnessSyncTombstone {user_id: $user_id, entity_type: $entity_type, entity_id: $entity_id}) SET t.deleted_at = $deleted_at", user_id=user_id, entity_type=entity_type, entity_id=entity_id, deleted_at=iso_utc(now_utc())).consume()
+
     async def _ensure_seed_data(self, user_id: str) -> None:
         """Ensure starter activities exist for the requested user.
 
@@ -95,17 +102,17 @@ class WellnessService:
                 "MATCH (a:WellnessActivity {user_id: $user_id}) RETURN a.id AS id LIMIT 1",
                 user_id=user_id,
             )
-            if check_result.single() is not None:
-                return
-
-            for item in starter_activities(user_id):
-                session.run(
-                    """
-                    CREATE (a:WellnessActivity)
-                    SET a = $props
-                    """,
-                    props=item,
-                )
+            if check_result.single() is None:
+                for sort_order, item in enumerate(starter_activities(user_id)):
+                    item.update({"activity_reminder": None, "harmful": False, "tags": [], "sort_order": sort_order})
+                    session.run("CREATE (a:WellnessActivity) SET a = $props", props=item)
+            category_result = session.run("MATCH (c:WellnessActivityCategory {user_id: $user_id}) RETURN c.key AS key LIMIT 1", user_id=user_id)
+            if category_result.single() is None:
+                activities = [dict(record["item"]) for record in session.run("MATCH (a:WellnessActivity {user_id: $user_id}) RETURN properties(a) AS item", user_id=user_id)]
+                now = iso_utc(now_utc())
+                for sort_order, category in enumerate(build_activity_categories(activities)):
+                    props = {"user_id": user_id, **category, "title": None, "description": None, "icon_key": {"calm": "self_improvement", "focus": "center_focus_strong", "energy": "bolt"}.get(category["key"], "category"), "sort_order": sort_order, "created_at": now, "updated_at": now}
+                    session.run("CREATE (c:WellnessActivityCategory) SET c = $props", props=props)
 
     async def reset_user_data(self, user_id: str, *, keep_activity_catalog: bool = True) -> Dict[str, Any]:
         """Delete the user's wellness content and optionally restore starter activities.
@@ -142,6 +149,8 @@ class WellnessService:
                 session.run("MATCH (n:SyncOperationLog {user_id: $user_id}) DETACH DELETE n", user_id=user_id)
                 session.run("MATCH (n:SyncConflictLog {user_id: $user_id}) DETACH DELETE n", user_id=user_id)
                 session.run("MATCH (n:WellnessActivity {user_id: $user_id}) DETACH DELETE n", user_id=user_id)
+                session.run("MATCH (n:WellnessActivityCategory {user_id: $user_id}) DETACH DELETE n", user_id=user_id)
+                session.run("MATCH (n:WellnessSyncTombstone {user_id: $user_id}) DETACH DELETE n", user_id=user_id)
 
             activity_count = 0
             if keep_activity_catalog:
@@ -217,18 +226,16 @@ class WellnessService:
         """
         try:
             await self._ensure_seed_data(user_id)
-            query = """
-            MATCH (a:WellnessActivity {user_id: $user_id})
-            RETURN a {
-                .id, .user_id, .icon_key, .title_key, .title, .summary_key, .summary,
-                .duration_minutes, .favorite, .category_keys, .energy_impact,
-                .created_at, .updated_at
-            } AS activity
-            ORDER BY a.favorite DESC, a.duration_minutes ASC, a.title_key ASC
-            """
+            query = "MATCH (a:WellnessActivity {user_id: $user_id}) RETURN properties(a) AS activity ORDER BY a.favorite DESC, a.sort_order ASC, a.title_key ASC"
+            category_query = "MATCH (c:WellnessActivityCategory {user_id: $user_id}) RETURN properties(c) AS category ORDER BY c.sort_order ASC, c.key ASC"
             with self.driver.session() as session:
                 items = [dict(record["activity"]) for record in session.run(query, user_id=user_id)]
-            return {"status": "success", "data": {"categories": build_activity_categories(items), "items": items}}
+                categories = []
+                for record in session.run(category_query, user_id=user_id):
+                    category = dict(record["category"])
+                    category["item_count"] = sum(1 for item in items if category.get("key") in (item.get("category_keys") or []))
+                    categories.append(category)
+            return {"status": "success", "data": {"categories": categories, "items": items}}
         except Exception as exc:
             return {"status": "error", "message": f"Error loading activities: {str(exc)}", "data": None}
 
@@ -245,15 +252,8 @@ class WellnessService:
         """
         try:
             await self._ensure_seed_data(user_id)
-            activities_query = """
-            MATCH (a:WellnessActivity {user_id: $user_id})
-            RETURN a {
-                .id, .user_id, .icon_key, .title_key, .title, .summary_key, .summary,
-                .duration_minutes, .favorite, .category_keys, .energy_impact,
-                .created_at, .updated_at
-            } AS item
-            ORDER BY a.favorite DESC, a.duration_minutes ASC, a.title_key ASC
-            """
+            activities_query = "MATCH (a:WellnessActivity {user_id: $user_id}) RETURN properties(a) AS item ORDER BY a.favorite DESC, a.sort_order ASC, a.title_key ASC"
+            categories_query = "MATCH (c:WellnessActivityCategory {user_id: $user_id}) RETURN properties(c) AS item ORDER BY c.sort_order ASC, c.key ASC"
             diary_query = """
             MATCH (d:WellnessDiaryEntry {user_id: $user_id})
             RETURN d {
@@ -274,6 +274,7 @@ class WellnessService:
             """
             with self.driver.session() as session:
                 activities = [dict(record["item"]) for record in session.run(activities_query, user_id=user_id)]
+                categories = [dict(record["item"]) for record in session.run(categories_query, user_id=user_id)]
                 diary_entries = [
                     await build_diary_item(self.driver, user_id=user_id, entry=dict(record["item"]))
                     for record in session.run(diary_query, user_id=user_id, limit=diary_limit)
@@ -284,6 +285,7 @@ class WellnessService:
                 "status": "success",
                 "data": {
                     "server_timestamp": iso_utc(now_utc()),
+                    "activity_categories": categories,
                     "activities": activities,
                     "diary_entries": diary_entries,
                     "checkins": checkins,
@@ -308,6 +310,7 @@ class WellnessService:
             await self._ensure_seed_data(user_id)
             allowed_entity_types = {
                 "wellness_activity": "WellnessActivity",
+                "wellness_activity_category": "WellnessActivityCategory",
                 "wellness_diary_entry": "WellnessDiaryEntry",
                 "wellness_checkin": "WellnessCheckIn",
             }
@@ -326,7 +329,7 @@ class WellnessService:
                     MATCH (n:{label} {{user_id: $user_id}})
                     WHERE $cursor IS NULL OR n.updated_at > $cursor
                     RETURN n AS item
-                    ORDER BY n.updated_at ASC, n.id ASC
+                    ORDER BY n.updated_at ASC, coalesce(n.id, n.key) ASC
                     LIMIT $limit
                     """
                     for record in session.run(
@@ -336,6 +339,17 @@ class WellnessService:
                         limit=query_limit,
                     ):
                         changes.append(await build_sync_change(self.driver, user_id=user_id, entity_type=selected_type, payload=dict(record["item"])))
+                tombstone_query = """
+                MATCH (t:WellnessSyncTombstone {user_id: $user_id})
+                WHERE ($entity_type IS NULL OR t.entity_type = $entity_type)
+                  AND ($cursor IS NULL OR t.deleted_at > $cursor)
+                RETURN t.entity_type AS entity_type, t.entity_id AS entity_id,
+                       t.deleted_at AS updated_at
+                ORDER BY t.deleted_at ASC
+                LIMIT $limit
+                """
+                for record in session.run(tombstone_query, user_id=user_id, entity_type=entity_type, cursor=iso_utc(cursor_dt) if cursor_dt else None, limit=query_limit):
+                    changes.append({"entity_type": record["entity_type"], "entity_id": record["entity_id"], "action": "delete", "updated_at": record["updated_at"], "payload": {}})
 
             changes.sort(key=lambda item: (item.get("updated_at") or "", item.get("entity_type") or "", item.get("entity_id") or ""))
             selected_changes = changes[:limit]
@@ -352,45 +366,133 @@ class WellnessService:
         except Exception as exc:
             return {"status": "error", "message": f"Error loading sync changes: {str(exc)}", "data": None}
 
-    async def update_activity(self, user_id: str, activity_id: str, favorite: Optional[bool] = None) -> Dict[str, Any]:
-        """Update mutable activity state for one user-scoped activity.
+    @staticmethod
+    def _clean_keys(values: object) -> List[str]:
+        """Normalize identifier lists while preserving order."""
+        if not isinstance(values, list):
+            return []
+        result: List[str] = []
+        for value in values:
+            key = str(value).strip()
+            if key and key not in result:
+                result.append(key)
+        return result
 
-        Args:
-            user_id (str): Authenticated user identifier.
-            activity_id (str): Activity identifier to update.
-            favorite (Optional[bool]): Updated favorite state.
+    async def _validate_category_keys(self, user_id: str, values: object) -> List[str]:
+        """Validate category references for one activity mutation."""
+        keys = self._clean_keys(values)
+        if not keys:
+            raise ValueError("Activity requires at least one category")
+        with self.driver.session() as session:
+            existing = {record["key"] for record in session.run("MATCH (c:WellnessActivityCategory {user_id: $user_id}) WHERE c.key IN $keys RETURN c.key AS key", user_id=user_id, keys=keys)}
+        missing = [key for key in keys if key not in existing]
+        if missing:
+            raise ValueError(f"Unknown activity categories: {', '.join(missing)}")
+        return keys
 
-        Returns:
-            Dict[str, Any]: Updated activity payload.
-        """
+    @staticmethod
+    def _activity_patch(payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Select mutable fields accepted by the activity catalogue."""
+        supported = {"icon_key", "title_key", "title", "summary_key", "summary", "activity_reminder", "duration_minutes", "favorite", "harmful", "tags", "sort_order", "energy_impact"}
+        patch = {key: value for key, value in payload.items() if key in supported}
+        if patch.get("icon_key") is None:
+            patch.pop("icon_key", None)
+        if "duration_minutes" in patch:
+            patch["duration_minutes"] = max(0, int(patch["duration_minutes"]))
+        if "sort_order" in patch:
+            patch["sort_order"] = int(patch["sort_order"])
+        if "tags" in patch:
+            patch["tags"] = WellnessService._clean_keys(patch["tags"])
+        return patch
+
+    async def create_activity(self, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Create one user-owned activity node."""
         try:
             await self._ensure_seed_data(user_id)
-            if favorite is None:
-                return {"status": "error", "message": "Activity update requires at least one mutable field", "data": None}
-            updated_at = iso_utc(now_utc())
-            query = """
-            MATCH (a:WellnessActivity {user_id: $user_id, id: $activity_id})
-            SET a.favorite = $favorite,
-                a.updated_at = $updated_at
-            RETURN a {
-                .id, .user_id, .icon_key, .title_key, .title, .summary_key, .summary,
-                .duration_minutes, .favorite, .category_keys, .energy_impact,
-                .created_at, .updated_at
-            } AS activity
-            """
+            activity_id = str(payload.get("id") or uuid4()).strip()
+            if not str(payload.get("title") or payload.get("title_key") or "").strip():
+                return {"status": "error", "message": "Activity title is required", "data": None}
+            now = iso_utc(now_utc())
+            props = {"id": activity_id, "user_id": user_id, "icon_key": "auto_awesome", "title_key": None, "title": None, "summary_key": None, "summary": None, "activity_reminder": None, "duration_minutes": 0, "favorite": False, "harmful": False, "category_keys": await self._validate_category_keys(user_id, payload.get("category_keys")), "tags": [], "sort_order": 0, "energy_impact": None, "created_at": now, "updated_at": now, **self._activity_patch(payload)}
             with self.driver.session() as session:
-                record = session.run(
-                    query,
-                    user_id=user_id,
-                    activity_id=activity_id,
-                    favorite=bool(favorite),
-                    updated_at=updated_at,
-                ).single()
+                if session.run("MATCH (a:WellnessActivity {user_id: $user_id, id: $id}) RETURN a.id AS id", user_id=user_id, id=activity_id).single():
+                    return {"status": "error", "message": "Activity already exists", "data": None}
+                record = session.run("CREATE (a:WellnessActivity) SET a = $props RETURN properties(a) AS activity", props=props).single()
+            return {"status": "success", "message": "Activity created successfully", "data": dict(record["activity"])}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error creating activity: {str(exc)}", "data": None}
+
+    async def update_activity(self, user_id: str, activity_id: str, patch: Dict[str, Any]) -> Dict[str, Any]:
+        """Patch one user-owned activity node."""
+        try:
+            await self._ensure_seed_data(user_id)
+            update = self._activity_patch(patch)
+            if "category_keys" in patch:
+                update["category_keys"] = await self._validate_category_keys(user_id, patch["category_keys"])
+            update["updated_at"] = iso_utc(now_utc())
+            with self.driver.session() as session:
+                record = session.run("MATCH (a:WellnessActivity {user_id: $user_id, id: $activity_id}) SET a += $patch RETURN properties(a) AS activity", user_id=user_id, activity_id=activity_id, patch=update).single()
             if record is None:
                 return {"status": "error", "message": "Activity not found", "data": None}
             return {"status": "success", "message": "Activity updated successfully", "data": dict(record["activity"])}
         except Exception as exc:
             return {"status": "error", "message": f"Error updating activity: {str(exc)}", "data": None}
+
+    async def delete_activity(self, user_id: str, activity_id: str) -> Dict[str, Any]:
+        """Delete one activity node idempotently."""
+        try:
+            await self._record_tombstone(user_id, "wellness_activity", activity_id)
+            with self.driver.session() as session:
+                session.run("MATCH (a:WellnessActivity {user_id: $user_id, id: $activity_id}) DETACH DELETE a", user_id=user_id, activity_id=activity_id).consume()
+            return {"status": "success", "message": "Activity deleted successfully", "data": {"id": activity_id}}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error deleting activity: {str(exc)}", "data": None}
+
+    async def create_activity_category(self, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Create one persisted activity category node."""
+        try:
+            await self._ensure_seed_data(user_id)
+            key = str(payload.get("key") or uuid4()).strip()
+            if not str(payload.get("title") or payload.get("title_key") or "").strip():
+                return {"status": "error", "message": "Activity category title is required", "data": None}
+            now = iso_utc(now_utc())
+            props = {"user_id": user_id, "key": key, "title_key": payload.get("title_key"), "title": payload.get("title"), "description_key": payload.get("description_key"), "description": payload.get("description"), "icon_key": payload.get("icon_key") or "category", "sort_order": int(payload.get("sort_order") or 0), "item_count": 0, "created_at": now, "updated_at": now}
+            with self.driver.session() as session:
+                if session.run("MATCH (c:WellnessActivityCategory {user_id: $user_id, key: $key}) RETURN c.key AS key", user_id=user_id, key=key).single():
+                    return {"status": "error", "message": "Activity category already exists", "data": None}
+                record = session.run("CREATE (c:WellnessActivityCategory) SET c = $props RETURN properties(c) AS category", props=props).single()
+            return {"status": "success", "message": "Activity category created successfully", "data": dict(record["category"])}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error creating activity category: {str(exc)}", "data": None}
+
+    async def update_activity_category(self, user_id: str, category_key: str, patch: Dict[str, Any]) -> Dict[str, Any]:
+        """Patch one persisted activity category node."""
+        try:
+            supported = {"title_key", "title", "description_key", "description", "icon_key", "sort_order"}
+            update = {key: value for key, value in patch.items() if key in supported}
+            if update.get("icon_key") is None:
+                update.pop("icon_key", None)
+            update["updated_at"] = iso_utc(now_utc())
+            with self.driver.session() as session:
+                record = session.run("MATCH (c:WellnessActivityCategory {user_id: $user_id, key: $key}) SET c += $patch RETURN properties(c) AS category", user_id=user_id, key=category_key, patch=update).single()
+            if record is None:
+                return {"status": "error", "message": "Activity category not found", "data": None}
+            return {"status": "success", "message": "Activity category updated successfully", "data": dict(record["category"])}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error updating activity category: {str(exc)}", "data": None}
+
+    async def delete_activity_category(self, user_id: str, category_key: str) -> Dict[str, Any]:
+        """Delete a category only when no activity references it."""
+        try:
+            with self.driver.session() as session:
+                in_use = session.run("MATCH (a:WellnessActivity {user_id: $user_id}) WHERE $key IN coalesce(a.category_keys, []) RETURN a.id AS id LIMIT 1", user_id=user_id, key=category_key).single()
+                if in_use:
+                    return {"status": "error", "message": "Activity category is still in use", "data": None}
+                await self._record_tombstone(user_id, "wellness_activity_category", category_key)
+                session.run("MATCH (c:WellnessActivityCategory {user_id: $user_id, key: $key}) DETACH DELETE c", user_id=user_id, key=category_key).consume()
+            return {"status": "success", "message": "Activity category deleted successfully", "data": {"key": category_key}}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error deleting activity category: {str(exc)}", "data": None}
 
     async def create_checkin(
         self,
@@ -499,6 +601,7 @@ class WellnessService:
                 ).single()
             if record is None:
                 return {"status": "error", "message": "Check-in not found", "data": None}
+            await self._record_tombstone(user_id, "wellness_checkin", checkin_id)
             return {"status": "success", "message": "Check-in updated successfully", "data": dict(record["item"])}
         except Exception as exc:
             return {"status": "error", "message": f"Error updating check-in: {str(exc)}", "data": None}
@@ -655,6 +758,7 @@ class WellnessService:
                 ).single()
             if record is None:
                 return {"status": "error", "message": "Diary entry not found", "data": None}
+            await self._record_tombstone(user_id, "wellness_diary_entry", entry_id)
             payload = await build_diary_item(self.driver, user_id=user_id, entry=dict(record["item"]))
             return {"status": "success", "message": "Diary entry updated successfully", "data": payload}
         except Exception as exc:

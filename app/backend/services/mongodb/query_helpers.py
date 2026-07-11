@@ -34,7 +34,7 @@ async def build_sync_change(activities_collection, *, user_id: str, entity_type:
         shaped_payload = await build_diary_item(activities_collection, user_id=user_id, entry=normalized)
     return {
         "entity_type": entity_type,
-        "entity_id": shaped_payload.get("id", ""),
+        "entity_id": shaped_payload.get("id") or shaped_payload.get("key", ""),
         "action": "upsert",
         "updated_at": shaped_payload.get("updated_at") or shaped_payload.get("created_at"),
         "payload": shaped_payload,

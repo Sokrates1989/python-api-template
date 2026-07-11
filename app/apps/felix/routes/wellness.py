@@ -15,6 +15,10 @@ from apps.felix.schemas.wellness import (
     FelixWellnessCheckInUpdateRequest,
     FelixWellnessDiaryEntryUpdateRequest,
     WellnessActivitiesResponse,
+    WellnessActivityCategoryCreateRequest,
+    WellnessActivityCategoryMutationResponse,
+    WellnessActivityCategoryUpdateRequest,
+    WellnessActivityCreateRequest,
     WellnessActivityMutationResponse,
     WellnessActivityUpdateRequest,
     WellnessCheckInCreateRequest,
@@ -32,6 +36,7 @@ from apps.felix.services.wellness_service import FelixWellnessService
 
 dashboard_router = APIRouter(tags=["dashboard"], prefix="/v1/dashboard")
 activities_router = APIRouter(tags=["activities"], prefix="/v1/activities")
+activity_categories_router = APIRouter(tags=["activity-categories"], prefix="/v1/activity-categories")
 app_sync_router = APIRouter(tags=["sync"], prefix="/v1/sync")
 rewards_router = APIRouter(tags=["rewards"], prefix="/v1/rewards")
 setup_router = APIRouter(tags=["setup"], prefix="/v1/setup")
@@ -94,7 +99,7 @@ def _raise_result_error(result: dict) -> None:
     lowered = message.lower()
     if "not found" in lowered:
         raise HTTPException(status_code=404, detail=message)
-    if "unsupported" in lowered or "requires mongodb" in lowered:
+    if any(token in lowered for token in ("unsupported", "required", "already exists", "still in use", "unknown activity categor")):
         raise HTTPException(status_code=400, detail=message)
     raise HTTPException(status_code=500, detail=message)
 
@@ -348,18 +353,86 @@ async def update_activity(
     current_user_id: str = Depends(get_user_id_from_token),
 ) -> WellnessActivityMutationResponse:
     """Update mutable state for one activity."""
-    if request.favorite is None:
-        raise HTTPException(status_code=400, detail="At least one mutable activity field must be provided")
-
     service = get_service()
     result = await service.update_activity(
         user_id=current_user_id,
         activity_id=activity_id,
-        favorite=request.favorite,
+        patch=request.model_dump(exclude_unset=True),
     )
     if result.get("status") != "success":
         _raise_result_error(result)
     return WellnessActivityMutationResponse(**result)
+
+
+@activities_router.post("", status_code=status.HTTP_201_CREATED)
+async def create_activity(
+    request: WellnessActivityCreateRequest,
+    current_user_id: str = Depends(get_user_id_from_token),
+) -> WellnessActivityMutationResponse:
+    """Create one user-owned catalogue activity."""
+    result = await get_service().create_activity(
+        user_id=current_user_id,
+        payload=request.model_dump(exclude_unset=True),
+    )
+    if result.get("status") != "success":
+        _raise_result_error(result)
+    return WellnessActivityMutationResponse(**result)
+
+
+@activities_router.delete("/{activity_id}", status_code=status.HTTP_200_OK)
+async def delete_activity(
+    activity_id: str,
+    current_user_id: str = Depends(get_user_id_from_token),
+) -> dict:
+    """Delete one user-owned catalogue activity idempotently."""
+    result = await get_service().delete_activity(current_user_id, activity_id)
+    if result.get("status") != "success":
+        _raise_result_error(result)
+    return result
+
+
+@activity_categories_router.post("", status_code=status.HTTP_201_CREATED)
+async def create_activity_category(
+    request: WellnessActivityCategoryCreateRequest,
+    current_user_id: str = Depends(get_user_id_from_token),
+) -> WellnessActivityCategoryMutationResponse:
+    """Create one user-owned catalogue category."""
+    result = await get_service().create_activity_category(
+        current_user_id,
+        request.model_dump(exclude_unset=True),
+    )
+    if result.get("status") != "success":
+        _raise_result_error(result)
+    return WellnessActivityCategoryMutationResponse(**result)
+
+
+@activity_categories_router.patch("/{category_key}")
+async def update_activity_category(
+    category_key: str,
+    request: WellnessActivityCategoryUpdateRequest,
+    current_user_id: str = Depends(get_user_id_from_token),
+) -> WellnessActivityCategoryMutationResponse:
+    """Patch one user-owned catalogue category."""
+    result = await get_service().update_activity_category(
+        current_user_id,
+        category_key,
+        request.model_dump(exclude_unset=True),
+    )
+    if result.get("status") != "success":
+        _raise_result_error(result)
+    return WellnessActivityCategoryMutationResponse(**result)
+
+
+@activity_categories_router.delete("/{category_key}", status_code=status.HTTP_200_OK)
+async def delete_activity_category(
+    category_key: str,
+    current_user_id: str = Depends(get_user_id_from_token),
+) -> dict:
+    """Delete one unused user-owned catalogue category."""
+    result = await get_service().delete_activity_category(current_user_id, category_key)
+    if result.get("status") != "success":
+        _raise_result_error(result)
+    return result
 
 
 @legacy_wellness_router.get("/diary")
@@ -548,6 +621,7 @@ async def delete_checkin(
 
 router.include_router(dashboard_router)
 router.include_router(activities_router)
+router.include_router(activity_categories_router)
 router.include_router(app_sync_router)
 router.include_router(rewards_router)
 router.include_router(setup_router)

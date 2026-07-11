@@ -33,6 +33,8 @@ class WellnessService:
             raise ValueError("MongoDB WellnessService requires MongoDB database")
         self.handler = handler
         self.activities_collection = handler.database["wellness_activities"]
+        self.categories_collection = handler.database["wellness_activity_categories"]
+        self.tombstones_collection = handler.database["wellness_sync_tombstones"]
         self.diary_collection = handler.database["wellness_diary_entries"]
         self.checkins_collection = handler.database["wellness_checkins"]
         self.operation_log_collection = handler.database["sync_operation_log"]
@@ -45,6 +47,10 @@ class WellnessService:
             return
         await self.activities_collection.create_index([("user_id", 1), ("id", 1)], unique=True, name="idx_wellness_activities_user_id_id")
         await self.activities_collection.create_index([("user_id", 1), ("favorite", 1)], name="idx_wellness_activities_user_favorite")
+        await self.categories_collection.create_index([("user_id", 1), ("key", 1)], unique=True, name="idx_wellness_activity_categories_user_key")
+        await self.categories_collection.create_index([("user_id", 1), ("sort_order", 1)], name="idx_wellness_activity_categories_user_order")
+        await self.tombstones_collection.create_index([("user_id", 1), ("entity_type", 1), ("entity_id", 1)], unique=True, name="idx_wellness_sync_tombstones_entity")
+        await self.tombstones_collection.create_index([("user_id", 1), ("deleted_at", 1)], name="idx_wellness_sync_tombstones_user_deleted")
         await self.diary_collection.create_index([("user_id", 1), ("id", 1)], unique=True, name="idx_wellness_diary_user_id_id")
         await self.diary_collection.create_index([("user_id", 1), ("created_at", -1)], name="idx_wellness_diary_user_created_at")
         await self.checkins_collection.create_index([("user_id", 1), ("id", 1)], unique=True, name="idx_wellness_checkins_user_id_id")
@@ -69,13 +75,42 @@ class WellnessService:
         if checkin_docs and looks_like_legacy_seed_checkins(checkin_docs):
             await self.checkins_collection.delete_many({"user_id": user_id})
 
+    async def _record_tombstone(self, user_id: str, entity_type: str, entity_id: str) -> None:
+        """Create or refresh an incremental deletion marker."""
+        await self.tombstones_collection.update_one(
+            {"user_id": user_id, "entity_type": entity_type, "entity_id": entity_id},
+            {"$set": {"deleted_at": iso_utc(now_utc())}},
+            upsert=True,
+        )
+
     async def _ensure_seed_data(self, user_id: str) -> None:
         """Ensure starter activities exist for the requested user."""
         await self._ensure_indexes()
         await self._purge_legacy_seed_data(user_id)
-        if await self.activities_collection.find_one({"user_id": user_id}, {"_id": 1}):
-            return
-        await self.activities_collection.insert_many(starter_activities(user_id))
+        if not await self.activities_collection.find_one({"user_id": user_id}, {"_id": 1}):
+            activities = starter_activities(user_id)
+            for sort_order, activity in enumerate(activities):
+                activity.setdefault("activity_reminder", None)
+                activity.setdefault("harmful", False)
+                activity.setdefault("tags", [])
+                activity.setdefault("sort_order", sort_order)
+            await self.activities_collection.insert_many(activities)
+        if not await self.categories_collection.find_one({"user_id": user_id}, {"_id": 1}):
+            now = iso_utc(now_utc())
+            categories = build_activity_categories([item async for item in self.activities_collection.find({"user_id": user_id}, {"_id": 0})])
+            await self.categories_collection.insert_many([
+                {
+                    "user_id": user_id,
+                    **category,
+                    "title": None,
+                    "description": None,
+                    "icon_key": {"calm": "self_improvement", "focus": "center_focus_strong", "energy": "bolt"}.get(category["key"], "category"),
+                    "sort_order": sort_order,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+                for sort_order, category in enumerate(categories)
+            ])
 
     async def reset_user_data(self, user_id: str, *, keep_activity_catalog: bool = True) -> Dict[str, Any]:
         """Delete the user's wellness content and optionally restore starter activities."""
@@ -86,6 +121,8 @@ class WellnessService:
             operation_log_result = await self.operation_log_collection.delete_many({"user_id": user_id})
             conflict_log_result = await self.conflict_log_collection.delete_many({"user_id": user_id})
             await self.activities_collection.delete_many({"user_id": user_id})
+            await self.categories_collection.delete_many({"user_id": user_id})
+            await self.tombstones_collection.delete_many({"user_id": user_id})
 
             activity_count = 0
             if keep_activity_catalog:
@@ -132,11 +169,17 @@ class WellnessService:
             activity_docs = await self.activities_collection.find(
                 {"user_id": user_id},
                 {"_id": 0},
-                sort=[("favorite", -1), ("duration_minutes", 1), ("title_key", 1)],
+                sort=[("favorite", -1), ("sort_order", 1), ("title_key", 1)],
             ).to_list(length=200)
             activities = [normalize_document(doc) for doc in activity_docs]
             activities = [item for item in activities if item is not None]
-            return {"status": "success", "data": {"categories": build_activity_categories(activities), "items": activities}}
+            category_docs = await self.categories_collection.find({"user_id": user_id}, {"_id": 0, "user_id": 0}, sort=[("sort_order", 1), ("key", 1)]).to_list(length=200)
+            categories = []
+            for document in category_docs:
+                item = normalize_document(document) or {}
+                item["item_count"] = sum(1 for activity in activities if item.get("key") in activity.get("category_keys", []))
+                categories.append(item)
+            return {"status": "success", "data": {"categories": categories, "items": activities}}
         except Exception as exc:
             return {"status": "error", "message": f"Error loading activities: {str(exc)}", "data": None}
 
@@ -161,6 +204,7 @@ class WellnessService:
                 "status": "success",
                 "data": {
                     "server_timestamp": iso_utc(now_utc()),
+                    "activity_categories": activities_result["data"]["categories"],
                     "activities": activities_result["data"]["items"],
                     "diary_entries": diary_result["data"]["items"],
                     "checkins": checkins,
@@ -175,6 +219,7 @@ class WellnessService:
             await self._ensure_seed_data(user_id)
             allowed_entity_types = {
                 "wellness_activity": self.activities_collection,
+                "wellness_activity_category": self.categories_collection,
                 "wellness_diary_entry": self.diary_collection,
                 "wellness_checkin": self.checkins_collection,
             }
@@ -204,6 +249,13 @@ class WellnessService:
                             payload=doc,
                         )
                     )
+            tombstone_filter: Dict[str, Any] = {"user_id": user_id}
+            if entity_type:
+                tombstone_filter["entity_type"] = entity_type
+            if cursor:
+                tombstone_filter["deleted_at"] = {"$gt": cursor}
+            tombstones = await self.tombstones_collection.find(tombstone_filter, {"_id": 0, "user_id": 0}, sort=[("deleted_at", 1)]).to_list(length=query_limit)
+            changes.extend({"entity_type": item["entity_type"], "entity_id": item["entity_id"], "action": "delete", "updated_at": item["deleted_at"], "payload": {}} for item in tombstones)
             changes.sort(key=lambda item: (item.get("updated_at") or "", item.get("entity_type") or "", item.get("entity_id") or ""))
             selected_changes = changes[:limit]
             next_cursor = selected_changes[-1]["updated_at"] if selected_changes else cursor
@@ -219,21 +271,128 @@ class WellnessService:
         except Exception as exc:
             return {"status": "error", "message": f"Error loading sync changes: {str(exc)}", "data": None}
 
-    async def update_activity(self, user_id: str, activity_id: str, favorite: Optional[bool] = None) -> Dict[str, Any]:
+    @staticmethod
+    def _clean_keys(values: object) -> List[str]:
+        """Normalize a list of identifiers while preserving order."""
+        if not isinstance(values, list):
+            return []
+        result: List[str] = []
+        for value in values:
+            key = str(value).strip()
+            if key and key not in result:
+                result.append(key)
+        return result
+
+    async def _validate_category_keys(self, user_id: str, values: object) -> List[str]:
+        """Validate that at least one persisted category is referenced."""
+        keys = self._clean_keys(values)
+        if not keys:
+            raise ValueError("Activity requires at least one category")
+        docs = await self.categories_collection.find({"user_id": user_id, "key": {"$in": keys}}, {"key": 1}).to_list(length=len(keys))
+        existing = {str(item.get("key")) for item in docs}
+        missing = [key for key in keys if key not in existing]
+        if missing:
+            raise ValueError(f"Unknown activity categories: {', '.join(missing)}")
+        return keys
+
+    @staticmethod
+    def _activity_patch(patch: Dict[str, Any]) -> Dict[str, Any]:
+        """Select and normalize mutable activity document fields."""
+        supported = {"icon_key", "title_key", "title", "summary_key", "summary", "activity_reminder", "duration_minutes", "favorite", "harmful", "tags", "sort_order", "energy_impact"}
+        result = {key: value for key, value in patch.items() if key in supported}
+        if result.get("icon_key") is None:
+            result.pop("icon_key", None)
+        if "duration_minutes" in result:
+            result["duration_minutes"] = max(0, int(result["duration_minutes"]))
+        if "sort_order" in result:
+            result["sort_order"] = int(result["sort_order"])
+        if "tags" in result:
+            result["tags"] = WellnessService._clean_keys(result["tags"])
+        return result
+
+    async def create_activity(self, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Create one user-owned activity document."""
+        try:
+            await self._ensure_seed_data(user_id)
+            activity_id = str(payload.get("id") or uuid4()).strip()
+            if await find_activity_doc(self.activities_collection, user_id=user_id, activity_id=activity_id):
+                return {"status": "error", "message": "Activity already exists", "data": None}
+            if not str(payload.get("title") or payload.get("title_key") or "").strip():
+                return {"status": "error", "message": "Activity title is required", "data": None}
+            now = iso_utc(now_utc())
+            document = {"id": activity_id, "user_id": user_id, "icon_key": "auto_awesome", "title_key": None, "title": None, "summary_key": None, "summary": None, "activity_reminder": None, "duration_minutes": 0, "favorite": False, "harmful": False, "category_keys": await self._validate_category_keys(user_id, payload.get("category_keys")), "tags": [], "sort_order": 0, "energy_impact": None, "created_at": now, "updated_at": now, **self._activity_patch(payload)}
+            await self.activities_collection.insert_one(document)
+            return {"status": "success", "message": "Activity created successfully", "data": normalize_document(document)}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error creating activity: {str(exc)}", "data": None}
+
+    async def update_activity(self, user_id: str, activity_id: str, patch: Dict[str, Any]) -> Dict[str, Any]:
         """Update one activity for the requested user."""
         try:
             await self._ensure_seed_data(user_id)
             existing = await find_activity_doc(self.activities_collection, user_id=user_id, activity_id=activity_id)
             if existing is None:
                 return {"status": "error", "message": "Activity not found", "data": None}
-            update_payload: Dict[str, Any] = {"updated_at": iso_utc(now_utc())}
-            if favorite is not None:
-                update_payload["favorite"] = favorite
+            update_payload: Dict[str, Any] = {**self._activity_patch(patch), "updated_at": iso_utc(now_utc())}
+            if "category_keys" in patch:
+                update_payload["category_keys"] = await self._validate_category_keys(user_id, patch["category_keys"])
             await self.activities_collection.update_one({"user_id": user_id, "id": activity_id}, {"$set": update_payload})
             updated = await find_activity_doc(self.activities_collection, user_id=user_id, activity_id=activity_id)
             return {"status": "success", "message": "Activity updated successfully", "data": updated}
         except Exception as exc:
             return {"status": "error", "message": f"Error updating activity: {str(exc)}", "data": None}
+
+    async def delete_activity(self, user_id: str, activity_id: str) -> Dict[str, Any]:
+        """Delete one activity document idempotently."""
+        try:
+            await self._record_tombstone(user_id, "wellness_activity", activity_id)
+            await self.activities_collection.delete_one({"user_id": user_id, "id": activity_id})
+            return {"status": "success", "message": "Activity deleted successfully", "data": {"id": activity_id}}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error deleting activity: {str(exc)}", "data": None}
+
+    async def create_activity_category(self, user_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Create one persisted activity category document."""
+        try:
+            await self._ensure_seed_data(user_id)
+            key = str(payload.get("key") or uuid4()).strip()
+            if await self.categories_collection.find_one({"user_id": user_id, "key": key}):
+                return {"status": "error", "message": "Activity category already exists", "data": None}
+            if not str(payload.get("title") or payload.get("title_key") or "").strip():
+                return {"status": "error", "message": "Activity category title is required", "data": None}
+            now = iso_utc(now_utc())
+            document = {"user_id": user_id, "key": key, "title_key": payload.get("title_key"), "title": payload.get("title"), "description_key": payload.get("description_key"), "description": payload.get("description"), "icon_key": payload.get("icon_key") or "category", "sort_order": int(payload.get("sort_order") or 0), "item_count": 0, "created_at": now, "updated_at": now}
+            await self.categories_collection.insert_one(document)
+            return {"status": "success", "message": "Activity category created successfully", "data": normalize_document(document)}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error creating activity category: {str(exc)}", "data": None}
+
+    async def update_activity_category(self, user_id: str, category_key: str, patch: Dict[str, Any]) -> Dict[str, Any]:
+        """Patch one persisted activity category document."""
+        try:
+            supported = {"title_key", "title", "description_key", "description", "icon_key", "sort_order"}
+            update = {key: value for key, value in patch.items() if key in supported}
+            if update.get("icon_key") is None:
+                update.pop("icon_key", None)
+            update["updated_at"] = iso_utc(now_utc())
+            result = await self.categories_collection.update_one({"user_id": user_id, "key": category_key}, {"$set": update})
+            if result.matched_count == 0:
+                return {"status": "error", "message": "Activity category not found", "data": None}
+            document = await self.categories_collection.find_one({"user_id": user_id, "key": category_key}, {"_id": 0, "user_id": 0})
+            return {"status": "success", "message": "Activity category updated successfully", "data": normalize_document(document)}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error updating activity category: {str(exc)}", "data": None}
+
+    async def delete_activity_category(self, user_id: str, category_key: str) -> Dict[str, Any]:
+        """Delete one category only when no activity references it."""
+        try:
+            if await self.activities_collection.find_one({"user_id": user_id, "category_keys": category_key}, {"_id": 1}):
+                return {"status": "error", "message": "Activity category is still in use", "data": None}
+            await self._record_tombstone(user_id, "wellness_activity_category", category_key)
+            await self.categories_collection.delete_one({"user_id": user_id, "key": category_key})
+            return {"status": "success", "message": "Activity category deleted successfully", "data": {"key": category_key}}
+        except Exception as exc:
+            return {"status": "error", "message": f"Error deleting activity category: {str(exc)}", "data": None}
 
     async def create_checkin(
         self,
@@ -342,6 +501,7 @@ class WellnessService:
             )
             if result.deleted_count == 0:
                 return {"status": "error", "message": "Check-in not found", "data": None}
+            await self._record_tombstone(user_id, "wellness_checkin", checkin_id)
             return {"status": "success", "message": "Check-in deleted successfully", "data": {"id": checkin_id}}
         except Exception as exc:
             return {"status": "error", "message": f"Error deleting check-in: {str(exc)}", "data": None}
@@ -465,6 +625,7 @@ class WellnessService:
             )
             if result.deleted_count == 0:
                 return {"status": "error", "message": "Diary entry not found", "data": None}
+            await self._record_tombstone(user_id, "wellness_diary_entry", entry_id)
             return {"status": "success", "message": "Diary entry deleted successfully", "data": {"id": entry_id}}
         except Exception as exc:
             return {"status": "error", "message": f"Error deleting diary entry: {str(exc)}", "data": None}
