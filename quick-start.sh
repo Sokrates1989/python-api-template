@@ -314,11 +314,6 @@ run_backend_compose_stack() {
     "${compose_args[@]}"
 }
 
-get_backend_app_relative_path() {
-    local app_id="$1"
-    echo "app/apps/${app_id}"
-}
-
 set_active_backend_app() {
     local app_id="$1"
     ACTIVE_BACKEND_APP_ID="$app_id"
@@ -327,6 +322,18 @@ set_active_backend_app() {
     refresh_docker_compose_context "$ACTIVE_BACKEND_APP_ID" "$ACTIVE_BACKEND_ENV_FILE"
 }
 
+# Displays app IDs without their repository path and activates one selection.
+#
+# Parameters:
+#   $1 - Current backend app ID, without the internal `app/apps/` prefix.
+#
+# Returns:
+#   Zero after a valid selection or a completed create/remove subflow.
+#
+# Side effects:
+#   Reads interactive input and may update the active-app state, create an app,
+#   remove an app, or refresh the Docker Compose context. Filesystem operations
+#   continue to prepend `${PROJECT_ROOT}/app/apps/` internally.
 select_active_backend_app() {
     local current_app="$1"
     local default_choice="1"
@@ -378,9 +385,9 @@ select_active_backend_app() {
     for i in "${!app_ids[@]}"; do
         app_name="${app_ids[$i]}"
         if [ "$current_app" = "$app_name" ]; then
-            echo "  $((i + 1))) $(get_backend_app_relative_path "$app_name") (current)"
+            echo "  $((i + 1))) ${app_name} (current)"
         else
-            echo "  $((i + 1))) $(get_backend_app_relative_path "$app_name")"
+            echo "  $((i + 1))) ${app_name}"
         fi
     done
     echo ""
@@ -390,7 +397,7 @@ select_active_backend_app() {
 
     local choice
     while true; do
-        read -r -p "Select backend app (1-${#app_ids[@]}, n/c, r/d) [default: $(get_backend_app_relative_path "$current_app")] [$default_choice]: " choice
+        read -r -p "Select backend app (1-${#app_ids[@]}, n/c, r/d) [default: ${current_app}] [$default_choice]: " choice
         choice="${choice:-$default_choice}"
 
         case "$choice" in
@@ -1112,7 +1119,7 @@ fi
 
 initialize_active_backend_app_selection
 
-echo "Active backend app: $(get_backend_app_relative_path "$ACTIVE_BACKEND_APP_ID")"
+echo "Active backend app: ${ACTIVE_BACKEND_APP_ID}"
 echo "Using env file: $ACTIVE_BACKEND_ENV_FILE"
 echo "Using Docker Compose project: $COMPOSE_PROJECT_NAME"
 echo ""
