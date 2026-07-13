@@ -12,7 +12,7 @@ import json
 import re
 import secrets
 import time
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from backend.shared_services.ai_chat_service import (
     AiChatContextSnapshot,
@@ -30,6 +30,22 @@ from backend.shared_services.ai_chat_debug import (
     log_ai_chat_debug,
 )
 from apps.felix.schemas.ai_chat import FelixAiChatAskRequest
+from apps.felix.services.ai_chat_diagnostics import (
+    activity_debug_payload as _activity_debug_payload,
+    context_debug_payload as _context_debug_payload,
+    elapsed_ms as _elapsed_ms,
+    has_action_block as _has_action_block,
+    log_activity_selection as _log_activity_selection,
+    log_answer_service_start as _log_answer_service_start,
+    log_prompt_built as _log_prompt_built,
+    log_response_built as _log_response_built,
+)
+from apps.felix.services.ai_chat_startlist_context import (
+    FelixAiStartlistContext,
+    intersect_felix_ai_startlist_context,
+    parse_felix_ai_startlist_context,
+    prioritize_felix_ai_activities,
+)
 from apps.felix.services.wellness_service import FelixWellnessService
 
 
@@ -87,15 +103,11 @@ class FelixAiChatService(BackendAiChatServiceBase):
         started_at = time.perf_counter()
         locale = normalize_ai_chat_locale(request.locale)
         intent = resolve_ai_chat_intent(request)
-        log_ai_chat_debug(
-            "ai_answer_service_start",
-            {
-                "scope": "felix",
-                "request_id": request_id,
-                "locale": locale,
-                "intent": intent,
-                "request": _request_debug_payload(request),
-            },
+        _log_answer_service_start(
+            request_id=request_id,
+            locale=locale,
+            intent=intent,
+            request=request,
         )
         context = await self._load_context(
             user_id,
@@ -104,45 +116,30 @@ class FelixAiChatService(BackendAiChatServiceBase):
             intent=intent,
             locale=locale,
         )
-        answer = await _compose_ai_answer(
+        startlist_context = intersect_felix_ai_startlist_context(
+            parse_felix_ai_startlist_context(request.external_context),
+            context.activities,
+        )
+        answer, response_source = await _resolve_answer(
             request=request,
             context=context,
             locale=locale,
             intent=intent,
             request_id=request_id,
+            startlist_context=startlist_context,
         )
-        response_source = "provider"
-        if answer is None:
-            response_source = "fallback"
-            log_ai_chat_debug(
-                "ai_fallback_answer_start",
-                {
-                    "scope": "felix",
-                    "request_id": request_id,
-                    "reason": "provider-unavailable-or-empty",
-                    "intent": intent,
-                },
-            )
-            answer = _compose_answer(
-                request=request,
-                context=context,
-                locale=locale,
-                intent=intent,
-            )
-        log_ai_chat_debug(
-            "ai_response_built",
-            {
-                "scope": "felix",
-                "request_id": request_id,
-                "source": response_source,
-                "answer_chars": len(answer),
-                "has_action_block": _has_action_block(answer),
-                "elapsed_ms": _elapsed_ms(started_at),
-                "context": _context_debug_payload(context),
-                **({"answer": answer} if is_ai_chat_prompt_logging_enabled() else {}),
-            },
+        _log_response_built(
+            request_id=request_id,
+            response_source=response_source,
+            answer=answer,
+            started_at=started_at,
+            context=context,
+            startlist_context=startlist_context,
         )
-        return self.response(answer=answer, sources=["felix-wellness-context"])
+        sources = ["felix-wellness-context"]
+        if startlist_context.has_preferences:
+            sources.append("felix-startlist-context")
+        return self.response(answer=answer, sources=sources)
 
     async def _load_context(
         self,
@@ -246,165 +243,6 @@ class FelixAiChatService(BackendAiChatServiceBase):
         return context
 
 
-def _request_debug_payload(request: FelixAiChatAskRequest) -> Dict[str, Any]:
-    """Build safe request diagnostics for the AI trace log.
-
-    Args:
-        request (FelixAiChatAskRequest): Incoming chat request.
-
-    Returns:
-        Dict[str, Any]: Request metadata, with full prompt fields included only
-        when local prompt debug logging is enabled.
-
-    Side Effects:
-        None.
-    """
-    include_prompts = is_ai_chat_prompt_logging_enabled()
-    payload: Dict[str, Any] = {
-        "question_source": request.question_source,
-        "locale": request.locale,
-        "intent_hint": request.intent_hint,
-        "question_chars": len(request.question),
-        "custom_prompt_chars": len(request.custom_prompt or ""),
-        "history_count": len(request.history),
-        "history_roles": [item.role for item in request.history[-12:]],
-        "external_context_keys": sorted(str(key) for key in request.external_context.keys()),
-        "ai_chat_categories": request.ai_chat_categories,
-        "target_metrics": request.target_metrics,
-        "max_chunks": request.max_chunks,
-    }
-    if include_prompts:
-        payload.update(
-            {
-                "question": request.question,
-                "custom_prompt": request.custom_prompt or "",
-                "history": [item.model_dump() for item in request.history],
-                "external_context": request.external_context,
-            }
-        )
-    else:
-        payload.update(
-            {
-                "question_preview": request.question[:220],
-                "custom_prompt_preview": (request.custom_prompt or "")[:220],
-            }
-        )
-    return payload
-
-
-def _context_debug_payload(context: FelixAiChatContext) -> Dict[str, Any]:
-    """Build context diagnostics for AI trace logs.
-
-    Args:
-        context (FelixAiChatContext): Backend-owned Felix context snapshot.
-
-    Returns:
-        Dict[str, Any]: Counts, representative rows, and optional full context.
-
-    Side Effects:
-        None.
-    """
-    payload: Dict[str, Any] = {
-        "activity_count": len(context.activities),
-        "diary_entry_count": len(context.diary_entries),
-        "checkin_count": len(context.checkins),
-        "activity_samples": [
-            _activity_debug_payload(activity)
-            for activity in context.activities[:8]
-        ],
-        "diary_samples": [
-            {
-                "id": str(item.get("id") or ""),
-                "title": str(item.get("title") or "")[:120],
-                "summary_chars": len(str(item.get("summary") or "")),
-            }
-            for item in context.diary_entries[:5]
-        ],
-        "checkin_samples": [
-            {
-                "id": str(item.get("id") or ""),
-                "created_at": str(item.get("created_at") or item.get("timestamp") or ""),
-                "keys": sorted(str(key) for key in item.keys())[:20],
-            }
-            for item in context.checkins[:5]
-        ],
-    }
-    if is_ai_chat_prompt_logging_enabled():
-        payload["raw_context"] = {
-            "activities": context.activities,
-            "diary_entries": context.diary_entries,
-            "checkins": context.checkins,
-        }
-    return payload
-
-
-def _activity_debug_payload(activity: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
-    """Build a compact activity diagnostic row.
-
-    Args:
-        activity (Optional[Mapping[str, Any]]): Activity row or None.
-
-    Returns:
-        Dict[str, Any]: Stable activity identity and scoring hints.
-
-    Side Effects:
-        None.
-    """
-    if not activity:
-        return {}
-    return {
-        "id": str(activity.get("id") or ""),
-        "name": _activity_name(dict(activity)),
-        "duration_minutes": activity.get("duration_minutes"),
-        "favorite": bool(activity.get("favorite")),
-        "category_keys": activity.get("category_keys") or [],
-        "summary_chars": len(str(activity.get("summary") or "")),
-    }
-
-
-def _messages_debug_payload(messages: List[Dict[str, str]]) -> List[Dict[str, Any]]:
-    """Return role and size diagnostics for provider messages.
-
-    Args:
-        messages (List[Dict[str, str]]): Provider messages.
-
-    Returns:
-        List[Dict[str, Any]]: Message summaries, optionally with full content.
-
-    Side Effects:
-        None.
-    """
-    include_prompts = is_ai_chat_prompt_logging_enabled()
-    return [
-        {
-            "index": index,
-            "role": message.get("role", ""),
-            "chars": len(message.get("content", "")),
-            **(
-                {"content": message.get("content", "")}
-                if include_prompts
-                else {"preview": message.get("content", "")[:220]}
-            ),
-        }
-        for index, message in enumerate(messages)
-    ]
-
-
-def _elapsed_ms(started_at: float) -> int:
-    """Return elapsed milliseconds since a perf-counter timestamp.
-
-    Args:
-        started_at (float): ``time.perf_counter`` value captured at step start.
-
-    Returns:
-        int: Elapsed milliseconds.
-
-    Side Effects:
-        None.
-    """
-    return int((time.perf_counter() - started_at) * 1000)
-
-
 async def _compose_ai_answer(
     *,
     request: FelixAiChatAskRequest,
@@ -412,6 +250,7 @@ async def _compose_ai_answer(
     locale: Locale,
     intent: str,
     request_id: str,
+    startlist_context: FelixAiStartlistContext,
 ) -> Optional[str]:
     """Try to compose an answer through the configured backend AI provider.
 
@@ -421,6 +260,8 @@ async def _compose_ai_answer(
         locale (Locale): Response language.
         intent (str): Resolved intent id.
         request_id (str): Stable request trace id.
+        startlist_context (FelixAiStartlistContext): Catalog-validated,
+            device-local Startlist preference hint.
 
     Returns:
         Optional[str]: Provider answer with an action block, or None when no
@@ -429,36 +270,32 @@ async def _compose_ai_answer(
     Side Effects:
         May call the backend-configured AI completion provider.
     """
-    activity = _select_activity(context.activities, request.target_metrics)
-    log_ai_chat_debug(
-        "ai_activity_selection",
-        {
-            "scope": "felix",
-            "request_id": request_id,
-            "intent": intent,
-            "target_metrics": request.target_metrics,
-            "selected_activity": _activity_debug_payload(activity),
-        },
+    activities = prioritize_felix_ai_activities(
+        context.activities,
+        startlist_context,
+    )
+    provider_context = FelixAiChatContext(
+        activities=activities,
+        diary_entries=context.diary_entries,
+        checkins=context.checkins,
+    )
+    activity = _select_activity(
+        activities,
+        request.target_metrics,
+        startlist_context,
+    )
+    _log_activity_selection(
+        request_id, intent, request.target_metrics, activity, startlist_context
     )
     messages = _ai_completion_messages(
         request=request,
-        context=context,
+        context=provider_context,
         locale=locale,
         intent=intent,
         activity=activity,
+        startlist_context=startlist_context,
     )
-    log_ai_chat_debug(
-        "ai_prompt_built",
-        {
-            "scope": "felix",
-            "request_id": request_id,
-            "intent": intent,
-            "locale": locale,
-            "message_summary": _messages_debug_payload(messages),
-            "context": _context_debug_payload(context),
-            **({"messages": messages} if is_ai_chat_prompt_logging_enabled() else {}),
-        },
-    )
+    _log_prompt_built(request_id, intent, locale, messages, context)
     raw_answer = await call_ai_chat_completion(
         messages,
         json_mode=True,
@@ -475,13 +312,70 @@ async def _compose_ai_answer(
     followup_answer = await _maybe_answer_with_requested_tools(
         messages=messages,
         raw_answer=raw_answer,
-        context=context,
+        context=provider_context,
         request_id=request_id,
     )
     if followup_answer:
         return followup_answer
 
-    return _render_provider_answer(raw_answer, context, request_id=request_id)
+    return _render_provider_answer(raw_answer, provider_context, request_id=request_id)
+
+
+async def _resolve_answer(
+    *,
+    request: FelixAiChatAskRequest,
+    context: FelixAiChatContext,
+    locale: Locale,
+    intent: str,
+    request_id: str,
+    startlist_context: FelixAiStartlistContext,
+) -> Tuple[str, str]:
+    """Resolve a provider answer or deterministic fallback.
+
+    Args:
+        request (FelixAiChatAskRequest): Current AI chat request.
+        context (FelixAiChatContext): Backend-owned wellness context.
+        locale (Locale): Normalized response locale.
+        intent (str): Resolved request intent.
+        request_id (str): Stable request trace ID.
+        startlist_context (FelixAiStartlistContext): Validated Startlist hint.
+
+    Returns:
+        Tuple[str, str]: Final answer and ``"provider"`` or ``"fallback"``
+            source marker.
+
+    Side Effects:
+        May call the configured AI provider and writes fallback diagnostics.
+    """
+    answer = await _compose_ai_answer(
+        request=request,
+        context=context,
+        locale=locale,
+        intent=intent,
+        request_id=request_id,
+        startlist_context=startlist_context,
+    )
+    if answer is not None:
+        return answer, "provider"
+    log_ai_chat_debug(
+        "ai_fallback_answer_start",
+        {
+            "scope": "felix",
+            "request_id": request_id,
+            "reason": "provider-unavailable-or-empty",
+            "intent": intent,
+        },
+    )
+    return (
+        _compose_answer(
+            request=request,
+            context=context,
+            locale=locale,
+            intent=intent,
+            startlist_context=startlist_context,
+        ),
+        "fallback",
+    )
 
 
 def _ai_completion_messages(
@@ -491,6 +385,7 @@ def _ai_completion_messages(
     locale: Locale,
     intent: str,
     activity: Optional[Dict[str, Any]],
+    startlist_context: FelixAiStartlistContext,
 ) -> List[Dict[str, str]]:
     """Build provider messages for the Felix AI chat completion call.
 
@@ -500,6 +395,8 @@ def _ai_completion_messages(
         locale (Locale): Response language.
         intent (str): Resolved intent id.
         activity (Optional[Dict[str, Any]]): Preselected activity suggestion.
+        startlist_context (FelixAiStartlistContext): Catalog-validated,
+            device-local Startlist preference hint.
 
     Returns:
         List[Dict[str, str]]: OpenAI-compatible message rows.
@@ -519,7 +416,11 @@ def _ai_completion_messages(
         "Do not expose backend IDs in visible answer text; put IDs only in actions.",
         "Resolved intent: " + intent,
         _wellness_instruction_block(context),
-        _context_prompt(context, activity),
+        _context_prompt(
+            context,
+            activity,
+            startlist_context,
+        ),
     ]
     if request.custom_prompt:
         lines.append("Client context hint:\n" + request.custom_prompt.strip())
@@ -1308,12 +1209,15 @@ def _wellness_instruction_block(context: FelixAiChatContext) -> str:
 def _context_prompt(
     context: FelixAiChatContext,
     activity: Optional[Dict[str, Any]],
+    startlist_context: FelixAiStartlistContext,
 ) -> str:
     """Render bounded backend context for the provider prompt.
 
     Args:
         context (FelixAiChatContext): Backend-owned wellness context.
         activity (Optional[Dict[str, Any]]): Preselected activity suggestion.
+        startlist_context (FelixAiStartlistContext): Catalog-validated,
+            device-local Startlist preference hint.
 
     Returns:
         str: Context prompt section.
@@ -1322,6 +1226,11 @@ def _context_prompt(
         None.
     """
     lines = ["Backend Felix context:"]
+    if startlist_context.has_preferences:
+        lines.append(
+            "Startlist preference: prefer current-tier activities first, "
+            "then automatic-tier activities, when they fit the user's need."
+        )
     if activity:
         lines.append(
             "Preselected fitting activity: "
@@ -1332,12 +1241,14 @@ def _context_prompt(
     if context.activities:
         lines.append("Activities:")
         for item in context.activities[:10]:
+            startlist_tier = startlist_context.membership(item.get("id")) or "none"
             lines.append(
                 "- "
                 f"id={_prompt_value(item.get('id'))}; "
                 f"name={_activity_name(item)}; "
                 f"duration={item.get('duration_minutes') or 1}; "
                 f"favorite={bool(item.get('favorite'))}; "
+                f"startlist={startlist_tier}; "
                 f"summary={_prompt_value(item.get('summary'))}"
             )
 
@@ -1372,6 +1283,7 @@ def _compose_answer(
     context: FelixAiChatContext,
     locale: Locale,
     intent: str,
+    startlist_context: FelixAiStartlistContext,
 ) -> str:
     """Compose a cautious text-only fallback assistant answer.
 
@@ -1380,6 +1292,8 @@ def _compose_answer(
         context (FelixAiChatContext): Backend-owned wellness context.
         locale (Locale): Response language.
         intent (str): Resolved intent id.
+        startlist_context (FelixAiStartlistContext): Catalog-validated,
+            device-local Startlist preference hint.
 
     Returns:
         str: Visible assistant answer without action buttons. Structured
@@ -1388,7 +1302,15 @@ def _compose_answer(
     Side Effects:
         None.
     """
-    activity = _select_activity(context.activities, request.target_metrics)
+    activities = prioritize_felix_ai_activities(
+        context.activities,
+        startlist_context,
+    )
+    activity = _select_activity(
+        activities,
+        request.target_metrics,
+        startlist_context,
+    )
     context_line = _context_summary(context, locale)
     if intent == "activity_recommendation":
         visible = _activity_answer(activity, context_line, locale)
@@ -1581,30 +1503,18 @@ def _context_summary(context: FelixAiChatContext, locale: Locale) -> str:
     )
 
 
-def _has_action_block(answer: str) -> bool:
-    """Return whether an assistant answer already contains hidden actions.
-
-    Args:
-        answer (str): Raw provider answer.
-
-    Returns:
-        bool: True when the expected Felix action block markers are present.
-
-    Side Effects:
-        None.
-    """
-    return "[[FELIX_ACTIONS]]" in answer and "[[/FELIX_ACTIONS]]" in answer
-
-
 def _select_activity(
     activities: List[Dict[str, Any]],
     target_metrics: List[str],
+    startlist_context: FelixAiStartlistContext,
 ) -> Optional[Dict[str, Any]]:
     """Select a fitting activity row for the current answer.
 
     Args:
         activities (List[Dict[str, Any]]): Activity catalog rows.
         target_metrics (List[str]): Metric ids requested by the client.
+        startlist_context (FelixAiStartlistContext): Catalog-validated
+            Startlist preferences reflected in the activity order.
 
     Returns:
         Optional[Dict[str, Any]]: Selected row, or None when no activities exist.
@@ -1625,6 +1535,9 @@ def _select_activity(
             ).lower()
             if any(metric in haystack for metric in target_metrics):
                 return activity
+
+    if startlist_context.has_preferences:
+        return activities[0]
 
     favorites = [activity for activity in activities if activity.get("favorite") is True]
     if favorites:
