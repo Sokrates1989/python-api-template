@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -16,8 +17,12 @@ from api.shared_schemas.web_push import (
     WebPushSubscriptionRequest,
 )
 from apps.felix.routes import web_push
-from apps.felix.services.web_push_service import FelixWebPushService
+from apps.felix.services.web_push_service import (
+    FelixWebPushMessage,
+    FelixWebPushService,
+)
 from backend.shared_services.web_push_config import validate_vapid_public_key
+from backend.shared_services.web_push_delivery import WebPushDeliveryReport
 from backend.shared_services.web_push_subscriptions import WebPushSubscription
 
 
@@ -120,6 +125,40 @@ class _FakeStore:
         return matches
 
 
+class _FakeDelivery:
+    """Capture Felix payload serialization at the generic delivery boundary."""
+
+    def __init__(self) -> None:
+        """Create an empty owner/payload observation.
+
+        Returns:
+            None.
+        """
+        self.user_id: Optional[str] = None
+        self.payload: Optional[str] = None
+
+    async def deliver_to_user(
+        self,
+        user_id: str,
+        payload: str,
+    ) -> WebPushDeliveryReport:
+        """Record one internal Felix delivery request.
+
+        Args:
+            user_id (str): Internally authorized account identifier.
+            payload (str): Serialized service-worker payload.
+
+        Returns:
+            WebPushDeliveryReport: One successful fake delivery.
+
+        Side Effects:
+            Stores the owner and payload for assertions.
+        """
+        self.user_id = user_id
+        self.payload = payload
+        return WebPushDeliveryReport(1, 1, 0, 0, 0)
+
+
 def test_vapid_public_key_validation_is_strict() -> None:
     """Ensure malformed or compressed public keys are rejected.
 
@@ -173,6 +212,31 @@ def test_public_key_setting_prefers_file_injection(tmp_path: Path) -> None:
     assert configured.get_web_push_vapid_public_key() == _valid_public_key()
 
 
+def test_private_key_setting_preserves_mounted_secret_reference(tmp_path: Path) -> None:
+    """Ensure private PEM contents are not eagerly read into app configuration.
+
+    Args:
+        tmp_path (Path): Pytest-owned temporary directory.
+
+    Returns:
+        None.
+
+    Side Effects:
+        Writes one temporary private-key placeholder.
+    """
+    private_key_file = tmp_path / "felix_web_push_private_key.pem"
+    private_key_file.write_text("private-placeholder", encoding="utf-8")
+    configured = Settings(
+        _env_file=None,
+        WEB_PUSH_VAPID_PRIVATE_KEY="direct-fallback",
+        WEB_PUSH_VAPID_PRIVATE_KEY_FILE=str(private_key_file),
+    )
+
+    assert configured.get_web_push_vapid_private_key_reference() == str(
+        private_key_file
+    )
+
+
 def test_felix_service_keeps_registration_account_scoped() -> None:
     """Ensure Felix forwards authenticated ownership to the shared store.
 
@@ -187,6 +251,39 @@ def test_felix_service_keeps_registration_account_scoped() -> None:
     assert store.owner == "user-a"
     assert asyncio.run(service.unregister("user-b", _subscription().endpoint)) is False
     assert asyncio.run(service.unregister("user-a", _subscription().endpoint)) is True
+
+
+def test_felix_delivery_serializes_only_bounded_worker_fields() -> None:
+    """Ensure internal delivery uses Felix-owned safe visible payload policy.
+
+    Returns:
+        None.
+    """
+    delivery = _FakeDelivery()
+    service = FelixWebPushService(delivery=delivery)
+    message = FelixWebPushMessage(
+        title="Felix Erinnerung",
+        body="Zeit für deinen Check-in.",
+        tag="felix-checkin",
+        route="/check-in",
+        renotify=True,
+    )
+
+    report = asyncio.run(service.deliver("user-a", message))
+
+    assert report.delivered == 1
+    assert delivery.user_id == "user-a"
+    assert json.loads(delivery.payload or "") == {
+        "title": "Felix Erinnerung",
+        "body": "Zeit für deinen Check-in.",
+        "tag": "felix-checkin",
+        "route": "/check-in",
+        "renotify": True,
+        "requireInteraction": False,
+        "silent": False,
+    }
+    with pytest.raises(ValueError, match="bounded app route"):
+        FelixWebPushMessage(title="Felix", body="Body", route="https://evil.test")
 
 
 def test_felix_routes_match_flutter_contract_without_api_prefix() -> None:

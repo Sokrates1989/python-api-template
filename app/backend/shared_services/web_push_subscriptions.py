@@ -169,6 +169,30 @@ class WebPushSubscriptionStore:
             return await asyncio.to_thread(self._delete_neo4j, user_id, endpoint)
         raise ValueError(f"Unsupported Web Push database provider: {provider}")
 
+    async def list_for_user(self, user_id: str) -> list[WebPushSubscription]:
+        """Return every browser subscription owned by one account.
+
+        Args:
+            user_id (str): Authenticated or internally authorized account id.
+
+        Returns:
+            list[WebPushSubscription]: Provider-neutral delivery material.
+
+        Raises:
+            ValueError: When the active database provider is unsupported.
+
+        Side Effects:
+            Reads account-scoped provider records without mutating them.
+        """
+        provider = self._provider_name()
+        if provider == "mongodb":
+            return await self._list_mongodb(user_id)
+        if provider == "sql":
+            return await self._list_sql(user_id)
+        if provider == "neo4j":
+            return await asyncio.to_thread(self._list_neo4j, user_id)
+        raise ValueError(f"Unsupported Web Push database provider: {provider}")
+
     def _provider_name(self) -> str:
         """Normalize the active handler into one supported provider family.
 
@@ -253,6 +277,31 @@ class WebPushSubscriptionStore:
         )
         return bool(result.deleted_count)
 
+    async def _list_mongodb(self, user_id: str) -> list[WebPushSubscription]:
+        """List account-owned MongoDB subscription documents.
+
+        Args:
+            user_id (str): Account owner identifier.
+
+        Returns:
+            list[WebPushSubscription]: Delivery material for the account.
+
+        Side Effects:
+            Reads matching MongoDB documents.
+        """
+        collection = self.handler.database[self.names.mongo_collection]
+        cursor = collection.find(
+            {"user_id": user_id},
+            {
+                "_id": 0,
+                "endpoint": 1,
+                "expiration_time": 1,
+                "p256dh": 1,
+                "auth": 1,
+            },
+        )
+        return [_subscription_from_mapping(document) async for document in cursor]
+
     async def _upsert_sql(
         self,
         user_id: str,
@@ -324,6 +373,30 @@ class WebPushSubscriptionStore:
             )
             await session.commit()
             return bool(result.rowcount)
+
+    async def _list_sql(self, user_id: str) -> list[WebPushSubscription]:
+        """List account-owned SQL subscription rows.
+
+        Args:
+            user_id (str): Account owner identifier.
+
+        Returns:
+            list[WebPushSubscription]: Delivery material ordered by row id.
+
+        Side Effects:
+            Reads matching SQL rows.
+        """
+        async with self.handler.AsyncSessionLocal() as session:
+            result = await session.execute(
+                text(
+                    "SELECT endpoint, expiration_time, p256dh, auth "
+                    f"FROM {self.names.sql_table} "  # nosec B608
+                    "WHERE user_id = :user_id ORDER BY pk ASC"
+                ),
+                {"user_id": user_id},
+            )
+            rows = result.mappings().all()
+        return [_subscription_from_mapping(row) for row in rows]
 
     def _upsert_neo4j(
         self,
@@ -404,6 +477,32 @@ class WebPushSubscriptionStore:
             ).single()
         return bool(record and record["deleted"])
 
+    def _list_neo4j(self, user_id: str) -> list[WebPushSubscription]:
+        """List account-owned Neo4j subscription nodes.
+
+        Args:
+            user_id (str): Account owner identifier.
+
+        Returns:
+            list[WebPushSubscription]: Delivery material ordered by creation.
+
+        Side Effects:
+            Reads matching Neo4j nodes.
+        """
+        with self.handler.driver.session() as session:
+            records = session.run(
+                f"""
+                MATCH (s:{self.names.neo4j_label} {{user_id: $user_id}})
+                RETURN s.endpoint AS endpoint,
+                       s.expiration_time AS expiration_time,
+                       s.p256dh AS p256dh,
+                       s.auth AS auth
+                ORDER BY s.created_at ASC, s.endpoint_hash ASC
+                """,
+                user_id=user_id,
+            )
+            return [_subscription_from_mapping(record) for record in records]
+
 
 def _subscription_payload(
     subscription: WebPushSubscription,
@@ -428,6 +527,29 @@ def _subscription_payload(
         "auth": subscription.auth,
         "updated_at": updated_at,
     }
+
+
+def _subscription_from_mapping(values: Any) -> WebPushSubscription:
+    """Build delivery material from a provider row, document, or record.
+
+    Args:
+        values (Any): Mapping-like provider result with subscription fields.
+
+    Returns:
+        WebPushSubscription: Provider-neutral delivery material.
+
+    Raises:
+        KeyError: When a required provider field is absent.
+
+    Side Effects:
+        None.
+    """
+    return WebPushSubscription(
+        endpoint=str(values["endpoint"]),
+        expiration_time=values.get("expiration_time"),
+        p256dh=str(values["p256dh"]),
+        auth=str(values["auth"]),
+    )
 
 
 def _sql_params(

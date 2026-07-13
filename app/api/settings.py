@@ -81,9 +81,14 @@ class Settings(BaseSettings):
     AI_CHAT_DEBUG_INCLUDE_PROMPTS: bool = False
     AI_CHAT_LOG_DIR: str = ""
 
-    # Browser Web Push public configuration.
+    # Browser Web Push public and private delivery configuration.
     WEB_PUSH_VAPID_PUBLIC_KEY: str = ""
     WEB_PUSH_VAPID_PUBLIC_KEY_FILE: str = ""
+    WEB_PUSH_VAPID_PRIVATE_KEY: str = ""
+    WEB_PUSH_VAPID_PRIVATE_KEY_FILE: str = ""
+    WEB_PUSH_VAPID_SUBJECT: str = ""
+    WEB_PUSH_DEFAULT_TTL_SECONDS: int = 86400
+    WEB_PUSH_REQUEST_TIMEOUT_SECONDS: float = 10.0
 
     # Keycloak Configuration
     KEYCLOAK_SERVER_URL: Optional[str] = None
@@ -211,6 +216,33 @@ class Settings(BaseSettings):
             self.WEB_PUSH_VAPID_PUBLIC_KEY,
             self.WEB_PUSH_VAPID_PUBLIC_KEY_FILE,
         )
+
+    def get_web_push_vapid_private_key_reference(self) -> str:
+        """Return the backend-only VAPID private key or mounted-file path.
+
+        File-backed configuration remains a path because ``pywebpush`` accepts
+        PEM file paths directly and should read the secret only while signing.
+
+        Args:
+            None.
+
+        Returns:
+            str: Existing ``WEB_PUSH_VAPID_PRIVATE_KEY_FILE`` path when
+            configured, otherwise the direct DER-encoded private-key value.
+
+        Raises:
+            ValueError: When the configured private-key file does not exist.
+
+        Side Effects:
+            Checks mounted-file existence without reading or logging it.
+        """
+        private_key_file = self.WEB_PUSH_VAPID_PRIVATE_KEY_FILE.strip()
+        if private_key_file:
+            path = Path(private_key_file)
+            if not path.exists():
+                raise ValueError(f"Configured secret file not found: {path}")
+            return str(path)
+        return self.WEB_PUSH_VAPID_PRIVATE_KEY.strip()
 
     def get_auth_provider(self) -> str:
         """Return the configured authentication provider.

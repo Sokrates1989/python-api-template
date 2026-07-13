@@ -19,10 +19,14 @@ services:
       # AI_CHAT_COMPLETIONS_ENDPOINT: "https://provider.example/v1/chat/completions"
       # AI_CHAT_API_KEY_FILE: "/run/secrets/felix_ai_chat_api_key"
       # AI_CHAT_MODEL: "provider-model-name"
-      # Web Push registration exposes only this public VAPID key. Prefer a
-      # mounted file in deployed environments. Private signing configuration
-      # belongs to the later delivery-worker slice and must never be exposed.
+      # Web Push exposes only the public key. Delivery reads the private PEM
+      # by path and never returns or logs its contents. Mount both files through
+      # the deployment secret owner rather than committing key material.
       # WEB_PUSH_VAPID_PUBLIC_KEY_FILE: "/run/secrets/felix_web_push_public_key"
+      # WEB_PUSH_VAPID_PRIVATE_KEY_FILE: "/run/secrets/felix_web_push_private_key"
+      # WEB_PUSH_VAPID_SUBJECT: "mailto:operations@example.com"
+      # WEB_PUSH_DEFAULT_TTL_SECONDS: "86400"
+      # WEB_PUSH_REQUEST_TIMEOUT_SECONDS: "10"
       # Local-only AI diagnostics. Production compose templates should leave
       # this disabled unless an operator explicitly opts in.
       AI_CHAT_DEBUG_ENABLED: "true"

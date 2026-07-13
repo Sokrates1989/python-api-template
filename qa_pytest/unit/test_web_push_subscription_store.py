@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, AsyncIterator, Iterator, Optional
 
 import pytest
 
@@ -64,6 +64,39 @@ class _DeleteResult:
     """
 
     deleted_count: int
+
+
+class _MongoCursor:
+    """Expose one optional MongoDB document through asynchronous iteration."""
+
+    def __init__(self, documents: list[dict[str, Any]]) -> None:
+        """Create a cursor over copied documents.
+
+        Args:
+            documents (list[dict[str, Any]]): Matching provider documents.
+
+        Returns:
+            None.
+        """
+        self._documents = list(documents)
+
+    def __aiter__(self) -> AsyncIterator[dict[str, Any]]:
+        """Return an asynchronous generator for matching documents.
+
+        Returns:
+            AsyncIterator[dict[str, Any]]: Copied document iterator.
+        """
+
+        async def iterate() -> AsyncIterator[dict[str, Any]]:
+            """Yield copied documents without external side effects.
+
+            Yields:
+                dict[str, Any]: One matching provider document.
+            """
+            for document in self._documents:
+                yield dict(document)
+
+        return iterate()
 
 
 class _MongoCollection:
@@ -159,6 +192,30 @@ class _MongoCollection:
         existing = self.document or {**lookup, **mutation["$setOnInsert"]}
         self.document = {**existing, **mutation["$set"]}
 
+    def find(
+        self,
+        lookup: dict[str, Any],
+        projection: dict[str, Any],
+    ) -> _MongoCursor:
+        """Return a cursor containing the matching fake document.
+
+        Args:
+            lookup (dict[str, Any]): Account equality filter.
+            projection (dict[str, Any]): Requested fields, ignored by the fake.
+
+        Returns:
+            _MongoCursor: Cursor over zero or one matching document.
+
+        Side Effects:
+            None.
+        """
+        del projection
+        matches = bool(
+            self.document
+            and all(self.document.get(key) == value for key, value in lookup.items())
+        )
+        return _MongoCursor([self.document] if matches and self.document else [])
+
     async def delete_one(self, lookup: dict[str, Any]) -> _DeleteResult:
         """Delete the stored document when every lookup field matches.
 
@@ -201,12 +258,19 @@ class MongoDBHandler:
 class _SqlResult:
     """Represent scalar and row-count output from fake SQL execution."""
 
-    def __init__(self, *, scalar: Optional[int] = None, rowcount: int = 0) -> None:
+    def __init__(
+        self,
+        *,
+        scalar: Optional[int] = None,
+        rowcount: int = 0,
+        rows: Optional[list[dict[str, Any]]] = None,
+    ) -> None:
         """Create one fake SQL result.
 
         Args:
             scalar (Optional[int]): Existing row identifier, defaulting to None.
             rowcount (int): Mutation count, defaulting to zero.
+            rows (Optional[list[dict[str, Any]]]): Optional selected mappings.
 
         Returns:
             None.
@@ -216,6 +280,7 @@ class _SqlResult:
         """
         self.scalar = scalar
         self.rowcount = rowcount
+        self.rows = list(rows or [])
 
     def scalar_one_or_none(self) -> Optional[int]:
         """Return the configured optional scalar value.
@@ -224,6 +289,22 @@ class _SqlResult:
             Optional[int]: Existing fake primary key or None.
         """
         return self.scalar
+
+    def mappings(self) -> "_SqlResult":
+        """Return this result as a mapping-result facade.
+
+        Returns:
+            _SqlResult: This fake result.
+        """
+        return self
+
+    def all(self) -> list[dict[str, Any]]:
+        """Return copied selected mappings.
+
+        Returns:
+            list[dict[str, Any]]: Selected subscription rows.
+        """
+        return [dict(row) for row in self.rows]
 
 
 class _SqlSession:
@@ -240,6 +321,7 @@ class _SqlSession:
         """
         self.exists = False
         self.params: Optional[dict[str, Any]] = None
+        self.row: Optional[dict[str, Any]] = None
 
     async def __aenter__(self) -> "_SqlSession":
         """Enter the fake asynchronous session context.
@@ -283,16 +365,23 @@ class _SqlSession:
         """
         sql = str(statement).strip().upper()
         self.params = dict(params)
+        if sql.startswith("SELECT ENDPOINT"):
+            rows = [self.row] if self.exists and self.row else []
+            return _SqlResult(rows=rows)
         if sql.startswith("SELECT"):
             return _SqlResult(scalar=1 if self.exists else None)
         if sql.startswith("INSERT"):
             self.exists = True
+            self.row = dict(params)
             return _SqlResult(rowcount=1)
         if sql.startswith("UPDATE"):
+            if self.exists:
+                self.row = dict(params)
             return _SqlResult(rowcount=int(self.exists))
         if sql.startswith("DELETE"):
             deleted = int(self.exists)
             self.exists = False
+            self.row = None
             return _SqlResult(rowcount=deleted)
         raise AssertionError(f"Unexpected SQL statement: {sql}")
 
@@ -338,11 +427,17 @@ class SQLHandler:
 class _Neo4jResult:
     """Wrap one optional Neo4j result record."""
 
-    def __init__(self, record: Optional[dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        record: Optional[dict[str, Any]],
+        *,
+        records: Optional[list[dict[str, Any]]] = None,
+    ) -> None:
         """Create a result returning the supplied record.
 
         Args:
             record (Optional[dict[str, Any]]): Optional query result record.
+            records (Optional[list[dict[str, Any]]]): Iterable query records.
 
         Returns:
             None.
@@ -351,6 +446,7 @@ class _Neo4jResult:
             None.
         """
         self.record = record
+        self.records = list(records or [])
 
     def single(self) -> Optional[dict[str, Any]]:
         """Return the configured optional result record.
@@ -359,6 +455,14 @@ class _Neo4jResult:
             Optional[dict[str, Any]]: Configured record or None.
         """
         return self.record
+
+    def __iter__(self) -> Iterator[dict[str, Any]]:
+        """Return an iterator over selected records.
+
+        Returns:
+            Iterator[dict[str, Any]]: Copied query records.
+        """
+        return iter(self.records)
 
 
 class _Neo4jSession:
@@ -418,6 +522,21 @@ class _Neo4jSession:
         normalized = " ".join(query.split()).upper()
         if normalized.startswith("CREATE CONSTRAINT"):
             return _Neo4jResult(None)
+        if (
+            normalized.startswith("MATCH")
+            and "RETURN S.ENDPOINT AS ENDPOINT" in normalized
+        ):
+            records = [
+                {
+                    "endpoint": node["endpoint"],
+                    "expiration_time": node["expiration_time"],
+                    "p256dh": node["p256dh"],
+                    "auth": node["auth"],
+                }
+                for (owner, _), node in self.nodes.items()
+                if owner == params["user_id"]
+            ]
+            return _Neo4jResult(None, records=records)
         key = (params["user_id"], params["endpoint_hash"])
         if normalized.startswith("MERGE"):
             created = key not in self.nodes
@@ -508,6 +627,8 @@ def test_mongodb_store_upserts_and_deletes_with_owner_digest() -> None:
     assert collection.document is not None
     assert len(collection.document["endpoint_hash"]) == 64
     assert collection.index_keys == [("user_id", 1), ("endpoint_hash", 1)]
+    assert asyncio.run(store.list_for_user("user-a")) == [_subscription()]
+    assert asyncio.run(store.list_for_user("user-b")) == []
     assert asyncio.run(store.delete("user-b", _subscription().endpoint)) is False
     assert asyncio.run(store.delete("user-a", _subscription().endpoint)) is True
 
@@ -528,6 +649,7 @@ def test_sql_store_upserts_and_deletes_idempotently() -> None:
     assert asyncio.run(store.upsert("user-a", _subscription())) is False
     assert session.params is not None
     assert len(session.params["endpoint_hash"]) == 64
+    assert asyncio.run(store.list_for_user("user-a")) == [_subscription()]
     assert asyncio.run(store.delete("user-a", _subscription().endpoint)) is True
     assert asyncio.run(store.delete("user-a", _subscription().endpoint)) is False
 
@@ -546,5 +668,7 @@ def test_neo4j_store_upserts_and_deletes_idempotently() -> None:
 
     assert asyncio.run(store.upsert("user-a", _subscription())) is True
     assert asyncio.run(store.upsert("user-a", _subscription())) is False
+    assert asyncio.run(store.list_for_user("user-a")) == [_subscription()]
+    assert asyncio.run(store.list_for_user("user-b")) == []
     assert asyncio.run(store.delete("user-b", _subscription().endpoint)) is False
     assert asyncio.run(store.delete("user-a", _subscription().endpoint)) is True
