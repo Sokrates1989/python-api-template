@@ -1,4 +1,10 @@
-# Configuration using pydantic-settings
+"""Runtime configuration for shared infrastructure and selected backend apps.
+
+Settings are loaded from environment variables or the repository ``.env``
+file. File-backed helpers support Docker secret injection without exposing
+private values through app routes or committed configuration.
+"""
+
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Optional
 
@@ -74,6 +80,10 @@ class Settings(BaseSettings):
     AI_CHAT_DEBUG_ENABLED: bool = False
     AI_CHAT_DEBUG_INCLUDE_PROMPTS: bool = False
     AI_CHAT_LOG_DIR: str = ""
+
+    # Browser Web Push public configuration.
+    WEB_PUSH_VAPID_PUBLIC_KEY: str = ""
+    WEB_PUSH_VAPID_PUBLIC_KEY_FILE: str = ""
 
     # Keycloak Configuration
     KEYCLOAK_SERVER_URL: Optional[str] = None
@@ -180,6 +190,27 @@ class Settings(BaseSettings):
             ValueError: When ``AI_CHAT_API_KEY_FILE`` is configured but missing.
         """
         return self.read_env_or_file(self.AI_CHAT_API_KEY, self.AI_CHAT_API_KEY_FILE)
+
+    def get_web_push_vapid_public_key(self) -> str:
+        """Return the browser-safe public VAPID application-server key.
+
+        Args:
+            None.
+
+        Returns:
+            str: Public key read from ``WEB_PUSH_VAPID_PUBLIC_KEY_FILE`` when
+            configured, otherwise ``WEB_PUSH_VAPID_PUBLIC_KEY``.
+
+        Raises:
+            ValueError: When the configured public-key file does not exist.
+
+        Side Effects:
+            Reads the configured file when file-based injection is enabled.
+        """
+        return self.read_env_or_file(
+            self.WEB_PUSH_VAPID_PUBLIC_KEY,
+            self.WEB_PUSH_VAPID_PUBLIC_KEY_FILE,
+        )
 
     def get_auth_provider(self) -> str:
         """Return the configured authentication provider.

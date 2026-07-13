@@ -5,12 +5,12 @@ This module declares the route families owned by the Felix backend
 slice. Felix mounts app-domain endpoints under the /felix prefix and
 exposes sync endpoints for offline-first support.
 """
+
 from __future__ import annotations
 
 from apps.contracts import BackendAppDefinition, RouteRegistration
 from apps.felix.config import FELIX_APP_CONFIG
-from apps.felix.routes import ai_chat, sync, wellness
-
+from apps.felix.routes import ai_chat, sync, web_push, wellness
 
 FELIX_APP_DEFINITION = BackendAppDefinition(
     app_id=FELIX_APP_CONFIG.app_id,
@@ -31,6 +31,13 @@ FELIX_APP_DEFINITION = BackendAppDefinition(
             router=sync.router,
             external_prefix="",
             public_prefix=FELIX_APP_CONFIG.sync_public_prefix,
+        ),
+        RouteRegistration(
+            router=web_push.router,
+            external_prefix=FELIX_APP_CONFIG.felix_mount_prefix,
+            public_prefix=(
+                f"{FELIX_APP_CONFIG.felix_public_prefix}/notifications/web-push"
+            ),
         ),
     ),
     migration_version_locations=("migrations/versions",),
