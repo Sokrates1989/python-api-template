@@ -145,7 +145,9 @@ class FelixWebPushService:
         self._store = store
         self._public_key_loader = public_key_loader or _load_public_key_setting
         self._delivery = delivery
-        self._delivery_config_loader = delivery_config_loader or _load_delivery_config
+        self._delivery_config_loader = (
+            delivery_config_loader or load_web_push_delivery_config
+        )
 
     def get_public_key(self) -> str:
         """Return the validated browser-safe public VAPID key.
@@ -280,7 +282,7 @@ def _load_public_key_setting() -> str:
     return settings.get_web_push_vapid_public_key()
 
 
-def _load_delivery_config() -> WebPushDeliveryConfig:
+def load_web_push_delivery_config() -> WebPushDeliveryConfig:
     """Read private VAPID and bounded network configuration lazily.
 
     Returns:

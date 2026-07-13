@@ -11,6 +11,25 @@ from __future__ import annotations
 from apps.contracts import BackendAppDefinition, RouteRegistration
 from apps.felix.config import FELIX_APP_CONFIG
 from apps.felix.routes import ai_chat, sync, web_push, wellness
+from backend.shared_services.background_service import BackgroundService
+
+
+def _create_web_push_dispatch_service() -> BackgroundService:
+    """Create Felix's explicitly configured durable Web Push worker.
+
+    Returns:
+        BackgroundService: Disabled metadata service or enabled dispatch loop.
+
+    Side Effects:
+        Imports runtime worker policy after app discovery. Secret/provider
+        resolution remains deferred to enabled lifecycle startup.
+    """
+    from apps.felix.services.web_push_dispatch_service import (
+        create_felix_web_push_background_service,
+    )
+
+    return create_felix_web_push_background_service()
+
 
 FELIX_APP_DEFINITION = BackendAppDefinition(
     app_id=FELIX_APP_CONFIG.app_id,
@@ -43,4 +62,5 @@ FELIX_APP_DEFINITION = BackendAppDefinition(
     migration_version_locations=("migrations/versions",),
     exposes_sync_routes=FELIX_APP_CONFIG.exposes_sync_routes,
     shared_route_groups=("cache", "users"),
+    background_service_factories=(_create_web_push_dispatch_service,),
 )

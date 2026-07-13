@@ -6,6 +6,7 @@ with explicitly selected shared route groups. Shared infrastructure stays here,
 while app-specific routes, schemas, services, and migrations stay in their
 own app slices.
 """
+
 import logging
 
 import uvicorn
@@ -182,6 +183,13 @@ def check_health():
     elif not selected_backend_app.requires_database:
         probe_status = "skipped"
 
+    background_services = getattr(app.state, "background_services", ())
+
+    # Background snapshots are contractually privacy-safe and app-owned.
+    background_status = {
+        service.name: service.snapshot() for service in background_services
+    }
+
     return {
         "status": "OK",
         "app_profile": app_profile,
@@ -198,6 +206,7 @@ def check_health():
         "requires_redis": selected_backend_app.requires_redis,
         "include_shared_routes": selected_backend_app.include_shared_routes,
         "startup_probe_status": probe_status,
+        "background_services": background_status,
     }
 
 

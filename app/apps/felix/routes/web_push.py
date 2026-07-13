@@ -2,7 +2,8 @@
 
 Routes are mounted below ``/felix/v1/notifications/web-push`` and never use a
 redundant ``/api`` prefix. The router exposes only browser-safe public
-configuration and account-scoped subscription mutations; delivery is separate.
+configuration, account-scoped subscription mutations, and fixed-kind schedule
+replacement. Callers never provide visible notification copy or routes.
 """
 
 from __future__ import annotations
@@ -20,6 +21,16 @@ from api.shared_schemas.web_push import (
     WebPushRegistrationResponse,
     WebPushSubscriptionDeleteRequest,
     WebPushSubscriptionRequest,
+)
+from apps.felix.schemas.web_push_dispatch import (
+    FelixWebPushScheduleData,
+    FelixWebPushScheduleReplaceRequest,
+    FelixWebPushScheduleResponse,
+)
+from apps.felix.services.web_push_dispatch_service import (
+    FelixWebPushDispatchService,
+    FelixWebPushDispatchUnavailable,
+    FelixWebPushScheduledOccurrence,
 )
 from apps.felix.services.web_push_service import FelixWebPushService
 from backend.shared_services.web_push_subscriptions import WebPushSubscription
@@ -41,6 +52,18 @@ def get_web_push_service() -> FelixWebPushService:
         None until configuration or provider storage is requested.
     """
     return FelixWebPushService()
+
+
+def get_web_push_dispatch_service() -> FelixWebPushDispatchService:
+    """Return a Felix durable dispatch service for one request.
+
+    Returns:
+        FelixWebPushDispatchService: App-owned schedule policy and storage.
+
+    Side Effects:
+        None until enablement or provider storage is requested.
+    """
+    return FelixWebPushDispatchService()
 
 
 @router.get("/public-key", response_model=WebPushPublicKeyResponse)
@@ -165,5 +188,69 @@ async def delete_web_push_subscription(
         data=WebPushDeletionData(
             endpoint=request.endpoint,
             deleted=deleted,
+        )
+    )
+
+
+@router.put(
+    "/schedule",
+    response_model=FelixWebPushScheduleResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def replace_web_push_schedule(
+    request: FelixWebPushScheduleReplaceRequest,
+    current_user_id: str = Depends(get_user_id_from_token),
+    service: FelixWebPushDispatchService = Depends(get_web_push_dispatch_service),
+) -> FelixWebPushScheduleResponse:
+    """Replace the current account's predefined rolling push horizon.
+
+    Args:
+        request (FelixWebPushScheduleReplaceRequest): Zero to 60 future
+            fixed-kind occurrences. No visible copy or route is accepted.
+        current_user_id (str): Authenticated user id from the bearer token.
+        service (FelixWebPushDispatchService): Request-scoped schedule service.
+
+    Returns:
+        FelixWebPushScheduleResponse: Count-only replacement result.
+
+    Raises:
+        HTTPException: With 422 for invalid horizon policy, 503 when dispatch
+            is disabled, or 503 when provider persistence fails.
+
+    Side Effects:
+        Replaces unleased durable jobs owned by the authenticated account.
+    """
+    occurrences = [
+        FelixWebPushScheduledOccurrence(
+            schedule_key=item.schedule_key,
+            kind=item.kind,
+            due_at=item.due_at,
+            locale=item.locale,
+        )
+        for item in request.occurrences
+    ]
+    try:
+        result = await service.replace_schedule(current_user_id, occurrences)
+    except FelixWebPushDispatchUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Felix scheduled Web Push is not enabled.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        logger.exception("Felix Web Push schedule replacement failed")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Felix Web Push scheduling is temporarily unavailable.",
+        ) from exc
+    return FelixWebPushScheduleResponse(
+        data=FelixWebPushScheduleData(
+            scheduled=result.scheduled,
+            removed=result.removed,
+            dispatch_enabled=service.dispatch_enabled,
         )
     )

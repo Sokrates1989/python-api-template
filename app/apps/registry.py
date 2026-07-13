@@ -5,6 +5,7 @@ The registry resolves app definitions lazily from child packages. Dynamic app
 creation therefore only needs to add a package under `app/apps/<app_id>` with a
 `definition.py` module, while app-specific dependency sets can remain isolated.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -97,6 +98,11 @@ def _coerce_backend_app_definition(raw_definition: Any) -> BackendAppDefinition 
     migration_version_locations = getattr(raw_definition, "migration_version_locations", ())
     openapi_security_schemes = getattr(raw_definition, "openapi_security_schemes", ())
     openapi_route_security = getattr(raw_definition, "openapi_route_security", ())
+    background_service_factories = getattr(
+        raw_definition,
+        "background_service_factories",
+        (),
+    )
 
     return BackendAppDefinition(
         app_id=str(app_id),
@@ -111,6 +117,7 @@ def _coerce_backend_app_definition(raw_definition: Any) -> BackendAppDefinition 
         shared_route_groups=tuple(str(group) for group in shared_route_groups),
         openapi_security_schemes=tuple(openapi_security_schemes),
         openapi_route_security=tuple(openapi_route_security),
+        background_service_factories=tuple(background_service_factories),
     )
 
 

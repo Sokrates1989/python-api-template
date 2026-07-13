@@ -300,6 +300,7 @@ def test_felix_routes_match_flutter_contract_without_api_prefix() -> None:
     assert ("/v1/notifications/web-push/public-key", "GET") in routes
     assert ("/v1/notifications/web-push/subscriptions", "POST") in routes
     assert ("/v1/notifications/web-push/subscriptions", "DELETE") in routes
+    assert ("/v1/notifications/web-push/schedule", "PUT") in routes
     assert all(not path.startswith("/api/") for path, _ in routes)
 
 

@@ -27,6 +27,15 @@ services:
       # WEB_PUSH_VAPID_SUBJECT: "mailto:operations@example.com"
       # WEB_PUSH_DEFAULT_TTL_SECONDS: "86400"
       # WEB_PUSH_REQUEST_TIMEOUT_SECONDS: "10"
+      # Dispatch is opt-in so a deployment cannot claim scheduled delivery
+      # until both VAPID secrets and provider migrations are accepted.
+      # WEB_PUSH_DISPATCH_ENABLED: "true"
+      # WEB_PUSH_DISPATCH_POLL_SECONDS: "15"
+      # WEB_PUSH_DISPATCH_BATCH_SIZE: "25"
+      # WEB_PUSH_DISPATCH_LEASE_SECONDS: "120"
+      # WEB_PUSH_DISPATCH_MAX_ATTEMPTS: "6"
+      # WEB_PUSH_DISPATCH_RETRY_BASE_SECONDS: "30"
+      # WEB_PUSH_DISPATCH_RETRY_MAX_SECONDS: "3600"
       # Local-only AI diagnostics. Production compose templates should leave
       # this disabled unless an operator explicitly opts in.
       AI_CHAT_DEBUG_ENABLED: "true"

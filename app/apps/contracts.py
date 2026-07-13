@@ -4,12 +4,15 @@ Application composition contracts for the backend multi-app monorepo.
 This module defines the shared structures used to register app-owned route
 families and app metadata while keeping shared infrastructure reusable.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter
+
+from backend.shared_services.background_service import BackgroundServiceFactory
 
 
 @dataclass(frozen=True)
@@ -149,6 +152,8 @@ class BackendAppDefinition:
             is selected.
         openapi_route_security (tuple[RouteSecurityRequirement, ...]): Route
             security requirements owned by this app.
+        background_service_factories (tuple[BackgroundServiceFactory, ...]):
+            Deferred selected-app services started after database migrations.
 
     Returns:
         None: Dataclass instances are used as immutable app manifests.
@@ -169,6 +174,7 @@ class BackendAppDefinition:
     shared_route_groups: tuple[str, ...] = ()
     openapi_security_schemes: tuple[OpenApiSecurityScheme, ...] = ()
     openapi_route_security: tuple[RouteSecurityRequirement, ...] = ()
+    background_service_factories: tuple[BackgroundServiceFactory, ...] = ()
 
     def registered_route_prefixes(self) -> tuple[str, ...]:
         """

@@ -15,6 +15,25 @@ if TYPE_CHECKING:
 
 
 class Settings(BaseSettings):
+    """Load validated shared-infrastructure and selected-app configuration.
+
+    Attributes:
+        APP_PROFILE (str): Backend app selected for composition and lifecycle.
+        DB_TYPE (Literal): Active database provider family.
+        WEB_PUSH_DISPATCH_ENABLED (bool): Explicit opt-in for durable scheduled
+            Web Push processing; defaults to False.
+        WEB_PUSH_DISPATCH_POLL_SECONDS (float): Delay between worker polls.
+        WEB_PUSH_DISPATCH_BATCH_SIZE (int): Maximum jobs claimed per poll.
+        WEB_PUSH_DISPATCH_LEASE_SECONDS (int): Crash-recovery lease duration.
+        WEB_PUSH_DISPATCH_MAX_ATTEMPTS (int): Terminal delivery-attempt bound.
+        WEB_PUSH_DISPATCH_RETRY_BASE_SECONDS (int): Initial retry delay.
+        WEB_PUSH_DISPATCH_RETRY_MAX_SECONDS (int): Capped retry delay.
+
+    Note:
+        Remaining fields configure API, authentication, provider, logging,
+        secrets, and app-owned integration boundaries from environment values.
+    """
+
     # API Settings
     PORT: int = 8000
     # Comma-separated list of allowed CORS origins.
@@ -89,6 +108,15 @@ class Settings(BaseSettings):
     WEB_PUSH_VAPID_SUBJECT: str = ""
     WEB_PUSH_DEFAULT_TTL_SECONDS: int = 86400
     WEB_PUSH_REQUEST_TIMEOUT_SECONDS: float = 10.0
+
+    # Durable dispatch remains disabled until a deployment explicitly opts in.
+    WEB_PUSH_DISPATCH_ENABLED: bool = False
+    WEB_PUSH_DISPATCH_POLL_SECONDS: float = 15.0
+    WEB_PUSH_DISPATCH_BATCH_SIZE: int = 25
+    WEB_PUSH_DISPATCH_LEASE_SECONDS: int = 120
+    WEB_PUSH_DISPATCH_MAX_ATTEMPTS: int = 6
+    WEB_PUSH_DISPATCH_RETRY_BASE_SECONDS: int = 30
+    WEB_PUSH_DISPATCH_RETRY_MAX_SECONDS: int = 3600
 
     # Keycloak Configuration
     KEYCLOAK_SERVER_URL: Optional[str] = None
