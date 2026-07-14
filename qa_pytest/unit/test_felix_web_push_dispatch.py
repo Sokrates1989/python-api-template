@@ -6,7 +6,6 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import json
 
-from fastapi import HTTPException
 import pytest
 from pydantic import ValidationError
 
@@ -326,22 +325,24 @@ def test_authenticated_schedule_route_keeps_owner_and_returns_counts() -> None:
     assert response.data.dispatch_enabled is True
 
 
-def test_schedule_route_maps_disabled_deployment_to_retryable_503() -> None:
-    """Ensure disabled dispatch is explicit rather than accepting silent work.
+def test_schedule_route_returns_disabled_capability_without_persistence() -> None:
+    """Ensure disabled dispatch is explicit without creating retryable errors.
 
     Returns:
         None.
     """
+    store = _Store()
     request = FelixWebPushScheduleReplaceRequest(occurrences=[])
 
-    with pytest.raises(HTTPException) as captured:
-        asyncio.run(
-            web_push.replace_web_push_schedule(
-                request=request,
-                current_user_id="user-a",
-                service=_service(enabled=False),
-            )
+    response = asyncio.run(
+        web_push.replace_web_push_schedule(
+            request=request,
+            current_user_id="user-a",
+            service=_service(store, enabled=False),
         )
+    )
 
-    assert captured.value.status_code == 503
-    assert "not enabled" in str(captured.value.detail)
+    assert response.data.scheduled == 0
+    assert response.data.removed == 0
+    assert response.data.dispatch_enabled is False
+    assert store.user_id is None

@@ -39,6 +39,25 @@ logger = logging.getLogger("apps.felix.routes.web_push")
 router = APIRouter(prefix="/v1/notifications/web-push", tags=["web-push"])
 
 
+def _disabled_schedule_response() -> FelixWebPushScheduleResponse:
+    """Return the truthful count-only state for disabled scheduled dispatch.
+
+    Returns:
+        FelixWebPushScheduleResponse: A zero-count response whose capability
+        flag tells the client that this deployment cannot dispatch schedules.
+
+    Side Effects:
+        None. No durable schedule is accepted or persisted.
+    """
+    return FelixWebPushScheduleResponse(
+        data=FelixWebPushScheduleData(
+            scheduled=0,
+            removed=0,
+            dispatch_enabled=False,
+        )
+    )
+
+
 def get_web_push_service() -> FelixWebPushService:
     """Return a Felix Web Push service for one request.
 
@@ -211,15 +230,20 @@ async def replace_web_push_schedule(
         service (FelixWebPushDispatchService): Request-scoped schedule service.
 
     Returns:
-        FelixWebPushScheduleResponse: Count-only replacement result.
+        FelixWebPushScheduleResponse: Count-only replacement result, including
+        an explicit disabled capability state when deployment opt-in is absent.
 
     Raises:
-        HTTPException: With 422 for invalid horizon policy, 503 when dispatch
-            is disabled, or 503 when provider persistence fails.
+        HTTPException: With 422 for invalid horizon policy or 503 when enabled
+            provider persistence fails unexpectedly.
 
     Side Effects:
-        Replaces unleased durable jobs owned by the authenticated account.
+        Replaces unleased durable jobs owned by the authenticated account only
+        when scheduled dispatch is enabled.
     """
+    if not service.dispatch_enabled:
+        return _disabled_schedule_response()
+
     occurrences = [
         FelixWebPushScheduledOccurrence(
             schedule_key=item.schedule_key,
@@ -231,11 +255,8 @@ async def replace_web_push_schedule(
     ]
     try:
         result = await service.replace_schedule(current_user_id, occurrences)
-    except FelixWebPushDispatchUnavailable as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Felix scheduled Web Push is not enabled.",
-        ) from exc
+    except FelixWebPushDispatchUnavailable:
+        return _disabled_schedule_response()
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

@@ -5,6 +5,7 @@ The module centralizes logging setup for the API runtime. It keeps Docker
 stdout useful while also writing persistent files under ``LOG_DIR`` so local
 and swarm deployments can mount the directory for later inspection.
 """
+
 from __future__ import annotations
 
 import json
@@ -15,17 +16,21 @@ import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-
 DEFAULT_LOG_DIR = "/app/logs"
 DEFAULT_TIMEZONE = "Europe/Berlin"
 LOG_FORMAT = "[%(asctime)s] [%(levelname)-7s] [%(name)s] %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 DAY_FORMAT = "%Y-%m-%d"
 TRUTHY_VALUES = {"true", "1", "yes", "y", "on"}
-SENSITIVE_FIELD_PARTS = {"authorization", "cookie", "key", "password", "secret", "token"}
-SENSITIVE_TEXT_PATTERNS = (
-    (re.compile(r"bot\d+:[A-Za-z0-9_-]+"), "bot***REDACTED***"),
-)
+SENSITIVE_FIELD_PARTS = {
+    "authorization",
+    "cookie",
+    "key",
+    "password",
+    "secret",
+    "token",
+}
+SENSITIVE_TEXT_PATTERNS = ((re.compile(r"bot\d+:[A-Za-z0-9_-]+"), "bot***REDACTED***"),)
 STANDARD_LOG_RECORD_FIELDS = set(logging.makeLogRecord({}).__dict__) | {
     "asctime",
     "color_message",
@@ -109,6 +114,28 @@ def _resolve_log_level() -> int:
     return logging.INFO
 
 
+def _resolve_sqlalchemy_log_level(level: int) -> int:
+    """Resolve SQLAlchemy verbosity independently from application DEBUG logs.
+
+    SQL statements remain suppressed unless the application is running at
+    DEBUG and ``SQL_ECHO_ENABLED`` is explicitly truthy. This prevents normal
+    API diagnostics from flooding console and persistent logs with queries and
+    transaction boundaries.
+
+    Args:
+        level (int): Effective root logging level.
+
+    Returns:
+        int: INFO when explicit SQL echo is allowed, otherwise WARNING.
+
+    Side Effects:
+        Reads ``SQL_ECHO_ENABLED`` from the process environment.
+    """
+    if level <= logging.DEBUG and _env_var_is_truthy("SQL_ECHO_ENABLED"):
+        return logging.INFO
+    return logging.WARNING
+
+
 def _serialize_field(value: object) -> str:
     """
     Serialize one extra log field for key-value output.
@@ -121,9 +148,13 @@ def _serialize_field(value: object) -> str:
     """
     sanitized_value = _redact_sensitive_text(value) if isinstance(value, str) else value
     try:
-        return json.dumps(sanitized_value, ensure_ascii=True, separators=(",", ":"), default=str)
+        return json.dumps(
+            sanitized_value, ensure_ascii=True, separators=(",", ":"), default=str
+        )
     except Exception:
-        return json.dumps(_redact_sensitive_text(str(value)), ensure_ascii=True, separators=(",", ":"))
+        return json.dumps(
+            _redact_sensitive_text(str(value)), ensure_ascii=True, separators=(",", ":")
+        )
 
 
 def _redact_sensitive_text(value: str) -> str:
@@ -214,7 +245,9 @@ class ExtraKeyValueFormatter(logging.Formatter):
         for key in sorted(record.__dict__):
             if key in STANDARD_LOG_RECORD_FIELDS or key.startswith("_"):
                 continue
-            value = "***REDACTED***" if _is_sensitive_field(key) else record.__dict__[key]
+            value = (
+                "***REDACTED***" if _is_sensitive_field(key) else record.__dict__[key]
+            )
             extra_parts.append(f"{key}={_serialize_field(value)}")
         if not extra_parts:
             return message
@@ -323,9 +356,8 @@ def _configure_logger_hierarchy(level: int) -> None:
 
     SQLAlchemy engine loggers echo every SQL statement at INFO when the
     SQLAlchemy ``echo`` flag is set or propagation reaches the root logger.
-    They are clamped to WARNING in normal operation so the startup stream
-    does not repeat every SELECT/ROLLBACK from the migration probe. DEBUG
-    mode restores full SQL echo for developer inspection.
+    They remain clamped to WARNING unless both application DEBUG and the
+    dedicated ``SQL_ECHO_ENABLED`` opt-in are active.
 
     HTTP client loggers (httpx, httpcore) can log full provider URLs
     containing credentials; they are held at WARNING unconditionally.
@@ -349,9 +381,9 @@ def _configure_logger_hierarchy(level: int) -> None:
     access_logger.propagate = True
     access_logger.setLevel(level if level <= logging.DEBUG else logging.WARNING)
 
-    # Clamp SQLAlchemy engine echo at WARNING in normal operation to avoid
-    # duplicated SQL probe lines during startup. DEBUG restores full echo.
-    sqlalchemy_level = level if level <= logging.DEBUG else logging.WARNING
+    # SQL statements require a separate opt-in because general application
+    # debugging should not expose query payloads or flood operational logs.
+    sqlalchemy_level = _resolve_sqlalchemy_log_level(level)
     for logger_name in ("sqlalchemy.engine", "sqlalchemy.engine.Engine", "sqlalchemy"):
         target_logger = logging.getLogger(logger_name)
         target_logger.setLevel(sqlalchemy_level)
@@ -444,6 +476,7 @@ def setup_logging(log_dir: str | None = None) -> None:
         extra={
             "log_dir": resolved_log_dir,
             "level": logging.getLevelName(level),
+            "sql_echo": _resolve_sqlalchemy_log_level(level) == logging.INFO,
             "timezone": getattr(_timezone, "key", str(_timezone)),
         },
     )

@@ -1,6 +1,7 @@
 """
 Database initialization and lifecycle management.
 """
+
 from __future__ import annotations
 
 import logging
@@ -64,7 +65,8 @@ async def initialize_database():
 
             masked_url = (
                 re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", database_url)
-                if database_url else "<EMPTY>"
+                if database_url
+                else "<EMPTY>"
             )
             log_event(
                 logger,
@@ -76,7 +78,7 @@ async def initialize_database():
         handler = DatabaseFactory.create_handler(
             db_type=db_type,
             database_url=database_url,
-            echo=settings.DEBUG,
+            echo=settings.is_sql_echo_enabled(),
         )
     else:
         raise ValueError(f"Unsupported DB_TYPE: {settings.DB_TYPE}")

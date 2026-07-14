@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     Attributes:
         APP_PROFILE (str): Backend app selected for composition and lifecycle.
         DB_TYPE (Literal): Active database provider family.
+        SQL_ECHO_ENABLED (bool): Explicit opt-in for SQL statement logging;
+            effective only while application debug logging is active.
         WEB_PUSH_DISPATCH_ENABLED (bool): Explicit opt-in for durable scheduled
             Web Push processing; defaults to False.
         WEB_PUSH_DISPATCH_POLL_SECONDS (float): Delay between worker polls.
@@ -39,7 +41,9 @@ class Settings(BaseSettings):
     # Comma-separated list of allowed CORS origins.
     # Defaults to common local dev ports (Flutter web, Vite, React, etc.).
     # Override via CORS_ORIGINS env var for staging and production.
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://localhost:8080,http://localhost:4200"
+    CORS_ORIGINS: str = (
+        "http://localhost:3000,http://localhost:5173,http://localhost:8080,http://localhost:4200"
+    )
     IMAGE_TAG: str = "local non docker"
     REDIS_URL: str = "redis://localhost:6379"
     DEBUG: bool = False
@@ -47,12 +51,13 @@ class Settings(BaseSettings):
     LOG_DIR: str = "/app/logs"
     LOG_LEVEL: str = ""
     LOG_TIMEZONE: str = "Europe/Berlin"
+    SQL_ECHO_ENABLED: bool = False
     ENABLE_HTTP_DEBUG_LOGGING: bool = False
     LOG_REQUEST_HEADERS: bool = False
     LOG_REQUEST_BODY: bool = False
     LOG_RESPONSE_HEADERS: bool = False
     LOG_RESPONSE_BODY: bool = False
-    
+
     # Security Settings - Tiered API Keys
     ADMIN_API_KEY: str = ""  # Level 1: Read-only admin operations
     ADMIN_API_KEY_FILE: str = ""  # Path to file containing admin API key
@@ -60,7 +65,7 @@ class Settings(BaseSettings):
     BACKUP_RESTORE_API_KEY_FILE: str = ""  # Path to file containing restore API key
     BACKUP_DELETE_API_KEY: str = ""  # Level 3: Delete operations (destructive)
     BACKUP_DELETE_API_KEY_FILE: str = ""  # Path to file containing delete API key
-    
+
     # Database Type Configuration
     # Official stability matrix: neo4j, postgresql/postgres, mongodb
     # Legacy compatibility types: mysql, sqlite
@@ -83,7 +88,9 @@ class Settings(BaseSettings):
     # App profile configuration
     APP_PROFILE: str = "demo_app"
     APP_NAME: str = "Python API Template"
-    APP_DESCRIPTION: str = "A flexible API template with SQL, Neo4j, and MongoDB support"
+    APP_DESCRIPTION: str = (
+        "A flexible API template with SQL, Neo4j, and MongoDB support"
+    )
 
     # Backend-owned AI chat provider configuration.
     # Frontends must never receive these credentials or call provider endpoints
@@ -133,18 +140,22 @@ class Settings(BaseSettings):
     COGNITO_USER_POOL_ID: Optional[str] = None
     COGNITO_USER_POOL_ID_FILE: str = ""  # Path to file containing Cognito User Pool ID
     COGNITO_APP_CLIENT_ID: Optional[str] = None
-    COGNITO_APP_CLIENT_ID_FILE: str = ""  # Path to file containing Cognito App Client ID
+    COGNITO_APP_CLIENT_ID_FILE: str = (
+        ""  # Path to file containing Cognito App Client ID
+    )
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_ACCESS_KEY_ID_FILE: str = ""  # Path to file containing AWS Access Key ID
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
-    AWS_SECRET_ACCESS_KEY_FILE: str = ""  # Path to file containing AWS Secret Access Key
+    AWS_SECRET_ACCESS_KEY_FILE: str = (
+        ""  # Path to file containing AWS Secret Access Key
+    )
 
     # Neo4j Configuration
     NEO4J_URL: str = ""
     DB_USER: str = ""
     DB_PASSWORD: str = ""
     DB_PASSWORD_FILE: str = ""  # Path to file containing DB password
-    
+
     # SQL Database Configuration
     DATABASE_URL: str = ""  # Full connection string (for external databases)
     DB_HOST: str = "localhost"
@@ -160,52 +171,67 @@ class Settings(BaseSettings):
     DB_LOCK_FAIL_CLOSED: bool = True
 
     model_config = SettingsConfigDict(env_file=".env")
-    
+
     def get_admin_api_key(self) -> str:
         """Get admin API key from file or environment variable"""
         if self.ADMIN_API_KEY_FILE and Path(self.ADMIN_API_KEY_FILE).exists():
             return Path(self.ADMIN_API_KEY_FILE).read_text().strip()
         return self.ADMIN_API_KEY
-    
+
     def get_restore_api_key(self) -> str:
         """Get restore API key from file or environment variable"""
-        if self.BACKUP_RESTORE_API_KEY_FILE and Path(self.BACKUP_RESTORE_API_KEY_FILE).exists():
+        if (
+            self.BACKUP_RESTORE_API_KEY_FILE
+            and Path(self.BACKUP_RESTORE_API_KEY_FILE).exists()
+        ):
             return Path(self.BACKUP_RESTORE_API_KEY_FILE).read_text().strip()
         return self.BACKUP_RESTORE_API_KEY
-    
+
     def get_delete_api_key(self) -> str:
         """Get delete API key from file or environment variable"""
-        if self.BACKUP_DELETE_API_KEY_FILE and Path(self.BACKUP_DELETE_API_KEY_FILE).exists():
+        if (
+            self.BACKUP_DELETE_API_KEY_FILE
+            and Path(self.BACKUP_DELETE_API_KEY_FILE).exists()
+        ):
             return Path(self.BACKUP_DELETE_API_KEY_FILE).read_text().strip()
         return self.BACKUP_DELETE_API_KEY
-    
+
     def get_db_password(self) -> str:
         """Get database password from file or environment variable"""
         if self.DB_PASSWORD_FILE and Path(self.DB_PASSWORD_FILE).exists():
             return Path(self.DB_PASSWORD_FILE).read_text().strip()
         return self.DB_PASSWORD
-    
+
     def get_cognito_user_pool_id(self) -> Optional[str]:
         """Get Cognito User Pool ID from file or environment variable"""
-        if self.COGNITO_USER_POOL_ID_FILE and Path(self.COGNITO_USER_POOL_ID_FILE).exists():
+        if (
+            self.COGNITO_USER_POOL_ID_FILE
+            and Path(self.COGNITO_USER_POOL_ID_FILE).exists()
+        ):
             return Path(self.COGNITO_USER_POOL_ID_FILE).read_text().strip()
         return self.COGNITO_USER_POOL_ID
-    
+
     def get_cognito_app_client_id(self) -> Optional[str]:
         """Get Cognito App Client ID from file or environment variable"""
-        if self.COGNITO_APP_CLIENT_ID_FILE and Path(self.COGNITO_APP_CLIENT_ID_FILE).exists():
+        if (
+            self.COGNITO_APP_CLIENT_ID_FILE
+            and Path(self.COGNITO_APP_CLIENT_ID_FILE).exists()
+        ):
             return Path(self.COGNITO_APP_CLIENT_ID_FILE).read_text().strip()
         return self.COGNITO_APP_CLIENT_ID
-    
+
     def get_aws_access_key_id(self) -> Optional[str]:
         """Get AWS Access Key ID from file or environment variable"""
         if self.AWS_ACCESS_KEY_ID_FILE and Path(self.AWS_ACCESS_KEY_ID_FILE).exists():
             return Path(self.AWS_ACCESS_KEY_ID_FILE).read_text().strip()
         return self.AWS_ACCESS_KEY_ID
-    
+
     def get_aws_secret_access_key(self) -> Optional[str]:
         """Get AWS Secret Access Key from file or environment variable"""
-        if self.AWS_SECRET_ACCESS_KEY_FILE and Path(self.AWS_SECRET_ACCESS_KEY_FILE).exists():
+        if (
+            self.AWS_SECRET_ACCESS_KEY_FILE
+            and Path(self.AWS_SECRET_ACCESS_KEY_FILE).exists()
+        ):
             return Path(self.AWS_SECRET_ACCESS_KEY_FILE).read_text().strip()
         return self.AWS_SECRET_ACCESS_KEY
 
@@ -330,13 +356,15 @@ class Settings(BaseSettings):
         if self.KEYCLOAK_JWKS_URL:
             return self.KEYCLOAK_JWKS_URL.strip()
 
-        server_url = (self.KEYCLOAK_INTERNAL_URL or self.KEYCLOAK_SERVER_URL or "").strip()
+        server_url = (
+            self.KEYCLOAK_INTERNAL_URL or self.KEYCLOAK_SERVER_URL or ""
+        ).strip()
         realm = (self.KEYCLOAK_REALM or "").strip()
         if not server_url or not realm:
             return None
 
         return f"{server_url.rstrip('/')}/realms/{realm}/protocol/openid-connect/certs"
-    
+
     def get_neo4j_uri(self) -> str:
         """Resolve Neo4j Bolt URI, preferring explicit NEO4J_URL when set."""
         if self.NEO4J_URL:
@@ -364,7 +392,12 @@ class Settings(BaseSettings):
 
     def is_sql_database(self) -> bool:
         """Return True for SQL database backends."""
-        return self.normalized_db_type() in {"postgresql", "postgres", "mysql", "sqlite"}
+        return self.normalized_db_type() in {
+            "postgresql",
+            "postgres",
+            "mysql",
+            "sqlite",
+        }
 
     def is_legacy_sql_database(self) -> bool:
         """Return True when running a legacy SQL compatibility backend."""
@@ -387,7 +420,7 @@ class Settings(BaseSettings):
 
         auth_source = "/?authSource=admin" if credentials else ""
         return f"mongodb://{credentials}{self.DB_HOST}:{self.MONGODB_PORT}{auth_source}"
-    
+
     def get_database_url(self) -> str:
         """Build database URL for SQL databases"""
         from sqlalchemy.engine import URL
@@ -395,7 +428,7 @@ class Settings(BaseSettings):
         if self.DATABASE_URL:
             # Use provided URL (for external databases)
             return self.DATABASE_URL
-        
+
         # Build URL from components (for local databases)
         password = self.get_db_password()
         db_type = self.normalized_db_type()
@@ -441,6 +474,28 @@ class Settings(BaseSettings):
     def is_http_debug_logging_enabled(self) -> bool:
         """Return True when HTTP debug logging should be enabled."""
         return bool(self.DEBUG and self.ENABLE_HTTP_DEBUG_LOGGING)
+
+    def is_sql_echo_enabled(self) -> bool:
+        """Return whether verbose SQL statement logging is explicitly active.
+
+        SQLAlchemy echo is intentionally separate from general application
+        debugging because query text and bound parameters are both noisy and
+        can contain sensitive business data. An operator must enable the
+        dedicated flag and a DEBUG-level application mode.
+
+        Returns:
+            bool: True only when ``SQL_ECHO_ENABLED`` and one supported DEBUG
+            control are active; otherwise False.
+
+        Side Effects:
+            None.
+        """
+        debug_level_requested = (
+            self.DEBUG
+            or self.DEBUG_ENABLED
+            or self.LOG_LEVEL.strip().upper() == "DEBUG"
+        )
+        return bool(self.SQL_ECHO_ENABLED and debug_level_requested)
 
     def read_env_or_file(self, value: str, file_path: str) -> str:
         """
