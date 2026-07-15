@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from apps.contracts import BackendAppDefinition, RouteRegistration
 from apps.felix.config import FELIX_APP_CONFIG
-from apps.felix.routes import ai_chat, sync, web_push, wellness
+from apps.felix.routes import account, ai_chat, sync, web_push, wellness
 from backend.shared_services.background_service import BackgroundService
 
 
@@ -36,6 +36,11 @@ FELIX_APP_DEFINITION = BackendAppDefinition(
     display_name=FELIX_APP_CONFIG.display_name,
     backend_data_profile=FELIX_APP_CONFIG.backend_data_profile,
     route_registrations=(
+        RouteRegistration(
+            router=account.router,
+            external_prefix=FELIX_APP_CONFIG.felix_mount_prefix,
+            public_prefix=f"{FELIX_APP_CONFIG.felix_public_prefix}/account",
+        ),
         RouteRegistration(
             router=wellness.router,
             external_prefix=FELIX_APP_CONFIG.felix_mount_prefix,
