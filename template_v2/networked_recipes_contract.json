@@ -1,0 +1,172 @@
+{
+  "catalog_revision": "0.1.0",
+  "contract_id": "template-v2-networked-recipes",
+  "contract_version": 1,
+  "recipes": [
+    {
+      "backend_recipe_id": "hybrid_sync",
+      "backend_revision": "0.1.0",
+      "depends_on": [
+        "keycloak_auth",
+        "records_starter"
+      ],
+      "flutter_recipe_id": "hybrid_sync",
+      "flutter_recipe_version": "1.0.0",
+      "implementation_status": "contract_only",
+      "migration_paths": [
+        "migrations/versions/__APP_ID___002_hybrid_sync.py"
+      ],
+      "public_configuration_keys": [],
+      "removal_paths": [
+        "migrations/versions/__APP_ID___002_hybrid_sync.py",
+        "models/sync_state.py",
+        "repositories/sync_repository.py",
+        "routes/sync.py",
+        "schemas/sync.py",
+        "services/sync_service.py"
+      ],
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/sync/push"
+        },
+        {
+          "method": "GET",
+          "path": "/sync/pull"
+        }
+      ],
+      "secret_configuration_keys": [],
+      "service_paths": [
+        "models/sync_state.py",
+        "repositories/sync_repository.py",
+        "routes/sync.py",
+        "schemas/sync.py",
+        "services/sync_service.py"
+      ]
+    },
+    {
+      "backend_recipe_id": "authenticated_web_push",
+      "backend_revision": "0.1.0",
+      "depends_on": [
+        "keycloak_auth"
+      ],
+      "flutter_recipe_id": "pwa_web",
+      "flutter_recipe_version": "1.0.0",
+      "implementation_status": "contract_only",
+      "migration_paths": [
+        "migrations/versions/__APP_ID___003_web_push.py"
+      ],
+      "public_configuration_keys": [
+        "WEB_PUSH_VAPID_PUBLIC_KEY"
+      ],
+      "removal_paths": [
+        "migrations/versions/__APP_ID___003_web_push.py",
+        "models/web_push_subscription.py",
+        "repositories/web_push_repository.py",
+        "routes/web_push.py",
+        "schemas/web_push.py",
+        "services/web_push_service.py"
+      ],
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/push/web/config"
+        },
+        {
+          "method": "PUT",
+          "path": "/push/web/subscriptions"
+        },
+        {
+          "method": "DELETE",
+          "path": "/push/web/subscriptions"
+        }
+      ],
+      "secret_configuration_keys": [
+        "WEB_PUSH_VAPID_PRIVATE_KEY_FILE"
+      ],
+      "service_paths": [
+        "models/web_push_subscription.py",
+        "repositories/web_push_repository.py",
+        "routes/web_push.py",
+        "schemas/web_push.py",
+        "services/web_push_service.py"
+      ]
+    },
+    {
+      "backend_recipe_id": "ai_chat",
+      "backend_revision": "0.1.0",
+      "depends_on": [
+        "keycloak_auth"
+      ],
+      "flutter_recipe_id": "ai_chat",
+      "flutter_recipe_version": "1.0.0",
+      "implementation_status": "contract_only",
+      "migration_paths": [
+        "migrations/versions/__APP_ID___004_ai_chat_history.py"
+      ],
+      "public_configuration_keys": [
+        "AI_CHAT_COMPLETIONS_ENDPOINT",
+        "AI_CHAT_MAX_TOKENS",
+        "AI_CHAT_MODEL",
+        "AI_CHAT_TIMEOUT_SECONDS"
+      ],
+      "removal_paths": [
+        "migrations/versions/__APP_ID___004_ai_chat_history.py",
+        "models/ai_chat_message.py",
+        "repositories/ai_chat_repository.py",
+        "routes/ai_chat.py",
+        "schemas/ai_chat.py",
+        "services/ai_chat_service.py"
+      ],
+      "routes": [
+        {
+          "method": "POST",
+          "path": "/ai/chat"
+        }
+      ],
+      "secret_configuration_keys": [
+        "AI_CHAT_API_KEY"
+      ],
+      "service_paths": [
+        "models/ai_chat_message.py",
+        "repositories/ai_chat_repository.py",
+        "routes/ai_chat.py",
+        "schemas/ai_chat.py",
+        "services/ai_chat_service.py"
+      ]
+    },
+    {
+      "backend_recipe_id": "account_erasure",
+      "backend_revision": "0.1.0",
+      "depends_on": [
+        "keycloak_auth"
+      ],
+      "flutter_recipe_id": "account_erasure",
+      "flutter_recipe_version": "1.0.0",
+      "implementation_status": "contract_only",
+      "migration_paths": [],
+      "public_configuration_keys": [],
+      "removal_paths": [
+        "routes/account_erasure.py",
+        "schemas/account_erasure.py",
+        "services/account_erasure_service.py"
+      ],
+      "routes": [
+        {
+          "method": "DELETE",
+          "path": "/me"
+        }
+      ],
+      "secret_configuration_keys": [],
+      "service_paths": [
+        "routes/account_erasure.py",
+        "schemas/account_erasure.py",
+        "services/account_erasure_service.py"
+      ]
+    }
+  ],
+  "standard_profile": {
+    "auth_provider": "keycloak",
+    "backend": "postgresql"
+  }
+}

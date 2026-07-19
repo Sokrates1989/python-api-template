@@ -20,12 +20,13 @@ jobs:
           python-version: "3.13"
 
       - name: Syntax and import compilation check
-        run: python -m compileall app/api app/backend app/models app/apps template_v2 tests qa_pytest tools/validate_template_v2_backend_foundation.py tools/template_v2_backend_lifecycle.py
+        run: python -m compileall app/api app/backend app/models app/apps template_v2 tests qa_pytest tools/validate_template_v2_backend_foundation.py tools/validate_template_v2_networked_recipes.py tools/template_v2_backend_lifecycle.py
 
       - name: Validate Template V2 backend foundation contract
         run: |
           python tools/validate_template_v2_backend_foundation.py --json
-          python -m unittest tests.test_template_v2_backend_foundation_contract tests.test_template_v2_backend_lifecycle tests.test_template_v2_records_starter_unittest
+          python tools/validate_template_v2_networked_recipes.py --json
+          python -m unittest tests.test_template_v2_backend_foundation_contract tests.test_template_v2_backend_lifecycle tests.test_template_v2_records_starter_unittest tests.test_template_v2_networked_recipes_contract
 
   type-check:
     runs-on: ubuntu-latest
