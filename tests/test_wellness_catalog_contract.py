@@ -27,6 +27,20 @@ def test_activity_update_rejects_an_empty_patch() -> None:
         WellnessActivityUpdateRequest()
 
 
+def test_activity_requests_accept_long_user_authored_titles() -> None:
+    """Allow free-text titles in both create and update API contracts."""
+    long_title = "A personally meaningful activity title. " * 300
+
+    created = WellnessActivityCreateRequest(
+        title=long_title,
+        category_keys=["personal"],
+    )
+    updated = WellnessActivityUpdateRequest(title=long_title)
+
+    assert created.title == long_title
+    assert updated.title == long_title
+
+
 def test_category_create_accepts_user_authored_metadata() -> None:
     """Accept the PWA fields required for a custom category."""
     request = WellnessActivityCategoryCreateRequest(

@@ -161,7 +161,7 @@ class WellnessActivity(Base):
         id (str): App-visible activity id scoped by user.
         icon_key (str): Icon identifier used by clients.
         title_key (str | None): Optional localization key for the title.
-        title (str | None): Optional persisted title override.
+        title (str | None): Optional unrestricted persisted title override.
         summary_key (str | None): Optional localization key for the summary.
         summary (str | None): Optional persisted summary override.
         duration_minutes (int): Suggested activity duration.
@@ -186,7 +186,7 @@ class WellnessActivity(Base):
     id = Column(String(128), nullable=False)
     icon_key = Column(String(64), nullable=False)
     title_key = Column(String(255), nullable=True)
-    title = Column(String(255), nullable=True)
+    title = Column(Text, nullable=True)
     summary_key = Column(String(255), nullable=True)
     summary = Column(Text, nullable=True)
     activity_reminder = Column(Text, nullable=True)

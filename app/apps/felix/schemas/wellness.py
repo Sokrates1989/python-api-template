@@ -59,11 +59,16 @@ class WellnessDiaryEntryCreateRequest(BaseModel):
 
 
 class WellnessActivityCatalogFields(BaseModel):
-    """Mutable Felix activity catalogue fields shared by create and patch."""
+    """Mutable Felix activity catalogue fields shared by create and patch.
+
+    Activity titles intentionally remain unrestricted free text. Request-size
+    limits still protect the HTTP boundary, while user-authored and curated
+    titles are not truncated by an arbitrary database-era character limit.
+    """
 
     icon_key: Optional[str] = Field(None, min_length=1, max_length=64)
     title_key: Optional[str] = Field(None, max_length=255)
-    title: Optional[str] = Field(None, max_length=255)
+    title: Optional[str] = None
     summary_key: Optional[str] = Field(None, max_length=255)
     summary: Optional[str] = Field(None, max_length=2000)
     activity_reminder: Optional[str] = Field(None, max_length=2000)
@@ -80,7 +85,7 @@ class WellnessActivityCreateRequest(WellnessActivityCatalogFields):
     """Request model for creating a user-owned Felix activity."""
 
     id: Optional[str] = Field(None, min_length=1, max_length=128)
-    title: str = Field(..., min_length=1, max_length=255)
+    title: str = Field(..., min_length=1)
     category_keys: List[str] = Field(..., min_length=1, max_length=24)
 
 
