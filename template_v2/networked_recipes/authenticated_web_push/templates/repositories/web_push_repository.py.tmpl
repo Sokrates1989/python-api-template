@@ -1,0 +1,129 @@
+"""App-owned storage names and repository facade for generated Web Push."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from backend.shared_services.web_push_dispatch import (
+    WebPushDispatchDraft,
+    WebPushScheduleReplaceResult,
+)
+from backend.shared_services.web_push_dispatch_store import WebPushDispatchStore
+from backend.shared_services.web_push_dispatch_store_support import (
+    WebPushDispatchStorageNames,
+)
+from backend.shared_services.web_push_subscriptions import (
+    WebPushStorageNames,
+    WebPushSubscription,
+    WebPushSubscriptionStore,
+)
+
+
+# App-scoped provider identifiers shared by subscription and dispatch stores.
+WEB_PUSH_STORAGE = WebPushStorageNames(
+    sql_table="__APP_ID___web_push_subscriptions",
+    mongo_collection="__APP_ID___web_push_subscriptions",
+    neo4j_label="__APP_ID__WebPushSubscription",
+    neo4j_constraint="__APP_ID___web_push_owner_endpoint",
+)
+WEB_PUSH_DISPATCH_STORAGE = WebPushDispatchStorageNames(
+    sql_table="__APP_ID___web_push_dispatch_jobs",
+    mongo_collection="__APP_ID___web_push_dispatch_jobs",
+    neo4j_label="__APP_ID__WebPushDispatchJob",
+    neo4j_constraint="__APP_ID___web_push_dispatch_owner_key",
+)
+
+
+class WebPushRepository:
+    """Own subscription and durable-dispatch persistence for this app.
+
+    Attributes:
+        subscriptions: Provider-neutral subject-owned subscription store.
+        dispatch: Provider-neutral leased dispatch-job store.
+    """
+
+    def __init__(
+        self,
+        *,
+        subscriptions: WebPushSubscriptionStore | None = None,
+        dispatch: WebPushDispatchStore | None = None,
+        handler: Any = None,
+    ) -> None:
+        """Create repository seams with an optional shared provider handler.
+
+        Args:
+            subscriptions: Optional subscription-store test override.
+            dispatch: Optional durable-dispatch-store test override.
+            handler: Optional provider handler used by default stores.
+
+        Returns:
+            None.
+
+        Side Effects:
+            Resolves the configured database provider when no stores or handler
+            are injected.
+        """
+
+        self.subscriptions = subscriptions or WebPushSubscriptionStore(
+            WEB_PUSH_STORAGE,
+            handler=handler,
+        )
+        self.dispatch = dispatch or WebPushDispatchStore(
+            WEB_PUSH_DISPATCH_STORAGE,
+            handler=handler,
+        )
+
+    async def upsert_subscription(
+        self,
+        owner_subject: str,
+        subscription: WebPushSubscription,
+    ) -> bool:
+        """Create or refresh one endpoint for the verified subject.
+
+        Args:
+            owner_subject: Verified authenticated subject.
+            subscription: Standard browser delivery material.
+
+        Returns:
+            True only when a new provider record was created.
+        """
+
+        return await self.subscriptions.upsert(owner_subject, subscription)
+
+    async def delete_subscription(self, owner_subject: str, endpoint: str) -> bool:
+        """Idempotently remove one endpoint owned by the verified subject.
+
+        Args:
+            owner_subject: Verified authenticated subject.
+            endpoint: Opaque browser endpoint.
+
+        Returns:
+            True only when an owned provider record existed.
+        """
+
+        return await self.subscriptions.delete(owner_subject, endpoint)
+
+    async def replace_schedule(
+        self,
+        owner_subject: str,
+        drafts: list[WebPushDispatchDraft],
+        *,
+        now: datetime,
+    ) -> WebPushScheduleReplaceResult:
+        """Replace one internally authorized subject's durable horizon.
+
+        Args:
+            owner_subject: Internally authorized recipient subject.
+            drafts: Complete app-validated desired occurrences.
+            now: UTC-aware replacement time.
+
+        Returns:
+            Stored and removed occurrence counts.
+        """
+
+        return await self.dispatch.replace_user_schedule(
+            owner_subject,
+            drafts,
+            now=now,
+        )

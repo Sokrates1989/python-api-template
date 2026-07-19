@@ -43,8 +43,8 @@ class NetworkedRecipesContractTest(unittest.TestCase):
 
         catalog = validate_networked_recipes_contract(REPOSITORY_ROOT)
 
-        self.assertEqual(catalog.contract_version, 2)
-        self.assertEqual(catalog.catalog_revision, "0.2.0")
+        self.assertEqual(catalog.contract_version, 3)
+        self.assertEqual(catalog.catalog_revision, "0.3.0")
         self.assertEqual(
             tuple(recipe.backend_recipe_id for recipe in catalog.recipes),
             (
@@ -56,7 +56,15 @@ class NetworkedRecipesContractTest(unittest.TestCase):
         )
         self.assertEqual(
             tuple(recipe.implementation_status for recipe in catalog.recipes),
-            ("renderable", "contract_only", "contract_only", "contract_only"),
+            ("renderable", "renderable", "contract_only", "contract_only"),
+        )
+        self.assertEqual(
+            catalog.recipes[1].python_dependency_profile,
+            "postgresql_web_push",
+        )
+        self.assertEqual(
+            catalog.recipes[1].python_dependencies,
+            ("pywebpush>=2.3.0,<2.4.0",),
         )
         for recipe in catalog.recipes:
             self.assertTrue(recipe.routes)
@@ -74,7 +82,7 @@ class NetworkedRecipesContractTest(unittest.TestCase):
 
         catalog = validate_networked_recipes_contract(REPOSITORY_ROOT)
         recipes = validate_networked_recipe_sources(REPOSITORY_ROOT, catalog)
-        self.assertEqual(len(recipes), 1)
+        self.assertEqual(len(recipes), 2)
         self.assertEqual(recipes[0].backend_recipe_id, "hybrid_sync")
         self.assertEqual(recipes[0].backend_revision, "1.0.0")
         files = {
@@ -97,6 +105,42 @@ class NetworkedRecipesContractTest(unittest.TestCase):
         self.assertIn(b"operation_id_collision", rendered)
         self.assertIn(b"version_conflict", rendered)
         self.assertIn(b"next_cursor", rendered)
+        self.assertNotIn(b"__APP_ID__", rendered)
+        self.assertNotIn(b'prefix="/api/', rendered)
+        for path, content in files.items():
+            compile(content, path, "exec")
+
+    def test_authenticated_web_push_sources_cover_owner_dispatch_and_cleanup(self) -> None:
+        """Render the complete route, storage, delivery, and migration slice."""
+
+        catalog = validate_networked_recipes_contract(REPOSITORY_ROOT)
+        recipes = validate_networked_recipe_sources(REPOSITORY_ROOT, catalog)
+        recipe = next(
+            item for item in recipes if item.backend_recipe_id == "authenticated_web_push"
+        )
+        self.assertEqual(recipe.backend_revision, "1.0.0")
+        files = {
+            item.relative_path: item.content
+            for item in recipe.render("sample_app")
+        }
+        self.assertEqual(
+            tuple(files),
+            (
+                "migrations/versions/sample_app_003_web_push.py",
+                "models/web_push_subscription.py",
+                "repositories/web_push_repository.py",
+                "routes/web_push.py",
+                "schemas/web_push.py",
+                "services/web_push_service.py",
+            ),
+        )
+        rendered = b"\n".join(files.values())
+        self.assertIn(b'prefix="/push/web"', rendered)
+        self.assertIn(b'@router.put("/subscriptions"', rendered)
+        self.assertIn(b"WebPushDispatchWorker", rendered)
+        self.assertIn(b"WebPushDeliveryCoordinator", rendered)
+        self.assertIn(b"delete_subscription(owner_subject", rendered)
+        self.assertNotIn(b"@router.post", files["routes/web_push.py"])
         self.assertNotIn(b"__APP_ID__", rendered)
         self.assertNotIn(b'prefix="/api/', rendered)
         for path, content in files.items():
@@ -133,6 +177,36 @@ class NetworkedRecipesContractTest(unittest.TestCase):
             ):
                 validate_networked_recipe_sources(root, catalog)
 
+    def test_web_push_dependency_lock_drift_fails_closed(self) -> None:
+        """Reject a changed selected-only Web Push lock before rendering."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copytree(
+                REPOSITORY_ROOT / "template_v2" / "networked_recipes",
+                root / "template_v2" / "networked_recipes",
+            )
+            shutil.copytree(
+                REPOSITORY_ROOT / "template_v2" / "dependency_profiles",
+                root / "template_v2" / "dependency_profiles",
+            )
+            self._copy_contract(root)
+            path = (
+                root
+                / "template_v2"
+                / "dependency_profiles"
+                / "postgresql_web_push"
+                / "pdm.lock"
+            )
+            path.write_bytes(path.read_bytes() + b"\n")
+            catalog = validate_networked_recipes_contract(root)
+
+            with self.assertRaisesRegex(
+                NetworkedRecipesContractError,
+                "lock checksum drifted",
+            ):
+                validate_networked_recipe_sources(root, catalog)
+
     def test_redundant_api_prefix_fails_closed(self) -> None:
         """Reject a route that would collide with API-domain proxy routers."""
 
@@ -145,6 +219,22 @@ class NetworkedRecipesContractTest(unittest.TestCase):
 
             with self.assertRaisesRegex(
                 NetworkedRecipesContractError, "unsafe service route"
+            ):
+                validate_networked_recipes_contract(root)
+
+    def test_web_push_dependency_profile_drift_fails_closed(self) -> None:
+        """Reject Web Push promotion without its selected-only transport lock."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._copy_contract(Path(directory))
+            path = root.joinpath(*CONTRACT_RELATIVE_PATH.split("/"))
+            document = json.loads(path.read_text(encoding="utf-8"))
+            document["recipes"][1]["python_dependencies"] = []
+            path.write_text(json.dumps(document), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                NetworkedRecipesContractError,
+                "unsupported dependency contract",
             ):
                 validate_networked_recipes_contract(root)
 

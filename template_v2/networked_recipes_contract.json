@@ -1,7 +1,7 @@
 {
-  "catalog_revision": "0.2.0",
+  "catalog_revision": "0.3.0",
   "contract_id": "template-v2-networked-recipes",
-  "contract_version": 2,
+  "contract_version": 3,
   "recipes": [
     {
       "backend_recipe_id": "hybrid_sync",
@@ -17,6 +17,9 @@
         "migrations/versions/__APP_ID___002_hybrid_sync.py"
       ],
       "public_configuration_keys": [],
+      "python_dependencies": [],
+      "python_dependency_lock_sha256": null,
+      "python_dependency_profile": null,
       "removal_paths": [
         "migrations/versions/__APP_ID___002_hybrid_sync.py",
         "models/sync_state.py",
@@ -47,19 +50,25 @@
     },
     {
       "backend_recipe_id": "authenticated_web_push",
-      "backend_revision": "0.1.0",
+      "backend_revision": "1.0.0",
       "depends_on": [
         "keycloak_auth"
       ],
       "flutter_recipe_id": "pwa_web",
       "flutter_recipe_version": "1.0.0",
-      "implementation_status": "contract_only",
+      "implementation_status": "renderable",
       "migration_paths": [
         "migrations/versions/__APP_ID___003_web_push.py"
       ],
       "public_configuration_keys": [
-        "WEB_PUSH_VAPID_PUBLIC_KEY"
+        "WEB_PUSH_VAPID_PUBLIC_KEY",
+        "WEB_PUSH_VAPID_SUBJECT"
       ],
+      "python_dependencies": [
+        "pywebpush>=2.3.0,<2.4.0"
+      ],
+      "python_dependency_lock_sha256": "02d69f7505d75c6b2e75ef6931274854ee35e9090abbd82dc4bf8691f071a6d8",
+      "python_dependency_profile": "postgresql_web_push",
       "removal_paths": [
         "migrations/versions/__APP_ID___003_web_push.py",
         "models/web_push_subscription.py",
@@ -85,7 +94,7 @@
       "secret_configuration_keys": [
         "WEB_PUSH_VAPID_PRIVATE_KEY_FILE"
       ],
-      "source_contract": null,
+      "source_contract": "template_v2/networked_recipes/authenticated_web_push/recipe.json",
       "service_paths": [
         "models/web_push_subscription.py",
         "repositories/web_push_repository.py",
@@ -112,6 +121,9 @@
         "AI_CHAT_MODEL",
         "AI_CHAT_TIMEOUT_SECONDS"
       ],
+      "python_dependencies": [],
+      "python_dependency_lock_sha256": null,
+      "python_dependency_profile": null,
       "removal_paths": [
         "migrations/versions/__APP_ID___004_ai_chat_history.py",
         "models/ai_chat_message.py",
@@ -149,6 +161,9 @@
       "implementation_status": "contract_only",
       "migration_paths": [],
       "public_configuration_keys": [],
+      "python_dependencies": [],
+      "python_dependency_lock_sha256": null,
+      "python_dependency_profile": null,
       "removal_paths": [
         "routes/account_erasure.py",
         "schemas/account_erasure.py",

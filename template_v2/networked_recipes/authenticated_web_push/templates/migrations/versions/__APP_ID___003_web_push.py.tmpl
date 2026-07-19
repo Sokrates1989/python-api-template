@@ -1,0 +1,135 @@
+"""Add generated account-owned Web Push subscriptions and dispatch jobs."""
+
+from __future__ import annotations
+
+from alembic import op
+import sqlalchemy as sa
+
+
+# Alembic identity.
+revision = "__APP_ID___003_web_push"
+down_revision = "__APP_ID___001_records"
+branch_labels = None
+depends_on = None
+
+
+def _create_subscription_table() -> None:
+    """Create account-owned subscription storage and its owner index.
+
+    Returns:
+        None after the app-scoped subscription table and index exist.
+
+    Side Effects:
+        Creates SQL storage containing browser encrypted-delivery material.
+    """
+
+    op.create_table(
+        "__APP_ID___web_push_subscriptions",
+        sa.Column("pk", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("user_id", sa.String(length=255), nullable=False),
+        sa.Column("endpoint", sa.Text(), nullable=False),
+        sa.Column("endpoint_hash", sa.String(length=64), nullable=False),
+        sa.Column("expiration_time", sa.BigInteger(), nullable=True),
+        sa.Column("p256dh", sa.Text(), nullable=False),
+        sa.Column("auth", sa.Text(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("pk"),
+        sa.UniqueConstraint(
+            "user_id",
+            "endpoint_hash",
+            name="uq___APP_ID___web_push_owner_endpoint",
+        ),
+    )
+    op.create_index(
+        "ix___APP_ID___web_push_subscription_owner",
+        "__APP_ID___web_push_subscriptions",
+        ["user_id"],
+    )
+
+
+def _create_dispatch_table() -> None:
+    """Create durable leased-dispatch storage and its bounded indexes.
+
+    Returns:
+        None after the app-scoped dispatch table and indexes exist.
+
+    Side Effects:
+        Creates SQL storage containing opaque app-validated dispatch payloads.
+        VAPID and browser subscription keys remain outside this table.
+    """
+
+    op.create_table(
+        "__APP_ID___web_push_dispatch_jobs",
+        sa.Column("pk", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("job_id", sa.String(length=36), nullable=False),
+        sa.Column("user_id", sa.String(length=255), nullable=False),
+        sa.Column("schedule_key", sa.String(length=200), nullable=False),
+        sa.Column("payload", sa.Text(), nullable=False),
+        sa.Column("due_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("attempt_count", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("next_attempt_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("lease_token", sa.String(length=36), nullable=True),
+        sa.Column("lease_until", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("last_failure_code", sa.String(length=64), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("pk"),
+        sa.UniqueConstraint("job_id", name="uq___APP_ID___web_push_dispatch_job"),
+        sa.UniqueConstraint(
+            "user_id",
+            "schedule_key",
+            name="uq___APP_ID___web_push_dispatch_owner_key",
+        ),
+    )
+    op.create_index(
+        "ix___APP_ID___web_push_dispatch_owner",
+        "__APP_ID___web_push_dispatch_jobs",
+        ["user_id"],
+    )
+    op.create_index(
+        "ix___APP_ID___web_push_dispatch_due",
+        "__APP_ID___web_push_dispatch_jobs",
+        ["next_attempt_at", "due_at", "lease_until"],
+    )
+
+
+def upgrade() -> None:
+    """Create subscription and durable leased-dispatch storage.
+
+    Returns:
+        None after both app-scoped tables and their bounded indexes exist.
+
+    Side Effects:
+        Creates the complete generated Web Push SQL persistence boundary.
+    """
+
+    _create_subscription_table()
+    _create_dispatch_table()
+
+
+def downgrade() -> None:
+    """Remove only generated Web Push dispatch and subscription storage.
+
+    Returns:
+        None after the app-scoped tables are removed in dependency-safe order.
+
+    Side Effects:
+        Permanently removes pending dispatches and browser subscriptions.
+    """
+
+    op.drop_index(
+        "ix___APP_ID___web_push_dispatch_due",
+        table_name="__APP_ID___web_push_dispatch_jobs",
+    )
+    op.drop_index(
+        "ix___APP_ID___web_push_dispatch_owner",
+        table_name="__APP_ID___web_push_dispatch_jobs",
+    )
+    op.drop_table("__APP_ID___web_push_dispatch_jobs")
+    op.drop_index(
+        "ix___APP_ID___web_push_subscription_owner",
+        table_name="__APP_ID___web_push_subscriptions",
+    )
+    op.drop_table("__APP_ID___web_push_subscriptions")

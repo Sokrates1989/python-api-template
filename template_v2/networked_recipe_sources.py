@@ -215,6 +215,42 @@ def _parse_template(
     return _SourceTemplate(output_path=output_path, content=content)
 
 
+def _validate_dependency_lock(
+    root: Path,
+    recipe: NetworkedRecipeContract,
+) -> None:
+    """Validate one selected-only dependency lock against its catalog digest.
+
+    Args:
+        root: Backend repository root.
+        recipe: Validated networked recipe contract.
+
+    Returns:
+        None when the recipe has no overlay or its exact lock matches.
+
+    Raises:
+        NetworkedRecipesContractError: If the lock is missing, unsafe, or drifted.
+    """
+
+    profile = recipe.python_dependency_profile
+    expected_sha256 = recipe.python_dependency_lock_sha256
+    if profile is None:
+        return
+    path = root / "template_v2" / "dependency_profiles" / profile / "pdm.lock"
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > _MAX_FILE_BYTES:
+            raise OSError
+        content = path.read_bytes()
+    except OSError as error:
+        raise NetworkedRecipesContractError(
+            [f"recipe dependency profile {profile}: expected bounded lock"]
+        ) from error
+    if expected_sha256 is None or hashlib.sha256(content).hexdigest() != expected_sha256:
+        raise NetworkedRecipesContractError(
+            [f"recipe dependency profile {profile}: lock checksum drifted"]
+        )
+
+
 def _validate_one_source(
     root: Path,
     recipe: NetworkedRecipeContract,
@@ -254,6 +290,7 @@ def _validate_one_source(
         _parse_template(root, recipe, value, index)
         for index, value in enumerate(values)
     )
+    _validate_dependency_lock(root, recipe)
     expected_outputs = (*recipe.migration_paths, *recipe.service_paths)
     if tuple(item.output_path for item in templates) != expected_outputs:
         raise NetworkedRecipesContractError(

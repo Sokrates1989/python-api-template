@@ -16,10 +16,11 @@ from typing import Any
 
 CONTRACT_RELATIVE_PATH = "template_v2/networked_recipes_contract.json"
 SUPPORTED_CONTRACT_ID = "template-v2-networked-recipes"
-SUPPORTED_CONTRACT_VERSION = 2
-SUPPORTED_CATALOG_REVISION = "0.2.0"
+SUPPORTED_CONTRACT_VERSION = 3
+SUPPORTED_CATALOG_REVISION = "0.3.0"
 _MAX_FILE_BYTES = 1_000_000
 _CONFIG_KEY_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{2,79}$")
+_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _RECIPE_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]{2,47}$")
 _SUPPORTED_METHODS = frozenset({"DELETE", "GET", "POST", "PUT"})
 _SUPPORTED_DEPENDENCIES = frozenset(
@@ -34,15 +35,27 @@ _SUPPORTED_DEPENDENCIES = frozenset(
 )
 _EXPECTED_RECIPES = (
     ("hybrid_sync", "1.0.0", "hybrid_sync", "1.0.0"),
-    ("authenticated_web_push", "0.1.0", "pwa_web", "1.0.0"),
+    ("authenticated_web_push", "1.0.0", "pwa_web", "1.0.0"),
     ("ai_chat", "0.1.0", "ai_chat", "1.0.0"),
     ("account_erasure", "0.1.0", "account_erasure", "1.0.0"),
 )
 _EXPECTED_SOURCE_CONTRACTS = {
     "hybrid_sync": "template_v2/networked_recipes/hybrid_sync/recipe.json",
-    "authenticated_web_push": None,
+    "authenticated_web_push": (
+        "template_v2/networked_recipes/authenticated_web_push/recipe.json"
+    ),
     "ai_chat": None,
     "account_erasure": None,
+}
+_EXPECTED_PYTHON_DEPENDENCY_PROFILES = {
+    "hybrid_sync": (None, (), None),
+    "authenticated_web_push": (
+        "postgresql_web_push",
+        ("pywebpush>=2.3.0,<2.4.0",),
+        "02d69f7505d75c6b2e75ef6931274854ee35e9090abbd82dc4bf8691f071a6d8",
+    ),
+    "ai_chat": (None, (), None),
+    "account_erasure": (None, (), None),
 }
 _RECIPE_FIELDS = frozenset(
     {
@@ -54,6 +67,9 @@ _RECIPE_FIELDS = frozenset(
         "implementation_status",
         "migration_paths",
         "public_configuration_keys",
+        "python_dependencies",
+        "python_dependency_lock_sha256",
+        "python_dependency_profile",
         "removal_paths",
         "routes",
         "secret_configuration_keys",
@@ -115,6 +131,9 @@ class NetworkedRecipeContract:
         migration_paths: App-relative generated migration paths.
         service_paths: App-relative generated implementation paths.
         public_configuration_keys: Non-secret deployment configuration names.
+        python_dependencies: Additional selected-only direct dependencies.
+        python_dependency_lock_sha256: Exact selected lock digest, if required.
+        python_dependency_profile: Python-owned lock profile, if required.
         secret_configuration_keys: Secret or secret-reference setting names.
         removal_paths: Complete paths removed with the recipe.
         source_contract: Optional repository-relative checksum manifest.
@@ -130,6 +149,9 @@ class NetworkedRecipeContract:
     migration_paths: tuple[str, ...]
     service_paths: tuple[str, ...]
     public_configuration_keys: tuple[str, ...]
+    python_dependencies: tuple[str, ...]
+    python_dependency_lock_sha256: str | None
+    python_dependency_profile: str | None
     secret_configuration_keys: tuple[str, ...]
     removal_paths: tuple[str, ...]
     source_contract: str | None
@@ -338,6 +360,45 @@ def _parse_recipe(value: Any, index: int) -> NetworkedRecipeContract:
         raise NetworkedRecipesContractError(
             [f"{field}.source_contract: unsupported catalog promotion"]
         )
+    dependency_profile_value = value["python_dependency_profile"]
+    if dependency_profile_value is None:
+        dependency_profile = None
+    elif isinstance(dependency_profile_value, str):
+        dependency_profile = _portable_paths(
+            [dependency_profile_value],
+            f"{field}.python_dependency_profile",
+            allow_empty=False,
+        )[0]
+    else:
+        raise NetworkedRecipesContractError(
+            [f"{field}.python_dependency_profile: expected a path or null"]
+        )
+    python_dependencies = _string_list(
+        value["python_dependencies"],
+        f"{field}.python_dependencies",
+    )
+    lock_sha256_value = value["python_dependency_lock_sha256"]
+    if lock_sha256_value is None:
+        lock_sha256 = None
+    elif isinstance(lock_sha256_value, str) and _SHA256_PATTERN.fullmatch(
+        lock_sha256_value
+    ):
+        lock_sha256 = lock_sha256_value
+    else:
+        raise NetworkedRecipesContractError(
+            [f"{field}.python_dependency_lock_sha256: invalid digest"]
+        )
+    expected_dependency_profile = _EXPECTED_PYTHON_DEPENDENCY_PROFILES[
+        value["backend_recipe_id"]
+    ]
+    if (
+        dependency_profile,
+        python_dependencies,
+        lock_sha256,
+    ) != expected_dependency_profile:
+        raise NetworkedRecipesContractError(
+            [f"{field}.python_dependency_profile: unsupported dependency contract"]
+        )
     depends_on = _string_list(value["depends_on"], f"{field}.depends_on", allow_empty=False)
     if any(item not in _SUPPORTED_DEPENDENCIES for item in depends_on):
         raise NetworkedRecipesContractError([f"{field}.depends_on: unsupported recipe"])
@@ -383,6 +444,9 @@ def _parse_recipe(value: Any, index: int) -> NetworkedRecipeContract:
         migration_paths=migrations,
         service_paths=services,
         public_configuration_keys=public_keys,
+        python_dependencies=python_dependencies,
+        python_dependency_lock_sha256=lock_sha256,
+        python_dependency_profile=dependency_profile,
         secret_configuration_keys=secret_keys,
         removal_paths=removal,
         source_contract=source_contract,

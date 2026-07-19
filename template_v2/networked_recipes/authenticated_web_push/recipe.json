@@ -1,0 +1,36 @@
+{
+  "backend_recipe_id": "authenticated_web_push",
+  "backend_revision": "1.0.0",
+  "templates": [
+    {
+      "output_path": "migrations/versions/__APP_ID___003_web_push.py",
+      "sha256": "9bc0693be42979ebe571eac1de4518e6f85dbe429a744787e0b185214c2c7d70",
+      "template_path": "migrations/versions/__APP_ID___003_web_push.py.tmpl"
+    },
+    {
+      "output_path": "models/web_push_subscription.py",
+      "sha256": "43a0382e801f740a4211efcfaf1d68be1f27c9751718e4d730269a9267f2df8b",
+      "template_path": "models/web_push_subscription.py.tmpl"
+    },
+    {
+      "output_path": "repositories/web_push_repository.py",
+      "sha256": "862cbde2f557280247aeba6e635c2aadd9e21d7d75853ee3583eaceb9c578342",
+      "template_path": "repositories/web_push_repository.py.tmpl"
+    },
+    {
+      "output_path": "routes/web_push.py",
+      "sha256": "4d205fbdb863bedb21d8a3d7a1981bdce45c21382fd1a720f6e3afaf84be8d11",
+      "template_path": "routes/web_push.py.tmpl"
+    },
+    {
+      "output_path": "schemas/web_push.py",
+      "sha256": "292f2cfa6c91f3c7c2138ae8ca5e8a86cd2f681b047bad9ae21fc23060e3b3c8",
+      "template_path": "schemas/web_push.py.tmpl"
+    },
+    {
+      "output_path": "services/web_push_service.py",
+      "sha256": "dc6f3266961277f8093b57d2405df2ded3256cfa5f4e18ba924c66de66a152ec",
+      "template_path": "services/web_push_service.py.tmpl"
+    }
+  ]
+}

@@ -1,0 +1,139 @@
+"""App-neutral visible-notification and durable dispatch value objects."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+import json
+
+from backend.shared_services.web_push_dispatch import WebPushDispatchDraft
+from backend.shared_services.web_push_subscriptions import WebPushSubscription
+
+
+@dataclass(frozen=True)
+class WebPushNotification:
+    """Describe one bounded user-visible same-origin notification.
+
+    Attributes:
+        title: Visible notification title.
+        body: Visible notification body.
+        tag: Stable browser duplicate-suppression tag.
+        route: Same-application absolute route opened on interaction.
+    """
+
+    title: str
+    body: str
+    tag: str
+    route: str
+
+    def __post_init__(self) -> None:
+        """Reject blank, oversized, or cross-origin notification fields.
+
+        Raises:
+            ValueError: If visible text, tag, or route violates safe bounds.
+
+        Returns:
+            None.
+        """
+
+        _bounded_text("title", self.title, maximum=120)
+        _bounded_text("body", self.body, maximum=500)
+        _bounded_text("tag", self.tag, maximum=120)
+        if not self.route.startswith("/") or self.route.startswith("//"):
+            raise ValueError("Web Push route must be a same-application absolute path.")
+        if "://" in self.route or len(self.route) > 512:
+            raise ValueError("Web Push route must remain same-origin and bounded.")
+
+    def to_payload(self) -> str:
+        """Serialize the browser worker's fixed visible-notification shape.
+
+        Returns:
+            Compact UTF-8 JSON without owner, endpoint, or credential data.
+        """
+
+        return json.dumps(
+            {
+                "title": self.title,
+                "body": self.body,
+                "tag": self.tag,
+                "route": self.route,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+
+
+@dataclass(frozen=True)
+class ScheduledWebPushNotification:
+    """Describe one app-authorized durable delivery occurrence.
+
+    Attributes:
+        schedule_key: Stable owner-scoped idempotency key.
+        notification: Already bounded visible notification.
+        due_at: UTC-aware earliest delivery time.
+        expires_at: UTC-aware terminal delivery expiry.
+    """
+
+    schedule_key: str
+    notification: WebPushNotification
+    due_at: datetime
+    expires_at: datetime
+
+    def __post_init__(self) -> None:
+        """Validate scheduling identity, timezone awareness, and horizon order.
+
+        Raises:
+            ValueError: If identity or timestamps are unsafe.
+
+        Returns:
+            None.
+        """
+
+        _bounded_text("schedule_key", self.schedule_key, maximum=200)
+        if self.due_at.tzinfo is None or self.expires_at.tzinfo is None:
+            raise ValueError("Web Push schedule timestamps must be timezone-aware.")
+        if self.expires_at <= self.due_at:
+            raise ValueError("Web Push schedule expiry must follow its due time.")
+
+    def to_draft(self) -> WebPushDispatchDraft:
+        """Convert the validated occurrence into shared durable-store input.
+
+        Returns:
+            App-neutral draft containing no subscription or signing material.
+        """
+
+        return WebPushDispatchDraft(
+            schedule_key=self.schedule_key,
+            payload=self.notification.to_payload(),
+            due_at=self.due_at,
+            expires_at=self.expires_at,
+        )
+
+
+def _bounded_text(field: str, value: str, *, maximum: int) -> None:
+    """Reject blank, outer-whitespace, or oversized notification text.
+
+    Args:
+        field: Stable field label used by the safe validation error.
+        value: Candidate text.
+        maximum: Maximum accepted character count.
+
+    Raises:
+        ValueError: If the candidate violates its bound.
+
+    Returns:
+        None.
+    """
+
+    if not value or value != value.strip() or len(value) > maximum:
+        raise ValueError(
+            f"Web Push {field} must be non-blank and at most {maximum} characters."
+        )
+
+
+# Public recipe model exports.
+__all__ = [
+    "ScheduledWebPushNotification",
+    "WebPushNotification",
+    "WebPushSubscription",
+]

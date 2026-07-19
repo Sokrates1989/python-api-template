@@ -1,0 +1,27 @@
+"""App-local exports for the standard authenticated Web Push HTTP contract."""
+
+from __future__ import annotations
+
+from api.shared_schemas.web_push import (
+    WebPushDeletionData,
+    WebPushDeletionResponse,
+    WebPushPublicKeyResponse,
+    WebPushRegistrationData,
+    WebPushRegistrationResponse,
+    WebPushSubscriptionDeleteRequest,
+    WebPushSubscriptionKeys,
+    WebPushSubscriptionRequest,
+)
+
+
+# Public app-local HTTP contract exports.
+__all__ = [
+    "WebPushDeletionData",
+    "WebPushDeletionResponse",
+    "WebPushPublicKeyResponse",
+    "WebPushRegistrationData",
+    "WebPushRegistrationResponse",
+    "WebPushSubscriptionDeleteRequest",
+    "WebPushSubscriptionKeys",
+    "WebPushSubscriptionRequest",
+]

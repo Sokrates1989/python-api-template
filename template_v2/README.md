@@ -11,9 +11,10 @@ repository, service, schemas, authenticated routes, and Alembic migration used
 only by the standard Keycloak/PostgreSQL pair.
 `networked_recipes_contract.json` starts B4 with the fixed four-recipe catalog,
 matching Flutter versions, dependency order, routes, configuration ownership,
-generated paths, and complete removal boundaries. Hybrid sync is the first
-checksum-pinned `renderable` source contract; the other entries remain honestly
-`contract_only` until their Python sources pass lifecycle proof.
+generated paths, and complete removal boundaries. Hybrid sync and authenticated
+Web Push are checksum-pinned `renderable` source contracts. AI chat and account
+erasure remain honestly `contract_only` until their Python sources pass
+lifecycle proof.
 The lifecycle modules own read-only planning, managed creation/update, explicit
 detach, root registration, and exact create rollback for generated backend
 applications.
@@ -34,6 +35,8 @@ applications.
 - `networked_recipe_sources.py` verifies every promoted source manifest,
   complete output coverage, and LF-normalized template checksum before safe
   app-id substitution.
+- `dependency_profiles/postgresql_web_push/` owns the Python 3.13 PDM lock
+  selected only with authenticated Web Push.
 - `backend_lifecycle.py` is the public in-process lifecycle facade.
 - `backend_lifecycle_planning.py` validates desired/current ownership and
   returns content-free stale-state-bound plans.
@@ -56,6 +59,13 @@ The records starter substitutes only a validated app id and identifiers derived
 from it. It exposes `/records`, scopes every operation to the verified subject,
 uses optimistic revisions, and owns an upgrade/downgrade migration. Cognito and
 MongoDB do not select these sources.
+
+The authenticated Web Push recipe adds app-scoped subscription and durable
+leased-dispatch storage, authenticated `/push/web/config` plus subscription
+upsert/delete routes, and an internal delivery seam that performs stale-endpoint
+cleanup. Visible notification policy and worker invocation remain app-owned;
+VAPID public/contact configuration is deployment-owned and the private key is a
+backend-only mounted-file reference.
 
 ## Safe Editing
 

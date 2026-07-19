@@ -1,0 +1,154 @@
+"""Authenticated config and owner-scoped subscription routes for Web Push."""
+
+from __future__ import annotations
+
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from api.shared_dependencies.auth import get_user_id_from_token
+from apps.__APP_ID__.models.web_push_subscription import WebPushSubscription
+from apps.__APP_ID__.schemas.web_push import (
+    WebPushDeletionData,
+    WebPushDeletionResponse,
+    WebPushPublicKeyResponse,
+    WebPushRegistrationData,
+    WebPushRegistrationResponse,
+    WebPushSubscriptionDeleteRequest,
+    WebPushSubscriptionRequest,
+)
+from apps.__APP_ID__.services.web_push_service import WebPushService
+
+
+# App-local diagnostics and service-relative route ownership.
+logger = logging.getLogger("apps.__APP_ID__.routes.web_push")
+router = APIRouter(prefix="/push/web", tags=["web-push"])
+
+
+def get_web_push_service() -> WebPushService:
+    """Return a request-local generated Web Push service.
+
+    Returns:
+        Side-effect-free service until configuration or storage is requested.
+    """
+
+    return WebPushService()
+
+
+def _unavailable(code: str, message: str) -> HTTPException:
+    """Build one stable retryable service-unavailable response.
+
+    Args:
+        code: Stable machine-readable failure code.
+        message: Safe user-facing summary.
+
+    Returns:
+        HTTP 503 exception without endpoint, key, or raw provider details.
+    """
+
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={"code": code, "message": message, "retryable": True},
+    )
+
+
+@router.get("/config", response_model=WebPushPublicKeyResponse)
+async def get_web_push_config(
+    owner_subject: str = Depends(get_user_id_from_token),
+    service: WebPushService = Depends(get_web_push_service),
+) -> WebPushPublicKeyResponse:
+    """Return the browser-safe public VAPID key to a verified subject.
+
+    Args:
+        owner_subject: Verified subject consumed for authentication enforcement.
+        service: Request-local Web Push service.
+
+    Returns:
+        Browser-safe public application-server key.
+
+    Raises:
+        HTTPException: With stable 503 detail when configuration is unavailable.
+    """
+
+    del owner_subject
+    try:
+        return WebPushPublicKeyResponse(application_server_key=service.get_public_key())
+    except ValueError as error:
+        raise _unavailable(
+            "web_push_not_configured",
+            "Web Push is not configured for this deployment.",
+        ) from error
+
+
+@router.put("/subscriptions", response_model=WebPushRegistrationResponse)
+async def upsert_web_push_subscription(
+    request: WebPushSubscriptionRequest,
+    owner_subject: str = Depends(get_user_id_from_token),
+    service: WebPushService = Depends(get_web_push_service),
+) -> WebPushRegistrationResponse:
+    """Idempotently bind one browser subscription to the verified subject.
+
+    Args:
+        request: Validated standard browser subscription JSON.
+        owner_subject: Verified authenticated subject.
+        service: Request-local Web Push service.
+
+    Returns:
+        Accepted endpoint and whether a provider record was newly created.
+
+    Raises:
+        HTTPException: With stable 503 detail when persistence is unavailable.
+    """
+
+    try:
+        created = await service.register(
+            owner_subject,
+            WebPushSubscription(
+                endpoint=request.endpoint,
+                expiration_time=request.expiration_time,
+                p256dh=request.keys.p256dh,
+                auth=request.keys.auth,
+            ),
+        )
+    except Exception as error:
+        logger.error("Web Push subscription persistence failed")
+        raise _unavailable(
+            "web_push_registration_unavailable",
+            "Web Push registration is temporarily unavailable.",
+        ) from error
+    return WebPushRegistrationResponse(
+        data=WebPushRegistrationData(endpoint=request.endpoint, created=created)
+    )
+
+
+@router.delete("/subscriptions", response_model=WebPushDeletionResponse)
+async def delete_web_push_subscription(
+    request: WebPushSubscriptionDeleteRequest,
+    owner_subject: str = Depends(get_user_id_from_token),
+    service: WebPushService = Depends(get_web_push_service),
+) -> WebPushDeletionResponse:
+    """Idempotently remove one verified-subject browser endpoint.
+
+    Args:
+        request: Validated endpoint-only deletion payload.
+        owner_subject: Verified authenticated subject.
+        service: Request-local Web Push service.
+
+    Returns:
+        Target endpoint and whether an owned provider record existed.
+
+    Raises:
+        HTTPException: With stable 503 detail when persistence is unavailable.
+    """
+
+    try:
+        deleted = await service.unregister(owner_subject, request.endpoint)
+    except Exception as error:
+        logger.error("Web Push subscription deletion failed")
+        raise _unavailable(
+            "web_push_deletion_unavailable",
+            "Web Push removal is temporarily unavailable.",
+        ) from error
+    return WebPushDeletionResponse(
+        data=WebPushDeletionData(endpoint=request.endpoint, deleted=deleted)
+    )

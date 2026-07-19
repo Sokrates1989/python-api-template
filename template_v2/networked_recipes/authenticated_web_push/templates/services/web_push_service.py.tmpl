@@ -1,0 +1,244 @@
+"""Generated Web Push policy over reusable storage and delivery mechanics."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Callable
+
+from apps.__APP_ID__.models.web_push_subscription import (
+    ScheduledWebPushNotification,
+    WebPushNotification,
+    WebPushSubscription,
+)
+from apps.__APP_ID__.repositories.web_push_repository import WebPushRepository
+from backend.shared_services.web_push_config import validate_vapid_public_key
+from backend.shared_services.web_push_delivery import (
+    WebPushDeliveryConfig,
+    WebPushDeliveryCoordinator,
+    WebPushSender,
+)
+from backend.shared_services.web_push_delivery_types import WebPushDeliveryReport
+from backend.shared_services.web_push_dispatch import (
+    WebPushDispatchPolicy,
+    WebPushDispatchRunReport,
+    WebPushDispatchWorker,
+    WebPushScheduleReplaceResult,
+)
+
+
+class WebPushService:
+    """Coordinate config, subscriptions, durable jobs, and stale cleanup.
+
+    Attributes:
+        repository: App-owned provider repository.
+        _public_key_loader: Deferred browser-safe key reader.
+        _delivery_config_loader: Deferred backend-only VAPID config reader.
+    """
+
+    def __init__(
+        self,
+        repository: WebPushRepository | None = None,
+        *,
+        public_key_loader: Callable[[], str] | None = None,
+        delivery_config_loader: Callable[[], WebPushDeliveryConfig] | None = None,
+        delivery: WebPushDeliveryCoordinator | None = None,
+    ) -> None:
+        """Create a side-effect-free service around injectable runtime seams.
+
+        Args:
+            repository: Optional provider repository override.
+            public_key_loader: Optional deferred public VAPID key reader.
+            delivery_config_loader: Optional deferred secret config reader.
+            delivery: Optional encrypted-delivery override.
+
+        Returns:
+            None.
+        """
+
+        self.repository = repository or WebPushRepository()
+        self._public_key_loader = public_key_loader or _load_public_key
+        self._delivery_config_loader = delivery_config_loader or _load_delivery_config
+        self._delivery = delivery
+
+    def get_public_key(self) -> str:
+        """Return the validated browser-safe VAPID application-server key.
+
+        Returns:
+            Canonical public uncompressed P-256 key.
+
+        Raises:
+            ValueError: If deployment configuration is absent or malformed.
+        """
+
+        return validate_vapid_public_key(self._public_key_loader())
+
+    async def register(
+        self,
+        owner_subject: str,
+        subscription: WebPushSubscription,
+    ) -> bool:
+        """Idempotently bind a browser endpoint to the verified subject.
+
+        Args:
+            owner_subject: Verified authenticated subject.
+            subscription: Validated browser subscription material.
+
+        Returns:
+            True only when a new provider record was created.
+        """
+
+        return await self.repository.upsert_subscription(owner_subject, subscription)
+
+    async def unregister(self, owner_subject: str, endpoint: str) -> bool:
+        """Idempotently delete one verified-subject browser endpoint.
+
+        Args:
+            owner_subject: Verified authenticated subject.
+            endpoint: Validated opaque browser endpoint.
+
+        Returns:
+            True only when an owned provider record existed.
+        """
+
+        return await self.repository.delete_subscription(owner_subject, endpoint)
+
+    async def replace_schedule(
+        self,
+        owner_subject: str,
+        occurrences: list[ScheduledWebPushNotification],
+        *,
+        now: datetime | None = None,
+    ) -> WebPushScheduleReplaceResult:
+        """Persist an internally authorized complete delivery horizon.
+
+        This method is intentionally not exposed through a public route.
+
+        Args:
+            owner_subject: Internally authorized recipient subject.
+            occurrences: App-validated notification occurrences.
+            now: Optional UTC-aware replacement time for deterministic tests.
+
+        Returns:
+            Stored and removed durable occurrence counts.
+        """
+
+        current = now or datetime.now(timezone.utc)
+        return await self.repository.replace_schedule(
+            owner_subject,
+            [occurrence.to_draft() for occurrence in occurrences],
+            now=current,
+        )
+
+    async def deliver(
+        self,
+        owner_subject: str,
+        notification: WebPushNotification,
+    ) -> WebPushDeliveryReport:
+        """Deliver one app-authorized notification and remove stale endpoints.
+
+        Args:
+            owner_subject: Internally authorized recipient subject.
+            notification: Bounded visible same-origin notification.
+
+        Returns:
+            Aggregate delivery and stale-removal counts without endpoint data.
+        """
+
+        return await self._delivery_coordinator().deliver_to_user(
+            owner_subject,
+            notification.to_payload(),
+        )
+
+    async def run_dispatch_once(
+        self,
+        policy: WebPushDispatchPolicy | None = None,
+    ) -> WebPushDispatchRunReport:
+        """Process one bounded leased job batch for an app-owned worker.
+
+        Args:
+            policy: Optional bounded retry/lease policy.
+
+        Returns:
+            Privacy-safe aggregate worker result.
+
+        Side Effects:
+            Leases jobs, performs encrypted delivery, and completes or retries
+            durable state. No background task is started implicitly.
+        """
+
+        worker = WebPushDispatchWorker(
+            self.repository.dispatch,
+            self._deliver_payload,
+            policy or WebPushDispatchPolicy(),
+        )
+        return await worker.run_once()
+
+    async def _deliver_payload(
+        self,
+        owner_subject: str,
+        payload: str,
+    ) -> WebPushDeliveryReport:
+        """Deliver one already validated durable payload to an owner.
+
+        Args:
+            owner_subject: Stored recipient subject.
+            payload: Opaque payload validated before persistence.
+
+        Returns:
+            Aggregate delivery and stale-removal counts.
+        """
+
+        return await self._delivery_coordinator().deliver_to_user(
+            owner_subject,
+            payload,
+        )
+
+    def _delivery_coordinator(self) -> WebPushDeliveryCoordinator:
+        """Return the injected or lazily configured encrypted delivery seam.
+
+        Returns:
+            Account-scoped delivery coordinator.
+
+        Raises:
+            ValueError: If backend-only VAPID configuration is invalid.
+        """
+
+        if self._delivery is None:
+            self._delivery = WebPushDeliveryCoordinator(
+                self.repository.subscriptions,
+                WebPushSender(self._delivery_config_loader()),
+            )
+        return self._delivery
+
+
+def _load_public_key() -> str:
+    """Read the declared browser-safe VAPID public-key setting lazily.
+
+    Returns:
+        Configured public key text.
+
+    Side Effects:
+        Imports runtime settings only when configuration is requested.
+    """
+
+    from api.settings import settings
+
+    return settings.WEB_PUSH_VAPID_PUBLIC_KEY
+
+
+def _load_delivery_config() -> WebPushDeliveryConfig:
+    """Read declared backend-only signing and public contact settings lazily.
+
+    Returns:
+        Validated delivery configuration using a mounted private-key file.
+
+    Raises:
+        ValueError: If the private-key path or VAPID subject is absent.
+    """
+
+    from api.settings import settings
+
+    return WebPushDeliveryConfig(
+        private_key_reference=settings.WEB_PUSH_VAPID_PRIVATE_KEY_FILE,
+        subject=settings.WEB_PUSH_VAPID_SUBJECT,
+    )

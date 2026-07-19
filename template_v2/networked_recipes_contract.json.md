@@ -12,11 +12,16 @@ recipe version before renderable source templates are promoted.
 The Python template owns the catalog schema, backend revisions, deterministic
 recipe order, dependency order, API-service-relative routes, migration and
 service paths, public/secret configuration key names, and exact removal paths.
-Contract version `2` adds an explicit nullable `source_contract` field.
+Contract version `3` adds selected-only Python dependency-profile identity and
+direct-dependency fields above the nullable `source_contract` field introduced
+in version `2`.
 `renderable` certifies that a recipe has a complete checksum-pinned source
 contract; it does not by itself claim public selection, lifecycle, runtime, or
-release proof. Catalog revision `0.2.0` promotes only hybrid sync revision
-`1.0.0`. The other three recipes remain `contract_only`.
+release proof. Catalog revision `0.3.0` promotes hybrid sync and authenticated
+Web Push revision `1.0.0`. AI chat and account erasure remain `contract_only`.
+The Web Push entry selects `postgresql_web_push`, whose lock adds only
+`pywebpush`; unselected Connected and hybrid-sync profiles keep the standard
+PostgreSQL dependency graph.
 
 The catalog contains names and paths only. It never contains a provider value,
 credential, endpoint value, prompt, quota, retention policy, VAPID key, model,
