@@ -1,18 +1,18 @@
 {
-  "catalog_revision": "0.1.0",
+  "catalog_revision": "0.2.0",
   "contract_id": "template-v2-networked-recipes",
-  "contract_version": 1,
+  "contract_version": 2,
   "recipes": [
     {
       "backend_recipe_id": "hybrid_sync",
-      "backend_revision": "0.1.0",
+      "backend_revision": "1.0.0",
       "depends_on": [
         "keycloak_auth",
         "records_starter"
       ],
       "flutter_recipe_id": "hybrid_sync",
       "flutter_recipe_version": "1.0.0",
-      "implementation_status": "contract_only",
+      "implementation_status": "renderable",
       "migration_paths": [
         "migrations/versions/__APP_ID___002_hybrid_sync.py"
       ],
@@ -36,6 +36,7 @@
         }
       ],
       "secret_configuration_keys": [],
+      "source_contract": "template_v2/networked_recipes/hybrid_sync/recipe.json",
       "service_paths": [
         "models/sync_state.py",
         "repositories/sync_repository.py",
@@ -84,6 +85,7 @@
       "secret_configuration_keys": [
         "WEB_PUSH_VAPID_PRIVATE_KEY_FILE"
       ],
+      "source_contract": null,
       "service_paths": [
         "models/web_push_subscription.py",
         "repositories/web_push_repository.py",
@@ -127,6 +129,7 @@
       "secret_configuration_keys": [
         "AI_CHAT_API_KEY"
       ],
+      "source_contract": null,
       "service_paths": [
         "models/ai_chat_message.py",
         "repositories/ai_chat_repository.py",
@@ -158,6 +161,7 @@
         }
       ],
       "secret_configuration_keys": [],
+      "source_contract": null,
       "service_paths": [
         "routes/account_erasure.py",
         "schemas/account_erasure.py",

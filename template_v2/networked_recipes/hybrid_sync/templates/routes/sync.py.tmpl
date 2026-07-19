@@ -1,0 +1,83 @@
+"""Authenticated routes for generated owner-scoped hybrid synchronization."""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from api.shared_dependencies.auth import get_user_id_from_token
+from apps.__APP_ID__.schemas.sync import SyncPullResponse, SyncPushRequest, SyncPushResponse
+from apps.__APP_ID__.services.sync_service import InvalidSyncCursor, SyncService
+
+
+router = APIRouter(prefix="/sync", tags=["sync"])
+
+
+def get_sync_service() -> SyncService:
+    """Return the generated synchronization application service.
+
+    Returns:
+        Service bound to the selected PostgreSQL handler.
+    """
+
+    return SyncService()
+
+
+@router.post("/push", response_model=SyncPushResponse)
+async def push_sync_operations(
+    request: SyncPushRequest,
+    owner_subject: str = Depends(get_user_id_from_token),
+    service: SyncService = Depends(get_sync_service),
+) -> SyncPushResponse:
+    """Apply idempotent neutral-record mutations for the verified subject.
+
+    Args:
+        request: Bounded operation batch.
+        owner_subject: Verified subject injected by the auth dependency.
+        service: Synchronization service dependency.
+
+    Returns:
+        Ordered applied, conflict, or rejected results.
+    """
+
+    results = await service.push_operations(owner_subject, request.operations)
+    return SyncPushResponse.model_validate({"results": results})
+
+
+@router.get("/pull", response_model=SyncPullResponse)
+async def pull_sync_changes(
+    cursor: str | None = Query(default=None, max_length=256),
+    limit: int = Query(default=100, ge=1, le=500),
+    owner_subject: str = Depends(get_user_id_from_token),
+    service: SyncService = Depends(get_sync_service),
+) -> SyncPullResponse:
+    """Return one bounded change-feed page for the verified subject.
+
+    Args:
+        cursor: Prior opaque cursor, or null for the first page.
+        limit: Maximum changes returned, defaulting to 100.
+        owner_subject: Verified subject injected by the auth dependency.
+        service: Synchronization service dependency.
+
+    Returns:
+        Owner-only changes and continuation metadata.
+
+    Raises:
+        HTTPException: With a stable 400 detail for an invalid cursor.
+    """
+
+    try:
+        response = await service.pull_changes(
+            owner_subject,
+            cursor=cursor,
+            limit=limit,
+        )
+    except InvalidSyncCursor as error:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "invalid_sync_cursor",
+                "message": "The synchronization cursor is invalid.",
+                "retryable": False,
+            },
+        ) from error
+    return SyncPullResponse.model_validate(response)

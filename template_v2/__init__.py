@@ -11,13 +11,21 @@ from .networked_recipes_contract import (
     NetworkedRecipesContractError,
     validate_networked_recipes_contract,
 )
+from .networked_recipe_sources import (
+    RenderableNetworkedRecipe,
+    RenderedNetworkedRecipeFile,
+    validate_networked_recipe_sources,
+)
 
 __all__ = [
     "BackendFoundationContractError",
     "BackendFoundationIdentity",
     "NetworkedRecipesCatalog",
     "NetworkedRecipesContractError",
+    "RenderableNetworkedRecipe",
+    "RenderedNetworkedRecipeFile",
     "validate_backend_foundation",
     "validate_networked_recipes_contract",
+    "validate_networked_recipe_sources",
     "execute_backend_lifecycle",
 ]

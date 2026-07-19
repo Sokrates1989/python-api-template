@@ -15,6 +15,9 @@ from template_v2.networked_recipes_contract import (  # noqa: E402
     NetworkedRecipesContractError,
     validate_networked_recipes_contract,
 )
+from template_v2.networked_recipe_sources import (  # noqa: E402
+    validate_networked_recipe_sources,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -45,6 +48,10 @@ def main(argv: list[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
     try:
         catalog = validate_networked_recipes_contract(arguments.root.resolve())
+        sources = validate_networked_recipe_sources(
+            arguments.root.resolve(),
+            catalog,
+        )
     except NetworkedRecipesContractError as error:
         for issue in error.issues:
             print(issue)
@@ -55,6 +62,8 @@ def main(argv: list[str] | None = None) -> int:
         "manifest_sha256": catalog.manifest_sha256,
         "recipe_count": len(catalog.recipes),
         "recipe_ids": [recipe.backend_recipe_id for recipe in catalog.recipes],
+        "renderable_recipe_count": len(sources),
+        "renderable_recipe_ids": [recipe.backend_recipe_id for recipe in sources],
     }
     if arguments.json:
         print(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True))

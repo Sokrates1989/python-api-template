@@ -1,0 +1,160 @@
+"""Application service for generated owner-scoped hybrid synchronization."""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import re
+from typing import Any
+
+from apps.__APP_ID__.repositories.sync_repository import SyncRepository
+from apps.__APP_ID__.schemas.sync import SyncPushOperationRequest
+
+
+class InvalidSyncCursor(ValueError):
+    """Report a malformed or unsupported opaque sync cursor."""
+
+
+class SyncService:
+    """Coordinate canonical idempotency digests and opaque cursor paging."""
+
+    def __init__(self, repository: SyncRepository | None = None) -> None:
+        """Create the service with an optional test repository.
+
+        Args:
+            repository: Repository override; defaults to selected PostgreSQL.
+        """
+
+        self._repository = repository or SyncRepository()
+
+    @staticmethod
+    def _operation_sha256(operation: SyncPushOperationRequest) -> str:
+        """Hash one canonical validated operation without owner data.
+
+        Args:
+            operation: Validated operation request.
+
+        Returns:
+            Lowercase SHA-256 used only for replay-collision detection.
+        """
+
+        content = json.dumps(
+            operation.model_dump(mode="json"),
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        return hashlib.sha256(content).hexdigest()
+
+    @staticmethod
+    def _decode_cursor(cursor: str | None) -> int:
+        """Decode a bounded opaque cursor into its exclusive sequence.
+
+        Args:
+            cursor: Prior cursor, or null for the first page.
+
+        Returns:
+            Non-negative exclusive change sequence.
+
+        Raises:
+            InvalidSyncCursor: If the cursor is malformed or unsupported.
+        """
+
+        if cursor is None:
+            return 0
+        if len(cursor) > 256 or not re.fullmatch(r"[A-Za-z0-9_-]+", cursor):
+            raise InvalidSyncCursor("invalid sync cursor")
+        try:
+            padding = "=" * (-len(cursor) % 4)
+            raw = base64.urlsafe_b64decode((cursor + padding).encode("ascii"))
+            value = json.loads(raw.decode("utf-8"))
+        except (UnicodeError, ValueError, json.JSONDecodeError) as error:
+            raise InvalidSyncCursor("invalid sync cursor") from error
+        if (
+            not isinstance(value, dict)
+            or set(value) != {"sequence", "version"}
+            or value.get("version") != 1
+            or not isinstance(value.get("sequence"), int)
+            or value["sequence"] < 0
+        ):
+            raise InvalidSyncCursor("invalid sync cursor")
+        return value["sequence"]
+
+    @staticmethod
+    def _encode_cursor(sequence: int) -> str:
+        """Encode one sequence into a versioned opaque cursor.
+
+        Args:
+            sequence: Last returned non-negative change sequence.
+
+        Returns:
+            URL-safe unpadded cursor.
+        """
+
+        content = json.dumps(
+            {"sequence": sequence, "version": 1},
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        return base64.urlsafe_b64encode(content).decode("ascii").rstrip("=")
+
+    async def push_operations(
+        self,
+        owner_subject: str,
+        operations: list[SyncPushOperationRequest],
+    ) -> list[dict[str, Any]]:
+        """Apply a bounded operation batch in caller order.
+
+        Args:
+            owner_subject: Verified identity-provider subject.
+            operations: Validated operations in stable client order.
+
+        Returns:
+            Stable result mapping for every operation.
+        """
+
+        results = []
+        for operation in operations:
+            results.append(
+                await self._repository.apply_operation(
+                    owner_subject,
+                    operation,
+                    self._operation_sha256(operation),
+                )
+            )
+        return results
+
+    async def pull_changes(
+        self,
+        owner_subject: str,
+        *,
+        cursor: str | None,
+        limit: int,
+    ) -> dict[str, Any]:
+        """Return one owner-scoped page with a versioned opaque cursor.
+
+        Args:
+            owner_subject: Verified identity-provider subject.
+            cursor: Prior opaque cursor, or null initially.
+            limit: Maximum changes returned.
+
+        Returns:
+            Changes, next cursor, and bounded continuation flag.
+
+        Raises:
+            InvalidSyncCursor: If the supplied cursor cannot be decoded.
+        """
+
+        prior_sequence = self._decode_cursor(cursor)
+        changes, has_more = await self._repository.pull_changes(
+            owner_subject,
+            after_sequence=prior_sequence,
+            limit=limit,
+        )
+        next_sequence = int(changes[-1]["change_id"]) if changes else prior_sequence
+        return {
+            "changes": changes,
+            "next_cursor": self._encode_cursor(next_sequence),
+            "has_more": has_more,
+        }

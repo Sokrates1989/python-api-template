@@ -16,8 +16,8 @@ from typing import Any
 
 CONTRACT_RELATIVE_PATH = "template_v2/networked_recipes_contract.json"
 SUPPORTED_CONTRACT_ID = "template-v2-networked-recipes"
-SUPPORTED_CONTRACT_VERSION = 1
-SUPPORTED_CATALOG_REVISION = "0.1.0"
+SUPPORTED_CONTRACT_VERSION = 2
+SUPPORTED_CATALOG_REVISION = "0.2.0"
 _MAX_FILE_BYTES = 1_000_000
 _CONFIG_KEY_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{2,79}$")
 _RECIPE_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]{2,47}$")
@@ -33,11 +33,17 @@ _SUPPORTED_DEPENDENCIES = frozenset(
     }
 )
 _EXPECTED_RECIPES = (
-    ("hybrid_sync", "0.1.0", "hybrid_sync", "1.0.0"),
+    ("hybrid_sync", "1.0.0", "hybrid_sync", "1.0.0"),
     ("authenticated_web_push", "0.1.0", "pwa_web", "1.0.0"),
     ("ai_chat", "0.1.0", "ai_chat", "1.0.0"),
     ("account_erasure", "0.1.0", "account_erasure", "1.0.0"),
 )
+_EXPECTED_SOURCE_CONTRACTS = {
+    "hybrid_sync": "template_v2/networked_recipes/hybrid_sync/recipe.json",
+    "authenticated_web_push": None,
+    "ai_chat": None,
+    "account_erasure": None,
+}
 _RECIPE_FIELDS = frozenset(
     {
         "backend_recipe_id",
@@ -52,6 +58,7 @@ _RECIPE_FIELDS = frozenset(
         "routes",
         "secret_configuration_keys",
         "service_paths",
+        "source_contract",
     }
 )
 
@@ -110,6 +117,7 @@ class NetworkedRecipeContract:
         public_configuration_keys: Non-secret deployment configuration names.
         secret_configuration_keys: Secret or secret-reference setting names.
         removal_paths: Complete paths removed with the recipe.
+        source_contract: Optional repository-relative checksum manifest.
     """
 
     backend_recipe_id: str
@@ -124,6 +132,7 @@ class NetworkedRecipeContract:
     public_configuration_keys: tuple[str, ...]
     secret_configuration_keys: tuple[str, ...]
     removal_paths: tuple[str, ...]
+    source_contract: str | None
 
 
 @dataclass(frozen=True)
@@ -302,6 +311,33 @@ def _parse_recipe(value: Any, index: int) -> NetworkedRecipeContract:
         raise NetworkedRecipesContractError([f"{field}.backend_recipe_id: invalid value"])
     if value["implementation_status"] not in {"contract_only", "renderable"}:
         raise NetworkedRecipesContractError([f"{field}.implementation_status: invalid value"])
+    source_contract_value = value["source_contract"]
+    if source_contract_value is None:
+        source_contract = None
+    elif isinstance(source_contract_value, str):
+        source_contract = _portable_paths(
+            [source_contract_value],
+            f"{field}.source_contract",
+            allow_empty=False,
+        )[0]
+    else:
+        raise NetworkedRecipesContractError(
+            [f"{field}.source_contract: expected a path or null"]
+        )
+    if (value["implementation_status"] == "renderable") != (source_contract is not None):
+        raise NetworkedRecipesContractError(
+            [f"{field}.source_contract: must match implementation status"]
+        )
+    if value["backend_recipe_id"] not in _EXPECTED_SOURCE_CONTRACTS:
+        raise NetworkedRecipesContractError(
+            [f"{field}.backend_recipe_id: unsupported value"]
+        )
+    expected_source = _EXPECTED_SOURCE_CONTRACTS[value["backend_recipe_id"]]
+    expected_status = "renderable" if expected_source is not None else "contract_only"
+    if value["implementation_status"] != expected_status or source_contract != expected_source:
+        raise NetworkedRecipesContractError(
+            [f"{field}.source_contract: unsupported catalog promotion"]
+        )
     depends_on = _string_list(value["depends_on"], f"{field}.depends_on", allow_empty=False)
     if any(item not in _SUPPORTED_DEPENDENCIES for item in depends_on):
         raise NetworkedRecipesContractError([f"{field}.depends_on: unsupported recipe"])
@@ -349,6 +385,7 @@ def _parse_recipe(value: Any, index: int) -> NetworkedRecipeContract:
         public_configuration_keys=public_keys,
         secret_configuration_keys=secret_keys,
         removal_paths=removal,
+        source_contract=source_contract,
     )
 
 

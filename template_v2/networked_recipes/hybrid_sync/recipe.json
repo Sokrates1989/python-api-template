@@ -1,0 +1,36 @@
+{
+  "backend_recipe_id": "hybrid_sync",
+  "backend_revision": "1.0.0",
+  "templates": [
+    {
+      "output_path": "migrations/versions/__APP_ID___002_hybrid_sync.py",
+      "sha256": "604feca7a25c9b2902716822f594868e1322e76867cb25ae39426f91dccbab11",
+      "template_path": "migrations/versions/__APP_ID___002_hybrid_sync.py.tmpl"
+    },
+    {
+      "output_path": "models/sync_state.py",
+      "sha256": "3ea8772f01a056cab92f797da3d97a141e4fc474df6c2ca7edf79b8f261d64b8",
+      "template_path": "models/sync_state.py.tmpl"
+    },
+    {
+      "output_path": "repositories/sync_repository.py",
+      "sha256": "3525f351631f8eec54466bb8091d1118d49b785b051f9e8f221c3d8226a2db11",
+      "template_path": "repositories/sync_repository.py.tmpl"
+    },
+    {
+      "output_path": "routes/sync.py",
+      "sha256": "21a3e4e57d5a5dc7a93509a0804e8221c165a447d588a27b50a2435fa621b4d0",
+      "template_path": "routes/sync.py.tmpl"
+    },
+    {
+      "output_path": "schemas/sync.py",
+      "sha256": "b42e11948310307432d3a0124323dcdd08c2e81114e121eded80821916b0871e",
+      "template_path": "schemas/sync.py.tmpl"
+    },
+    {
+      "output_path": "services/sync_service.py",
+      "sha256": "32a4d13f01da531770e82db9a822d8b30a60d599e0bb09b689c27dce1449ff89",
+      "template_path": "services/sync_service.py.tmpl"
+    }
+  ]
+}

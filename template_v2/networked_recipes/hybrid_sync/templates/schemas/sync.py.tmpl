@@ -1,0 +1,104 @@
+"""Bounded request and response schemas for generated hybrid synchronization."""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+class SyncPushOperationRequest(BaseModel):
+    """Validate one idempotent neutral-record mutation."""
+
+    operation_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$")
+    entity_type: Literal["record"]
+    entity_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+    mutation: Literal["upsert", "delete"]
+    payload: dict[str, Any] | None = None
+    base_version: int | None = Field(default=None, ge=0)
+    updated_at: datetime
+
+    @field_validator("payload")
+    @classmethod
+    def validate_payload_size(
+        cls,
+        value: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        """Reject payloads larger than the bounded neutral transport limit.
+
+        Args:
+            cls: Pydantic model class performing validation.
+            value: Candidate JSON object or null tombstone payload.
+
+        Returns:
+            Original payload when its canonical JSON is at most 32 KiB.
+
+        Raises:
+            ValueError: If canonical serialization exceeds 32 KiB.
+        """
+
+        if value is not None and len(
+            json.dumps(value, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        ) > 32_768:
+            raise ValueError("payload exceeds 32 KiB")
+        return value
+
+    @model_validator(mode="after")
+    def validate_mutation(self) -> "SyncPushOperationRequest":
+        """Enforce payload and UTC rules for upserts and tombstones.
+
+        Returns:
+            Validated operation.
+
+        Raises:
+            ValueError: If payload/mutation or timestamp semantics are invalid.
+        """
+
+        if (self.mutation == "upsert") != (self.payload is not None):
+            raise ValueError("upsert requires payload and delete requires null payload")
+        if self.updated_at.tzinfo is None or self.updated_at.utcoffset() is None:
+            raise ValueError("updated_at must include a timezone")
+        return self
+
+
+class SyncPushRequest(BaseModel):
+    """Validate one bounded batch of offline operations."""
+
+    operations: list[SyncPushOperationRequest] = Field(min_length=1, max_length=50)
+
+
+class SyncRemoteChange(BaseModel):
+    """Expose accepted or conflicting server state without owner identity."""
+
+    change_id: str
+    entity_type: Literal["record"]
+    entity_id: str
+    version: int = Field(ge=1)
+    payload: dict[str, Any] | None
+    deleted: bool
+    updated_at: datetime
+
+
+class SyncOperationResult(BaseModel):
+    """Expose one stable push disposition."""
+
+    operation_id: str
+    disposition: Literal["applied", "conflict", "rejected"]
+    remote_change: SyncRemoteChange | None = None
+    failure_code: str | None = None
+
+
+class SyncPushResponse(BaseModel):
+    """Expose ordered results for one bounded push batch."""
+
+    results: list[SyncOperationResult]
+
+
+class SyncPullResponse(BaseModel):
+    """Expose one bounded owner-scoped change-feed page."""
+
+    changes: list[SyncRemoteChange]
+    next_cursor: str | None = Field(default=None, max_length=256)
+    has_more: bool

@@ -13,6 +13,7 @@ from template_v2.networked_recipes_contract import (
     NetworkedRecipesContractError,
     validate_networked_recipes_contract,
 )
+from template_v2.networked_recipe_sources import validate_networked_recipe_sources
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -33,7 +34,7 @@ class NetworkedRecipesContractTest(unittest.TestCase):
 
         source = REPOSITORY_ROOT.joinpath(*CONTRACT_RELATIVE_PATH.split("/"))
         target = destination.joinpath(*CONTRACT_RELATIVE_PATH.split("/"))
-        target.parent.mkdir(parents=True)
+        target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, target)
         return destination
 
@@ -42,8 +43,8 @@ class NetworkedRecipesContractTest(unittest.TestCase):
 
         catalog = validate_networked_recipes_contract(REPOSITORY_ROOT)
 
-        self.assertEqual(catalog.contract_version, 1)
-        self.assertEqual(catalog.catalog_revision, "0.1.0")
+        self.assertEqual(catalog.contract_version, 2)
+        self.assertEqual(catalog.catalog_revision, "0.2.0")
         self.assertEqual(
             tuple(recipe.backend_recipe_id for recipe in catalog.recipes),
             (
@@ -53,8 +54,9 @@ class NetworkedRecipesContractTest(unittest.TestCase):
                 "account_erasure",
             ),
         )
-        self.assertTrue(
-            all(recipe.implementation_status == "contract_only" for recipe in catalog.recipes)
+        self.assertEqual(
+            tuple(recipe.implementation_status for recipe in catalog.recipes),
+            ("renderable", "contract_only", "contract_only", "contract_only"),
         )
         for recipe in catalog.recipes:
             self.assertTrue(recipe.routes)
@@ -66,6 +68,70 @@ class NetworkedRecipesContractTest(unittest.TestCase):
             self.assertFalse(
                 any(route.path == "/api" or route.path.startswith("/api/") for route in recipe.routes)
             )
+
+    def test_hybrid_sync_sources_render_complete_syntax_safe_slice(self) -> None:
+        """Validate checksums and render only the promoted hybrid-sync files."""
+
+        catalog = validate_networked_recipes_contract(REPOSITORY_ROOT)
+        recipes = validate_networked_recipe_sources(REPOSITORY_ROOT, catalog)
+        self.assertEqual(len(recipes), 1)
+        self.assertEqual(recipes[0].backend_recipe_id, "hybrid_sync")
+        self.assertEqual(recipes[0].backend_revision, "1.0.0")
+        files = {
+            item.relative_path: item.content
+            for item in recipes[0].render("sample_app")
+        }
+        self.assertEqual(
+            tuple(files),
+            (
+                "migrations/versions/sample_app_002_hybrid_sync.py",
+                "models/sync_state.py",
+                "repositories/sync_repository.py",
+                "routes/sync.py",
+                "schemas/sync.py",
+                "services/sync_service.py",
+            ),
+        )
+        rendered = b"\n".join(files.values())
+        self.assertIn(b'prefix="/sync"', rendered)
+        self.assertIn(b"operation_id_collision", rendered)
+        self.assertIn(b"version_conflict", rendered)
+        self.assertIn(b"next_cursor", rendered)
+        self.assertNotIn(b"__APP_ID__", rendered)
+        self.assertNotIn(b'prefix="/api/', rendered)
+        for path, content in files.items():
+            compile(content, path, "exec")
+
+    def test_hybrid_sync_source_drift_fails_closed(self) -> None:
+        """Reject a changed renderable template before any output is returned."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shutil.copytree(
+                REPOSITORY_ROOT / "template_v2" / "networked_recipes",
+                root / "template_v2" / "networked_recipes",
+            )
+            self._copy_contract(root)
+            source = (
+                root
+                / "template_v2"
+                / "networked_recipes"
+                / "hybrid_sync"
+                / "templates"
+                / "routes"
+                / "sync.py.tmpl"
+            )
+            source.write_text(
+                source.read_text(encoding="utf-8") + "\n# drift\n",
+                encoding="utf-8",
+            )
+            catalog = validate_networked_recipes_contract(root)
+
+            with self.assertRaisesRegex(
+                NetworkedRecipesContractError,
+                "checksum drifted",
+            ):
+                validate_networked_recipe_sources(root, catalog)
 
     def test_redundant_api_prefix_fails_closed(self) -> None:
         """Reject a route that would collide with API-domain proxy routers."""

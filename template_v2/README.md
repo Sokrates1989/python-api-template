@@ -11,8 +11,9 @@ repository, service, schemas, authenticated routes, and Alembic migration used
 only by the standard Keycloak/PostgreSQL pair.
 `networked_recipes_contract.json` starts B4 with the fixed four-recipe catalog,
 matching Flutter versions, dependency order, routes, configuration ownership,
-generated paths, and complete removal boundaries. Its entries remain honestly
-`contract_only` until their checksum-pinned Python sources pass lifecycle proof.
+generated paths, and complete removal boundaries. Hybrid sync is the first
+checksum-pinned `renderable` source contract; the other entries remain honestly
+`contract_only` until their Python sources pass lifecycle proof.
 The lifecycle modules own read-only planning, managed creation/update, explicit
 detach, root registration, and exact create rollback for generated backend
 applications.
@@ -30,6 +31,9 @@ applications.
   compatibility and removal catalog without embedding values or credentials.
 - `networked_recipes_contract.py` independently validates its identity, route
   safety, configuration ownership, deterministic order, and removal coverage.
+- `networked_recipe_sources.py` verifies every promoted source manifest,
+  complete output coverage, and LF-normalized template checksum before safe
+  app-id substitution.
 - `backend_lifecycle.py` is the public in-process lifecycle facade.
 - `backend_lifecycle_planning.py` validates desired/current ownership and
   returns content-free stale-state-bound plans.

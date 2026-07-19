@@ -1,0 +1,236 @@
+"""PostgreSQL repository for generated neutral record synchronization."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from datetime import datetime, timezone
+from typing import Any
+
+from sqlalchemy import select
+
+from apps.__APP_ID__.models.sync_state import SyncChange, SyncEntity, SyncOperation
+from apps.__APP_ID__.schemas.sync import SyncPushOperationRequest
+from backend.database.factory import get_database_handler
+from backend.database.sql_handler import SQLHandler
+
+
+class SyncRepository:
+    """Own transactional idempotency, version, tombstone, and feed storage."""
+
+    def __init__(self, handler_factory: Callable[[], Any] = get_database_handler) -> None:
+        """Resolve the selected SQL handler lazily.
+
+        Args:
+            handler_factory: Callable returning the configured database handler.
+
+        Raises:
+            RuntimeError: If the selected backend is not SQL based.
+        """
+
+        handler = handler_factory()
+        if not isinstance(handler, SQLHandler):
+            raise RuntimeError("hybrid sync requires the PostgreSQL backend profile")
+        self._handler = handler
+
+    @staticmethod
+    def _change_payload(change: SyncChange) -> dict[str, Any]:
+        """Serialize one persisted change without its owner subject.
+
+        Args:
+            change: Persisted immutable change row.
+
+        Returns:
+            Public response mapping.
+        """
+
+        return {
+            "change_id": str(change.sequence),
+            "entity_type": change.entity_type,
+            "entity_id": change.entity_id,
+            "version": change.version,
+            "payload": change.payload,
+            "deleted": change.deleted,
+            "updated_at": change.updated_at.isoformat(),
+        }
+
+    @staticmethod
+    def _entity_payload(entity: SyncEntity) -> dict[str, Any]:
+        """Serialize current server state for a conflict result.
+
+        Args:
+            entity: Current owned entity row.
+
+        Returns:
+            Public response mapping using a non-cursor conflict identity.
+        """
+
+        return {
+            "change_id": f"conflict:{entity.version}",
+            "entity_type": entity.entity_type,
+            "entity_id": entity.entity_id,
+            "version": entity.version,
+            "payload": entity.payload,
+            "deleted": entity.deleted,
+            "updated_at": entity.updated_at.isoformat(),
+        }
+
+    async def apply_operation(
+        self,
+        owner_subject: str,
+        operation: SyncPushOperationRequest,
+        request_sha256: str,
+    ) -> dict[str, Any]:
+        """Apply or replay one subject-owned operation transactionally.
+
+        Args:
+            owner_subject: Verified identity-provider subject.
+            operation: Validated neutral-record mutation.
+            request_sha256: Canonical operation digest used for collision checks.
+
+        Returns:
+            Stable applied, conflict, or rejected result mapping.
+        """
+
+        async with self._handler.AsyncSessionLocal() as session:
+            async with session.begin():
+                prior = await session.scalar(
+                    select(SyncOperation).where(
+                        SyncOperation.owner_subject == owner_subject,
+                        SyncOperation.operation_id == operation.operation_id,
+                    )
+                )
+                if prior is not None:
+                    if prior.request_sha256 == request_sha256:
+                        return dict(prior.result)
+                    return {
+                        "operation_id": operation.operation_id,
+                        "disposition": "rejected",
+                        "remote_change": None,
+                        "failure_code": "operation_id_collision",
+                    }
+                entity = await session.scalar(
+                    select(SyncEntity)
+                    .where(
+                        SyncEntity.owner_subject == owner_subject,
+                        SyncEntity.entity_type == operation.entity_type,
+                        SyncEntity.entity_id == operation.entity_id,
+                    )
+                    .with_for_update()
+                )
+                current_version = entity.version if entity is not None else 0
+                expected_version = operation.base_version or 0
+                if expected_version != current_version:
+                    result = {
+                        "operation_id": operation.operation_id,
+                        "disposition": "conflict",
+                        "remote_change": (
+                            self._entity_payload(entity) if entity is not None else None
+                        ),
+                        "failure_code": "version_conflict",
+                    }
+                else:
+                    result = await self._apply_change(
+                        session,
+                        owner_subject,
+                        operation,
+                        entity,
+                        current_version + 1,
+                    )
+                session.add(
+                    SyncOperation(
+                        owner_subject=owner_subject,
+                        operation_id=operation.operation_id,
+                        request_sha256=request_sha256,
+                        result=result,
+                        created_at=datetime.now(timezone.utc),
+                    )
+                )
+            return result
+
+    async def _apply_change(
+        self,
+        session: Any,
+        owner_subject: str,
+        operation: SyncPushOperationRequest,
+        entity: SyncEntity | None,
+        next_version: int,
+    ) -> dict[str, Any]:
+        """Persist one accepted entity state and immutable change row.
+
+        Args:
+            session: Active SQLAlchemy async session and transaction.
+            owner_subject: Verified identity-provider subject.
+            operation: Validated neutral-record mutation.
+            entity: Locked existing entity, or null for first creation.
+            next_version: Monotonic accepted server version.
+
+        Returns:
+            Stable applied result mapping.
+        """
+
+        changed_at = datetime.now(timezone.utc)
+        deleted = operation.mutation == "delete"
+        if entity is None:
+            entity = SyncEntity(
+                owner_subject=owner_subject,
+                entity_type=operation.entity_type,
+                entity_id=operation.entity_id,
+                version=next_version,
+                payload=operation.payload,
+                deleted=deleted,
+                updated_at=changed_at,
+            )
+            session.add(entity)
+        else:
+            entity.version = next_version
+            entity.payload = operation.payload
+            entity.deleted = deleted
+            entity.updated_at = changed_at
+        change = SyncChange(
+            owner_subject=owner_subject,
+            entity_type=operation.entity_type,
+            entity_id=operation.entity_id,
+            version=next_version,
+            payload=operation.payload,
+            deleted=deleted,
+            updated_at=changed_at,
+        )
+        session.add(change)
+        await session.flush()
+        return {
+            "operation_id": operation.operation_id,
+            "disposition": "applied",
+            "remote_change": self._change_payload(change),
+            "failure_code": None,
+        }
+
+    async def pull_changes(
+        self,
+        owner_subject: str,
+        *,
+        after_sequence: int,
+        limit: int,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """Return one owner-only page after a decoded cursor sequence.
+
+        Args:
+            owner_subject: Verified identity-provider subject.
+            after_sequence: Exclusive prior sequence, or zero initially.
+            limit: Maximum public changes returned.
+
+        Returns:
+            Serialized changes and whether another page exists.
+        """
+
+        async with self._handler.AsyncSessionLocal() as session:
+            rows = await session.execute(
+                select(SyncChange)
+                .where(
+                    SyncChange.owner_subject == owner_subject,
+                    SyncChange.sequence > after_sequence,
+                )
+                .order_by(SyncChange.sequence.asc())
+                .limit(limit + 1)
+            )
+        values = list(rows.scalars().all())
+        return [self._change_payload(item) for item in values[:limit]], len(values) > limit
