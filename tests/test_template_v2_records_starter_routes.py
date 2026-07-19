@@ -239,6 +239,8 @@ def test_generated_routes_enforce_subject_isolation_conflict_and_idempotency(
     )
     assert conflict.status_code == 409
     assert conflict.json()["detail"]["code"] == "record_revision_conflict"
+    assert conflict.json()["detail"]["retryable"] is True
+    assert conflict.json()["detail"]["current_revision"] == 2
     assert client.get("/records?limit=1&offset=0").json()["total"] == 1
     assert client.delete(f"/records/{record['id']}").json() == {"deleted": True}
     assert client.delete(f"/records/{record['id']}").json() == {"deleted": False}

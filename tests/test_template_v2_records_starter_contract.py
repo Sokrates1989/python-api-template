@@ -64,6 +64,7 @@ def test_records_contract_renders_complete_subject_scoped_starter() -> None:
     assert b"max_length=120" in schemas
     assert b"max_length=4000" in schemas
     assert b"expected_revision: int = Field(ge=1)" in schemas
+    assert b"current_revision: int | None = Field(default=None, ge=1)" in schemas
     migration = outputs["migrations/versions/sample_app_001_records.py"]
     assert b"def upgrade()" in migration
     assert b"def downgrade()" in migration

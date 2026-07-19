@@ -10,7 +10,8 @@ The Flutter pair orchestrator may validate and substitute the declared
 placeholders, but it must not carry a competing backend implementation. The
 generated app identifier supplies the Python import root, table name, index
 name, and Alembic revision. Credentials and environment values are never
-template substitutions.
+template substitutions. Revision conflicts expose the latest owned revision
+as `detail.current_revision`; other errors omit that optional field.
 
 Safe edits require updating the changed template digest, the validator tests,
 and both repositories' supported starter revision in one coordinated change.

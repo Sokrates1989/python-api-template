@@ -37,6 +37,7 @@ def _record_error(
     message: str,
     *,
     retryable: bool = False,
+    current_revision: int | None = None,
 ) -> HTTPException:
     """Build one stable HTTP error detail payload.
 
@@ -45,15 +46,20 @@ def _record_error(
         code: Stable machine-readable error code.
         message: Safe user-facing summary.
         retryable: Whether repeating later may succeed.
+        current_revision: Latest owned revision for a conflict, otherwise null.
 
     Returns:
         FastAPI exception containing the stable detail object.
     """
 
-    return HTTPException(
-        status_code=status_code,
-        detail={"code": code, "message": message, "retryable": retryable},
-    )
+    detail: dict[str, str | bool | int] = {
+        "code": code,
+        "message": message,
+        "retryable": retryable,
+    }
+    if current_revision is not None:
+        detail["current_revision"] = current_revision
+    return HTTPException(status_code=status_code, detail=detail)
 
 
 @router.get("", response_model=RecordListResponse)
@@ -163,6 +169,8 @@ async def update_record(
             409,
             "record_revision_conflict",
             f"Record changed; latest revision is {error.current_revision}.",
+            retryable=True,
+            current_revision=error.current_revision,
         ) from error
     if record is None:
         raise _record_error(404, "record_not_found", "Record was not found.")

@@ -52,7 +52,7 @@
     },
     {
       "output_path": "routes/records.py",
-      "sha256": "462de33898812283601c21af4e476b0f64587dfb5fe830c5062c51d0f0840c1d",
+      "sha256": "f2e9f53da8e59964e36ba82834cd710a10c213602df2cf385f934f4182507e13",
       "template_path": "routes/records.py.tmpl"
     },
     {
@@ -62,7 +62,7 @@
     },
     {
       "output_path": "schemas/records.py",
-      "sha256": "3bd9b990ce02ab5deb4043a669048fb589e8b6d1c3bbc22d852e83f90a46e20e",
+      "sha256": "eaadd0c51d0e80d13132d2530e4746467dc840ff59ea09dc8e595d441a0ea554",
       "template_path": "schemas/records.py.tmpl"
     },
     {
