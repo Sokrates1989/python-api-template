@@ -17,7 +17,7 @@ from typing import Any
 CONTRACT_RELATIVE_PATH = "template_v2/networked_recipes_contract.json"
 SUPPORTED_CONTRACT_ID = "template-v2-networked-recipes"
 SUPPORTED_CONTRACT_VERSION = 3
-SUPPORTED_CATALOG_REVISION = "0.3.0"
+SUPPORTED_CATALOG_REVISION = "0.4.0"
 _MAX_FILE_BYTES = 1_000_000
 _CONFIG_KEY_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{2,79}$")
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -36,7 +36,7 @@ _SUPPORTED_DEPENDENCIES = frozenset(
 _EXPECTED_RECIPES = (
     ("hybrid_sync", "1.0.0", "hybrid_sync", "1.0.0"),
     ("authenticated_web_push", "1.0.0", "pwa_web", "1.0.0"),
-    ("ai_chat", "0.1.0", "ai_chat", "1.0.0"),
+    ("ai_chat", "1.0.0", "ai_chat", "1.0.0"),
     ("account_erasure", "0.1.0", "account_erasure", "1.0.0"),
 )
 _EXPECTED_SOURCE_CONTRACTS = {
@@ -44,7 +44,7 @@ _EXPECTED_SOURCE_CONTRACTS = {
     "authenticated_web_push": (
         "template_v2/networked_recipes/authenticated_web_push/recipe.json"
     ),
-    "ai_chat": None,
+    "ai_chat": "template_v2/networked_recipes/ai_chat/recipe.json",
     "account_erasure": None,
 }
 _EXPECTED_PYTHON_DEPENDENCY_PROFILES = {

@@ -44,7 +44,7 @@ class NetworkedRecipesContractTest(unittest.TestCase):
         catalog = validate_networked_recipes_contract(REPOSITORY_ROOT)
 
         self.assertEqual(catalog.contract_version, 3)
-        self.assertEqual(catalog.catalog_revision, "0.3.0")
+        self.assertEqual(catalog.catalog_revision, "0.4.0")
         self.assertEqual(
             tuple(recipe.backend_recipe_id for recipe in catalog.recipes),
             (
@@ -56,7 +56,7 @@ class NetworkedRecipesContractTest(unittest.TestCase):
         )
         self.assertEqual(
             tuple(recipe.implementation_status for recipe in catalog.recipes),
-            ("renderable", "renderable", "contract_only", "contract_only"),
+            ("renderable", "renderable", "renderable", "contract_only"),
         )
         self.assertEqual(
             catalog.recipes[1].python_dependency_profile,
@@ -82,7 +82,7 @@ class NetworkedRecipesContractTest(unittest.TestCase):
 
         catalog = validate_networked_recipes_contract(REPOSITORY_ROOT)
         recipes = validate_networked_recipe_sources(REPOSITORY_ROOT, catalog)
-        self.assertEqual(len(recipes), 2)
+        self.assertEqual(len(recipes), 3)
         self.assertEqual(recipes[0].backend_recipe_id, "hybrid_sync")
         self.assertEqual(recipes[0].backend_revision, "1.0.0")
         files = {
@@ -141,6 +141,43 @@ class NetworkedRecipesContractTest(unittest.TestCase):
         self.assertIn(b"WebPushDeliveryCoordinator", rendered)
         self.assertIn(b"delete_subscription(owner_subject", rendered)
         self.assertNotIn(b"@router.post", files["routes/web_push.py"])
+        self.assertNotIn(b"__APP_ID__", rendered)
+        self.assertNotIn(b'prefix="/api/', rendered)
+        for path, content in files.items():
+            compile(content, path, "exec")
+
+    def test_ai_chat_sources_cover_consent_context_history_and_error_seams(self) -> None:
+        """Render the authenticated minimized-history AI chat backend slice."""
+
+        catalog = validate_networked_recipes_contract(REPOSITORY_ROOT)
+        recipes = validate_networked_recipe_sources(REPOSITORY_ROOT, catalog)
+        recipe = next(item for item in recipes if item.backend_recipe_id == "ai_chat")
+        self.assertEqual(recipe.backend_revision, "1.0.0")
+        files = {
+            item.relative_path: item.content
+            for item in recipe.render("sample_app")
+        }
+        self.assertEqual(
+            tuple(files),
+            (
+                "migrations/versions/sample_app_004_ai_chat_history.py",
+                "models/ai_chat_message.py",
+                "repositories/ai_chat_repository.py",
+                "routes/ai_chat.py",
+                "schemas/ai_chat.py",
+                "services/ai_chat_service.py",
+            ),
+        )
+        rendered = b"\n".join(files.values())
+        self.assertIn(b'prefix="/ai"', rendered)
+        self.assertIn(b'@router.post("/chat"', rendered)
+        self.assertIn(b"AiChatConsentProof", rendered)
+        self.assertIn(b"RejectUnreviewedContext", rendered)
+        self.assertIn(b"AllowAllAiChatQuota", rendered)
+        self.assertIn(b"on_conflict_do_nothing", rendered)
+        self.assertIn(b"delete_owner_data", rendered)
+        self.assertNotIn(b"context_payload", files["models/ai_chat_message.py"])
+        self.assertNotIn(b"provider_name", files["models/ai_chat_message.py"])
         self.assertNotIn(b"__APP_ID__", rendered)
         self.assertNotIn(b'prefix="/api/', rendered)
         for path, content in files.items():

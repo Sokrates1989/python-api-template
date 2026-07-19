@@ -1,5 +1,5 @@
 {
-  "catalog_revision": "0.3.0",
+  "catalog_revision": "0.4.0",
   "contract_id": "template-v2-networked-recipes",
   "contract_version": 3,
   "recipes": [
@@ -105,13 +105,13 @@
     },
     {
       "backend_recipe_id": "ai_chat",
-      "backend_revision": "0.1.0",
+      "backend_revision": "1.0.0",
       "depends_on": [
         "keycloak_auth"
       ],
       "flutter_recipe_id": "ai_chat",
       "flutter_recipe_version": "1.0.0",
-      "implementation_status": "contract_only",
+      "implementation_status": "renderable",
       "migration_paths": [
         "migrations/versions/__APP_ID___004_ai_chat_history.py"
       ],
@@ -139,9 +139,10 @@
         }
       ],
       "secret_configuration_keys": [
-        "AI_CHAT_API_KEY"
+        "AI_CHAT_API_KEY",
+        "AI_CHAT_API_KEY_FILE"
       ],
-      "source_contract": null,
+      "source_contract": "template_v2/networked_recipes/ai_chat/recipe.json",
       "service_paths": [
         "models/ai_chat_message.py",
         "repositories/ai_chat_repository.py",

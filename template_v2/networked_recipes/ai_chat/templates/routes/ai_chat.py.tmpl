@@ -1,0 +1,57 @@
+"""Authenticated generated route for provider-neutral AI chat."""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from api.shared_dependencies.auth import get_user_id_from_token
+from apps.__APP_ID__.schemas.ai_chat import AiChatRequest, AiChatResponse
+from apps.__APP_ID__.services.ai_chat_service import AiChatService, AiChatServiceError
+
+
+router = APIRouter(prefix="/ai", tags=["ai-chat"])
+
+
+def get_ai_chat_service() -> AiChatService:
+    """Return the generated AI chat application service.
+
+    Returns:
+        Service bound to PostgreSQL and backend-only provider configuration.
+    """
+
+    return AiChatService()
+
+
+@router.post("/chat", response_model=AiChatResponse)
+async def ask_ai_chat(
+    request: AiChatRequest,
+    owner_subject: str = Depends(get_user_id_from_token),
+    service: AiChatService = Depends(get_ai_chat_service),
+) -> AiChatResponse:
+    """Return one idempotent assistant response for the verified subject.
+
+    Args:
+        request: Consent-validated bounded AI chat request.
+        owner_subject: Verified subject injected by authentication.
+        service: Generated AI chat orchestration dependency.
+
+    Returns:
+        Visible assistant text and content-free replay metadata.
+
+    Raises:
+        HTTPException: Stable 422, 429, or 503 response for policy/provider
+            failures without request, context, credential, or raw error data.
+    """
+
+    try:
+        result = await service.ask(owner_subject, request)
+    except AiChatServiceError as error:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail={
+                "code": error.code,
+                "message": "The AI assistant request could not be completed.",
+                "retryable": error.retryable,
+            },
+        ) from error
+    return AiChatResponse.model_validate(result)

@@ -11,9 +11,9 @@ repository, service, schemas, authenticated routes, and Alembic migration used
 only by the standard Keycloak/PostgreSQL pair.
 `networked_recipes_contract.json` starts B4 with the fixed four-recipe catalog,
 matching Flutter versions, dependency order, routes, configuration ownership,
-generated paths, and complete removal boundaries. Hybrid sync and authenticated
-Web Push are checksum-pinned `renderable` source contracts. AI chat and account
-erasure remain honestly `contract_only` until their Python sources pass
+generated paths, and complete removal boundaries. Hybrid sync, authenticated
+Web Push, and AI chat are checksum-pinned `renderable` source contracts.
+Account erasure remains honestly `contract_only` until its Python sources pass
 lifecycle proof.
 The lifecycle modules own read-only planning, managed creation/update, explicit
 detach, root registration, and exact create rollback for generated backend
@@ -66,6 +66,13 @@ upsert/delete routes, and an internal delivery seam that performs stale-endpoint
 cleanup. Visible notification policy and worker invocation remain app-owned;
 VAPID public/contact configuration is deployment-owned and the private key is a
 backend-only mounted-file reference.
+
+The AI chat recipe adds authenticated `/ai/chat` transport, explicit consent
+proof, reject-by-default context hints, app-injectable quota/context ports,
+backend-only provider configuration, and idempotent owner-scoped persistence.
+Only opaque app identifiers and visible user/assistant messages are retained;
+prompts, consent proofs, context, provider/model data, credentials, tokens,
+diagnostics, and raw errors remain absent from generated storage.
 
 ## Safe Editing
 

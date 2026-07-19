@@ -1,0 +1,400 @@
+"""Provider-neutral AI chat orchestration with explicit policy seams."""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any, Protocol
+
+import requests
+
+from apps.__APP_ID__.repositories.ai_chat_repository import AiChatRepository
+from apps.__APP_ID__.schemas.ai_chat import AiChatRequest
+
+
+class AiChatServiceError(RuntimeError):
+    """Expose one stable content-free route error.
+
+    Attributes:
+        code: Machine-readable failure code.
+        retryable: Whether a later request may succeed unchanged.
+        status_code: Safe HTTP status selected by the service boundary.
+    """
+
+    def __init__(self, code: str, *, retryable: bool, status_code: int) -> None:
+        """Create a stable error without retaining request or provider content.
+
+        Args:
+            code: Machine-readable content-free failure code.
+            retryable: Whether retry may succeed.
+            status_code: HTTP status returned by the generated route.
+        """
+
+        self.code = code
+        self.retryable = retryable
+        self.status_code = status_code
+        super().__init__(code)
+
+
+class AiChatContextPort(Protocol):
+    """Translate app-reviewed context into provider messages."""
+
+    async def messages(
+        self,
+        owner_subject: str,
+        context: Mapping[str, str],
+        locale: str,
+    ) -> list[dict[str, str]]:
+        """Return minimized provider messages for reviewed app context.
+
+        Args:
+            owner_subject: Verified subject used only for app-owned lookup.
+            context: Bounded untrusted request hints.
+            locale: Validated locale hint.
+
+        Returns:
+            Reviewed provider message prefix, possibly empty.
+
+        Raises:
+            AiChatServiceError: If supplied context is not explicitly allowed.
+        """
+        ...
+
+
+class AiChatQuotaPort(Protocol):
+    """Apply an app-owned quota policy before provider work."""
+
+    async def check(self, owner_subject: str) -> None:
+        """Allow or reject one verified-owner request.
+
+        Args:
+            owner_subject: Verified identity-provider subject.
+
+        Raises:
+            AiChatServiceError: With status 429 when quota is exhausted.
+        """
+        ...
+
+
+class AiChatProviderPort(Protocol):
+    """Complete already minimized provider-neutral chat messages."""
+
+    async def complete(self, messages: list[dict[str, str]]) -> str:
+        """Return final visible assistant text.
+
+        Args:
+            messages: Bounded history, context, and current user message.
+
+        Returns:
+            Visible assistant text.
+
+        Raises:
+            AiChatServiceError: If provider configuration or delivery fails.
+        """
+        ...
+
+
+class RejectUnreviewedContext:
+    """Reject non-empty context until the app injects a reviewed policy."""
+
+    async def messages(
+        self,
+        owner_subject: str,
+        context: Mapping[str, str],
+        locale: str,
+    ) -> list[dict[str, str]]:
+        """Permit empty context and reject every unreviewed context hint.
+
+        Args:
+            owner_subject: Verified subject, intentionally not retained.
+            context: Bounded request hints.
+            locale: Validated locale, intentionally not interpreted.
+
+        Returns:
+            Empty provider-message prefix when no context was supplied.
+
+        Raises:
+            AiChatServiceError: When context is non-empty.
+        """
+
+        del owner_subject, locale
+        if context:
+            raise AiChatServiceError(
+                "ai_chat_context_not_configured",
+                retryable=False,
+                status_code=422,
+            )
+        return []
+
+
+class AllowAllAiChatQuota:
+    """Provide a neutral quota seam without inventing product limits."""
+
+    async def check(self, owner_subject: str) -> None:
+        """Allow a request while leaving policy to an injected app port.
+
+        Args:
+            owner_subject: Verified subject, intentionally not retained.
+
+        Returns:
+            None after allowing the request.
+        """
+
+        del owner_subject
+
+
+@dataclass(frozen=True)
+class AiChatProviderConfiguration:
+    """Hold backend-only completion-provider settings.
+
+    Attributes:
+        endpoint: OpenAI-compatible completion endpoint.
+        api_key: Optional bearer credential read only in the backend process.
+        model: Optional deployment-owned model identifier.
+        max_tokens: Bounded response token budget.
+        timeout_seconds: Provider request timeout.
+    """
+
+    endpoint: str
+    api_key: str
+    model: str
+    max_tokens: int
+    timeout_seconds: float
+
+
+class ConfiguredAiChatProvider:
+    """Call the deployment-configured OpenAI-compatible backend endpoint."""
+
+    async def complete(self, messages: list[dict[str, str]]) -> str:
+        """Execute one provider call outside the async event loop.
+
+        Args:
+            messages: Bounded provider-neutral chat messages.
+
+        Returns:
+            Final visible assistant response.
+
+        Raises:
+            AiChatServiceError: If configuration, transport, or response fails.
+        """
+
+        configuration = _load_provider_configuration()
+        return await asyncio.to_thread(_post_completion, configuration, messages)
+
+
+class AiChatService:
+    """Coordinate consent-validated requests and minimized durable history."""
+
+    def __init__(
+        self,
+        repository: AiChatRepository | None = None,
+        *,
+        context_port: AiChatContextPort | None = None,
+        quota_port: AiChatQuotaPort | None = None,
+        provider: AiChatProviderPort | None = None,
+    ) -> None:
+        """Create the service around injectable app and provider policies.
+
+        Args:
+            repository: Optional owner-scoped history repository.
+            context_port: Optional reviewed context minimization policy.
+            quota_port: Optional app-owned quota policy.
+            provider: Optional completion provider implementation.
+        """
+
+        self._repository = repository or AiChatRepository()
+        self._context = context_port or RejectUnreviewedContext()
+        self._quota = quota_port or AllowAllAiChatQuota()
+        self._provider = provider or ConfiguredAiChatProvider()
+
+    async def ask(self, owner_subject: str, request: AiChatRequest) -> dict[str, Any]:
+        """Return or create one idempotent owner-scoped assistant exchange.
+
+        Args:
+            owner_subject: Verified identity-provider subject.
+            request: Consent-validated bounded request.
+
+        Returns:
+            Schema-compatible response with visible text and replay state.
+
+        Raises:
+            AiChatServiceError: For context, quota, configuration, provider,
+                or invalid provider-response failures.
+        """
+
+        prior = await self._repository.find_exchange(owner_subject, request.request_id)
+        if prior is not None:
+            return _response(prior, replayed=True)
+        context_messages = await self._context.messages(
+            owner_subject,
+            request.context,
+            request.locale,
+        )
+        await self._quota.check(owner_subject)
+        history = await self._repository.load_history(
+            owner_subject,
+            request.conversation_id,
+        )
+        messages = [
+            *context_messages,
+            *history,
+            {"role": "user", "content": request.message},
+        ]
+        answer = _validated_answer(await self._provider.complete(messages))
+        stored, created = await self._repository.store_exchange(
+            owner_subject,
+            conversation_id=request.conversation_id,
+            request_id=request.request_id,
+            user_message=request.message,
+            assistant_message=answer,
+        )
+        return _response(stored, replayed=not created)
+
+
+def _load_provider_configuration() -> AiChatProviderConfiguration:
+    """Read declared provider settings lazily from the backend environment.
+
+    Returns:
+        Validated backend-only provider configuration.
+
+    Raises:
+        AiChatServiceError: If the completion endpoint or secret file is invalid.
+    """
+
+    from api.settings import settings
+
+    endpoint = settings.AI_CHAT_COMPLETIONS_ENDPOINT.strip()
+    if not endpoint:
+        raise AiChatServiceError(
+            "ai_chat_provider_unconfigured",
+            retryable=False,
+            status_code=503,
+        )
+    try:
+        api_key = settings.get_ai_chat_api_key()
+    except ValueError as error:
+        raise AiChatServiceError(
+            "ai_chat_provider_secret_unavailable",
+            retryable=False,
+            status_code=503,
+        ) from error
+    return AiChatProviderConfiguration(
+        endpoint=endpoint,
+        api_key=api_key,
+        model=settings.AI_CHAT_MODEL.strip(),
+        max_tokens=settings.AI_CHAT_MAX_TOKENS,
+        timeout_seconds=settings.AI_CHAT_TIMEOUT_SECONDS,
+    )
+
+
+def _post_completion(
+    configuration: AiChatProviderConfiguration,
+    messages: list[dict[str, str]],
+) -> str:
+    """Perform one blocking completion request without logging sensitive data.
+
+    Args:
+        configuration: Backend-only provider settings.
+        messages: Bounded minimized chat messages.
+
+    Returns:
+        Final visible assistant text.
+
+    Raises:
+        AiChatServiceError: If transport or response decoding fails.
+    """
+
+    headers = {"Content-Type": "application/json"}
+    if configuration.api_key:
+        headers["Authorization"] = f"Bearer {configuration.api_key}"
+    payload: dict[str, Any] = {
+        "messages": messages,
+        "max_tokens": configuration.max_tokens,
+    }
+    if configuration.model:
+        payload["model"] = configuration.model
+    try:
+        response = requests.post(
+            configuration.endpoint,
+            headers=headers,
+            json=payload,
+            timeout=configuration.timeout_seconds,
+        )
+        response.raise_for_status()
+        answer = _extract_answer(response.json())
+    except (requests.RequestException, ValueError) as error:
+        raise AiChatServiceError(
+            "ai_chat_provider_unavailable",
+            retryable=True,
+            status_code=503,
+        ) from error
+    return _validated_answer(answer)
+
+
+def _extract_answer(body: Any) -> str:
+    """Extract visible text from common completion response shapes.
+
+    Args:
+        body: Decoded provider response body.
+
+    Returns:
+        Assistant text, or an empty string when unsupported.
+    """
+
+    if not isinstance(body, dict):
+        return ""
+    output_text = body.get("output_text")
+    if isinstance(output_text, str):
+        return output_text
+    choices = body.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return ""
+    first = choices[0]
+    if not isinstance(first, dict):
+        return ""
+    message = first.get("message")
+    if isinstance(message, dict) and isinstance(message.get("content"), str):
+        return message["content"]
+    return str(first.get("text") or "")
+
+
+def _validated_answer(value: str) -> str:
+    """Validate provider text before persistence or public response.
+
+    Args:
+        value: Unknown provider answer text.
+
+    Returns:
+        Trimmed visible assistant text.
+
+    Raises:
+        AiChatServiceError: If the answer is empty or exceeds 12,000 chars.
+    """
+
+    answer = str(value or "").strip()
+    if not answer or len(answer) > 12000:
+        raise AiChatServiceError(
+            "ai_chat_provider_response_invalid",
+            retryable=True,
+            status_code=503,
+        )
+    return answer
+
+
+def _response(exchange: Mapping[str, Any], *, replayed: bool) -> dict[str, Any]:
+    """Build a schema-compatible response from a persisted exchange.
+
+    Args:
+        exchange: Owner-filtered repository payload.
+        replayed: Whether an existing exchange was reused.
+
+    Returns:
+        Public response without owner, provider, prompt, or context data.
+    """
+
+    return {
+        "request_id": exchange["request_id"],
+        "message": exchange["assistant_message"],
+        "replayed": replayed,
+    }

@@ -1,0 +1,191 @@
+"""PostgreSQL repository for minimized owner-scoped AI chat history."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from datetime import datetime, timezone
+from typing import Any
+
+from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert
+
+from apps.__APP_ID__.models.ai_chat_message import AiChatExchange
+from backend.database.factory import get_database_handler
+from backend.database.sql_handler import SQLHandler
+
+
+class AiChatRepository:
+    """Store only visible exchanges under a verified subject boundary."""
+
+    def __init__(self, handler_factory: Callable[[], Any] = get_database_handler) -> None:
+        """Resolve the selected SQL handler lazily.
+
+        Args:
+            handler_factory: Callable returning the configured database handler.
+
+        Raises:
+            RuntimeError: If the selected backend is not SQL based.
+        """
+
+        handler = handler_factory()
+        if not isinstance(handler, SQLHandler):
+            raise RuntimeError("AI chat requires the PostgreSQL backend profile")
+        self._handler = handler
+
+    @staticmethod
+    def _payload(exchange: AiChatExchange) -> dict[str, Any]:
+        """Serialize one exchange without exposing its owner subject.
+
+        Args:
+            exchange: Persisted owner-scoped exchange.
+
+        Returns:
+            Content and opaque ids required by the application service.
+        """
+
+        return {
+            "conversation_id": exchange.conversation_id,
+            "request_id": exchange.request_id,
+            "user_message": exchange.user_message,
+            "assistant_message": exchange.assistant_message,
+            "created_at": exchange.created_at.isoformat(),
+        }
+
+    async def find_exchange(
+        self,
+        owner_subject: str,
+        request_id: str,
+    ) -> dict[str, Any] | None:
+        """Return one idempotent response only inside the verified owner scope.
+
+        Args:
+            owner_subject: Verified identity-provider subject.
+            request_id: Client-stable request identity.
+
+        Returns:
+            Serialized exchange, or null when the owner has not used the id.
+        """
+
+        async with self._handler.AsyncSessionLocal() as session:
+            exchange = await session.scalar(
+                select(AiChatExchange).where(
+                    AiChatExchange.owner_subject == owner_subject,
+                    AiChatExchange.request_id == request_id,
+                )
+            )
+        return self._payload(exchange) if exchange is not None else None
+
+    async def load_history(
+        self,
+        owner_subject: str,
+        conversation_id: str,
+        *,
+        limit: int = 12,
+    ) -> list[dict[str, str]]:
+        """Load a bounded chronological provider history for one owner.
+
+        Args:
+            owner_subject: Verified identity-provider subject.
+            conversation_id: App-owned conversation grouping id.
+            limit: Maximum persisted exchanges, defaulting to 12.
+
+        Returns:
+            Alternating visible user and assistant message mappings.
+        """
+
+        async with self._handler.AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(AiChatExchange)
+                .where(
+                    AiChatExchange.owner_subject == owner_subject,
+                    AiChatExchange.conversation_id == conversation_id,
+                )
+                .order_by(AiChatExchange.id.desc())
+                .limit(limit)
+            )
+        exchanges = reversed(result.scalars().all())
+        history: list[dict[str, str]] = []
+        for exchange in exchanges:
+            history.extend(
+                (
+                    {"role": "user", "content": exchange.user_message},
+                    {"role": "assistant", "content": exchange.assistant_message},
+                )
+            )
+        return history
+
+    async def store_exchange(
+        self,
+        owner_subject: str,
+        *,
+        conversation_id: str,
+        request_id: str,
+        user_message: str,
+        assistant_message: str,
+    ) -> tuple[dict[str, Any], bool]:
+        """Insert one exchange idempotently under the owner/request key.
+
+        Args:
+            owner_subject: Verified identity-provider subject.
+            conversation_id: App-owned grouping id.
+            request_id: Client-stable idempotency id.
+            user_message: Current user-authored message.
+            assistant_message: Final visible assistant response.
+
+        Returns:
+            Stored exchange plus true only when this call created it.
+
+        Raises:
+            RuntimeError: If the insert or collision cannot be resolved.
+        """
+
+        values = {
+            "owner_subject": owner_subject,
+            "conversation_id": conversation_id,
+            "request_id": request_id,
+            "user_message": user_message,
+            "assistant_message": assistant_message,
+            "created_at": datetime.now(timezone.utc),
+        }
+        async with self._handler.AsyncSessionLocal() as session:
+            async with session.begin():
+                statement = (
+                    insert(AiChatExchange)
+                    .values(**values)
+                    .on_conflict_do_nothing(
+                        index_elements=["owner_subject", "request_id"]
+                    )
+                    .returning(AiChatExchange.id)
+                )
+                created_id = (await session.execute(statement)).scalar_one_or_none()
+                exchange = await session.scalar(
+                    select(AiChatExchange).where(
+                        AiChatExchange.owner_subject == owner_subject,
+                        AiChatExchange.request_id == request_id,
+                    )
+                )
+        if exchange is None:
+            raise RuntimeError("AI chat exchange persistence failed")
+        return self._payload(exchange), created_id is not None
+
+    async def delete_owner_data(self, owner_subject: str) -> int:
+        """Delete every generated AI chat exchange for one verified owner.
+
+        Args:
+            owner_subject: Verified identity-provider subject.
+
+        Returns:
+            Number of deleted exchanges.
+
+        Side Effects:
+            Permanently removes minimized AI chat history for the owner.
+        """
+
+        async with self._handler.AsyncSessionLocal() as session:
+            async with session.begin():
+                result = await session.execute(
+                    delete(AiChatExchange).where(
+                        AiChatExchange.owner_subject == owner_subject
+                    )
+                )
+        return int(result.rowcount or 0)

@@ -17,8 +17,8 @@ direct-dependency fields above the nullable `source_contract` field introduced
 in version `2`.
 `renderable` certifies that a recipe has a complete checksum-pinned source
 contract; it does not by itself claim public selection, lifecycle, runtime, or
-release proof. Catalog revision `0.3.0` promotes hybrid sync and authenticated
-Web Push revision `1.0.0`. AI chat and account erasure remain `contract_only`.
+release proof. Catalog revision `0.4.0` promotes hybrid sync, authenticated Web
+Push, and AI chat revision `1.0.0`. Account erasure remains `contract_only`.
 The Web Push entry selects `postgresql_web_push`, whose lock adds only
 `pywebpush`; unselected Connected and hybrid-sync profiles keep the standard
 PostgreSQL dependency graph.

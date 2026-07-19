@@ -1,0 +1,51 @@
+"""SQLAlchemy model for minimized generated AI chat history."""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+from sqlalchemy import BigInteger, DateTime, Index, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column
+
+from models.sql.base import Base
+
+
+class AiChatExchange(Base):
+    """Persist one owner-scoped user/assistant exchange.
+
+    Only visible message text and app-owned opaque identifiers are stored.
+    Consent proofs, context hints, prompts, provider/model data, credentials,
+    tokens, diagnostics, and raw errors are deliberately excluded.
+
+    Attributes:
+        id: Internal monotonic database identity.
+        owner_subject: Verified identity-provider subject owning the exchange.
+        conversation_id: App-owned grouping id within the owner scope.
+        request_id: Client-stable idempotency id within the owner scope.
+        user_message: Current explicit user-authored message.
+        assistant_message: Final visible assistant response.
+        created_at: UTC time at which the exchange was stored.
+    """
+
+    __tablename__ = "__APP_ID___ai_chat_exchanges"
+    __table_args__ = (
+        UniqueConstraint(
+            "owner_subject",
+            "request_id",
+            name="uq___APP_ID___ai_chat_exchange_owner_request",
+        ),
+        Index(
+            "ix___APP_ID___ai_chat_owner_conversation",
+            "owner_subject",
+            "conversation_id",
+            "id",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    owner_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    conversation_id: Mapped[str] = mapped_column(String(96), nullable=False)
+    request_id: Mapped[str] = mapped_column(String(96), nullable=False)
+    user_message: Mapped[str] = mapped_column(Text, nullable=False)
+    assistant_message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

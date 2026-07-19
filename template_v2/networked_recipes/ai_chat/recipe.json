@@ -1,0 +1,36 @@
+{
+  "backend_recipe_id": "ai_chat",
+  "backend_revision": "1.0.0",
+  "templates": [
+    {
+      "output_path": "migrations/versions/__APP_ID___004_ai_chat_history.py",
+      "sha256": "e74385abda703da59b2465d7c9c224b9ab15ec2b564ea28e7ea9973f4524f38c",
+      "template_path": "migrations/versions/__APP_ID___004_ai_chat_history.py.tmpl"
+    },
+    {
+      "output_path": "models/ai_chat_message.py",
+      "sha256": "b48804ddcd79de4f22e26101a16161a3fd079c421dcc1daa03c96fdcab3b0e39",
+      "template_path": "models/ai_chat_message.py.tmpl"
+    },
+    {
+      "output_path": "repositories/ai_chat_repository.py",
+      "sha256": "56d20de30591a17c3491d87bc591e7b8da596124f1e7909fcac4f79c85948933",
+      "template_path": "repositories/ai_chat_repository.py.tmpl"
+    },
+    {
+      "output_path": "routes/ai_chat.py",
+      "sha256": "9fc9c8c77a7e3803ed2294b71f50c4597d8180d93a4d85ed9570e25a435f7f71",
+      "template_path": "routes/ai_chat.py.tmpl"
+    },
+    {
+      "output_path": "schemas/ai_chat.py",
+      "sha256": "9215f40f8d7ff75f24a21f9337f6878ec75d80e7cb1959e8cec332a9a1720a89",
+      "template_path": "schemas/ai_chat.py.tmpl"
+    },
+    {
+      "output_path": "services/ai_chat_service.py",
+      "sha256": "c52d483e68bc94401d23e1c7c58c663c7a19daa7e1cf71f71feebaa790df014c",
+      "template_path": "services/ai_chat_service.py.tmpl"
+    }
+  ]
+}

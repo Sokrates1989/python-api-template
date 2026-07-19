@@ -1,0 +1,85 @@
+"""Validated transport schemas for generated authenticated AI chat."""
+
+from __future__ import annotations
+
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+AiChatOpaqueId = Annotated[
+    str,
+    Field(min_length=1, max_length=96, pattern=r"^[A-Za-z0-9._:-]+$"),
+]
+"""Bounded app-owned conversation or request identifier."""
+
+AiChatContextKey = Annotated[
+    str,
+    Field(min_length=1, max_length=48, pattern=r"^[a-z][a-z0-9_.-]*$"),
+]
+"""Product-neutral key accepted only by an injected context policy."""
+
+AiChatContextValue = Annotated[str, Field(min_length=1, max_length=400)]
+"""Bounded context hint that is never persisted by the generated recipe."""
+
+
+class AiChatConsentProof(BaseModel):
+    """Carry explicit app-reviewed consent into one backend request.
+
+    Attributes:
+        confirmed: Literal true proof required by schema validation.
+        policy_version: App-owned consent-policy version shown to the user.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    confirmed: Literal[True]
+    policy_version: Annotated[str, Field(min_length=1, max_length=64)]
+
+
+class AiChatRequest(BaseModel):
+    """Request one provider-neutral assistant response.
+
+    Attributes:
+        request_id: Client-stable idempotency key inside the owner scope.
+        conversation_id: App-owned conversation grouping identifier.
+        message: Current explicit user-authored message.
+        consent: Required proof from the app-owned consent surface.
+        context: Bounded hints accepted only by an injected backend policy.
+        locale: Optional language tag used by app-owned provider policy.
+
+    Note:
+        Client history, provider settings, prompts, tokens, and owner subjects
+        are intentionally absent. History is loaded from owner-scoped storage.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: AiChatOpaqueId
+    conversation_id: AiChatOpaqueId
+    message: Annotated[str, Field(min_length=1, max_length=4000)]
+    consent: AiChatConsentProof
+    context: dict[AiChatContextKey, AiChatContextValue] = Field(
+        default_factory=dict,
+        max_length=12,
+    )
+    locale: Annotated[
+        str,
+        Field(min_length=2, max_length=16, pattern=r"^[A-Za-z]{2,3}([_-][A-Za-z]{2})?$"),
+    ] = "en"
+
+
+class AiChatResponse(BaseModel):
+    """Return visible assistant text and content-free request metadata.
+
+    Attributes:
+        request_id: Echoed idempotency key.
+        message: Validated visible assistant text.
+        replayed: Whether an already persisted response was returned.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: AiChatOpaqueId
+    message: Annotated[str, Field(min_length=1, max_length=12000)]
+    replayed: bool = False

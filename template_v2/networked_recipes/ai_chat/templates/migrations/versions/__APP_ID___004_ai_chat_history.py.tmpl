@@ -1,0 +1,56 @@
+"""Add minimized owner-scoped AI chat exchange history."""
+
+from __future__ import annotations
+
+from alembic import op
+import sqlalchemy as sa
+
+
+revision = "__APP_ID___004_ai_chat_history"
+down_revision = "__APP_ID___001_records"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    """Create the app-scoped minimized AI chat exchange table.
+
+    Returns:
+        None after the table, uniqueness boundary, and index exist.
+    """
+
+    op.create_table(
+        "__APP_ID___ai_chat_exchanges",
+        sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
+        sa.Column("owner_subject", sa.String(length=255), nullable=False),
+        sa.Column("conversation_id", sa.String(length=96), nullable=False),
+        sa.Column("request_id", sa.String(length=96), nullable=False),
+        sa.Column("user_message", sa.Text(), nullable=False),
+        sa.Column("assistant_message", sa.Text(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "owner_subject",
+            "request_id",
+            name="uq___APP_ID___ai_chat_exchange_owner_request",
+        ),
+    )
+    op.create_index(
+        "ix___APP_ID___ai_chat_owner_conversation",
+        "__APP_ID___ai_chat_exchanges",
+        ["owner_subject", "conversation_id", "id"],
+    )
+
+
+def downgrade() -> None:
+    """Remove only generated AI chat exchange history.
+
+    Returns:
+        None after the app-scoped index and table are removed.
+    """
+
+    op.drop_index(
+        "ix___APP_ID___ai_chat_owner_conversation",
+        table_name="__APP_ID___ai_chat_exchanges",
+    )
+    op.drop_table("__APP_ID___ai_chat_exchanges")
