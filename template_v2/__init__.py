@@ -5,9 +5,11 @@ from .backend_foundation_contract import (
     BackendFoundationIdentity,
     validate_backend_foundation,
 )
+from .backend_lifecycle import execute_backend_lifecycle
 
 __all__ = [
     "BackendFoundationContractError",
     "BackendFoundationIdentity",
     "validate_backend_foundation",
+    "execute_backend_lifecycle",
 ]

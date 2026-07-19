@@ -5,7 +5,9 @@ A production-ready FastAPI template with multi-database support, Redis cache, Do
 Template V2 pair generation uses the versioned, executable backend-foundation
 contract documented in [`template_v2/README.md`](template_v2/README.md).
 Keycloak/PostgreSQL is its standard Connected profile; Cognito and MongoDB are
-retained compatibility paths rather than defaults.
+retained compatibility paths rather than defaults. The same guide documents
+the Python-owned check/plan/diff/create/reconcile/detach/apply lifecycle used by
+the paired Flutter creator, including exact-intent writes and rollback.
 
 ## 📚 Table of Contents
 
@@ -446,4 +448,3 @@ uvicorn main:app --reload
 ```
 
 </details>
-
