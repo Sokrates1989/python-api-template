@@ -25,7 +25,7 @@ jobs:
       - name: Validate Template V2 backend foundation contract
         run: |
           python tools/validate_template_v2_backend_foundation.py --json
-          python -m unittest tests.test_template_v2_backend_foundation_contract tests.test_template_v2_backend_lifecycle
+          python -m unittest tests.test_template_v2_backend_foundation_contract tests.test_template_v2_backend_lifecycle tests.test_template_v2_records_starter_unittest
 
   type-check:
     runs-on: ubuntu-latest

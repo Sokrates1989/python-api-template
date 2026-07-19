@@ -7,7 +7,10 @@ contract documented in [`template_v2/README.md`](template_v2/README.md).
 Keycloak/PostgreSQL is its standard Connected profile; Cognito and MongoDB are
 retained compatibility paths rather than defaults. The same guide documents
 the Python-owned check/plan/diff/create/reconcile/detach/apply lifecycle used by
-the paired Flutter creator, including exact-intent writes and rollback.
+the paired Flutter creator, including exact-intent writes and rollback. The
+standard pair also consumes the Python-owned, checksum-pinned neutral records
+starter (model, repository, service, schemas, `/records` routes, and Alembic
+migration); retained compatibility profiles remain route-empty.
 
 ## 📚 Table of Contents
 

@@ -1,0 +1,190 @@
+"""Authenticated subject-scoped routes for generated neutral records."""
+
+from __future__ import annotations
+
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from api.shared_dependencies.auth import get_user_id_from_token
+from apps.__APP_ID__.repositories.records_repository import RecordRevisionConflict
+from apps.__APP_ID__.schemas.records import (
+    RecordCreateRequest,
+    RecordDeleteResponse,
+    RecordListResponse,
+    RecordResponse,
+    RecordUpdateRequest,
+)
+from apps.__APP_ID__.services.records_service import RecordsService
+
+
+router = APIRouter(prefix="/records", tags=["records"])
+
+
+def get_records_service() -> RecordsService:
+    """Return the generated records application service.
+
+    Returns:
+        Service bound to the selected PostgreSQL handler.
+    """
+
+    return RecordsService()
+
+
+def _record_error(
+    status_code: int,
+    code: str,
+    message: str,
+    *,
+    retryable: bool = False,
+) -> HTTPException:
+    """Build one stable HTTP error detail payload.
+
+    Args:
+        status_code: HTTP response status.
+        code: Stable machine-readable error code.
+        message: Safe user-facing summary.
+        retryable: Whether repeating later may succeed.
+
+    Returns:
+        FastAPI exception containing the stable detail object.
+    """
+
+    return HTTPException(
+        status_code=status_code,
+        detail={"code": code, "message": message, "retryable": retryable},
+    )
+
+
+@router.get("", response_model=RecordListResponse)
+async def list_records(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    owner_subject: str = Depends(get_user_id_from_token),
+    service: RecordsService = Depends(get_records_service),
+) -> RecordListResponse:
+    """Return a paginated list belonging only to the verified subject.
+
+    Args:
+        limit: Maximum rows returned, defaulting to 50.
+        offset: Matching rows skipped, defaulting to zero.
+        owner_subject: Verified subject injected by the auth dependency.
+        service: Records service dependency.
+
+    Returns:
+        Subject-scoped page and pagination metadata.
+    """
+
+    records, total = await service.list_records(owner_subject, limit=limit, offset=offset)
+    return RecordListResponse(items=records, total=total, limit=limit, offset=offset)
+
+
+@router.post("", response_model=RecordResponse, status_code=status.HTTP_201_CREATED)
+async def create_record(
+    request: RecordCreateRequest,
+    owner_subject: str = Depends(get_user_id_from_token),
+    service: RecordsService = Depends(get_records_service),
+) -> RecordResponse:
+    """Create one neutral record for the verified subject.
+
+    Args:
+        request: Bounded creation fields.
+        owner_subject: Verified subject injected by the auth dependency.
+        service: Records service dependency.
+
+    Returns:
+        Persisted owned record at revision one.
+    """
+
+    record = await service.create_record(
+        owner_subject, title=request.title, details=request.details
+    )
+    return RecordResponse.model_validate(record)
+
+
+@router.get("/{record_id}", response_model=RecordResponse)
+async def get_record(
+    record_id: UUID,
+    owner_subject: str = Depends(get_user_id_from_token),
+    service: RecordsService = Depends(get_records_service),
+) -> RecordResponse:
+    """Return one owned record without revealing foreign existence.
+
+    Args:
+        record_id: Public record UUID.
+        owner_subject: Verified subject injected by the auth dependency.
+        service: Records service dependency.
+
+    Returns:
+        Owned record.
+
+    Raises:
+        HTTPException: With ``record_not_found`` for missing or foreign rows.
+    """
+
+    record = await service.get_record(owner_subject, str(record_id))
+    if record is None:
+        raise _record_error(404, "record_not_found", "Record was not found.")
+    return RecordResponse.model_validate(record)
+
+
+@router.put("/{record_id}", response_model=RecordResponse)
+async def update_record(
+    record_id: UUID,
+    request: RecordUpdateRequest,
+    owner_subject: str = Depends(get_user_id_from_token),
+    service: RecordsService = Depends(get_records_service),
+) -> RecordResponse:
+    """Update one owned record using optimistic concurrency.
+
+    Args:
+        record_id: Public record UUID.
+        request: Complete fields plus the observed revision.
+        owner_subject: Verified subject injected by the auth dependency.
+        service: Records service dependency.
+
+    Returns:
+        Updated record with its incremented revision.
+
+    Raises:
+        HTTPException: For a missing/foreign record or stale revision.
+    """
+
+    try:
+        record = await service.update_record(
+            owner_subject,
+            str(record_id),
+            title=request.title,
+            details=request.details,
+            expected_revision=request.expected_revision,
+        )
+    except RecordRevisionConflict as error:
+        raise _record_error(
+            409,
+            "record_revision_conflict",
+            f"Record changed; latest revision is {error.current_revision}.",
+        ) from error
+    if record is None:
+        raise _record_error(404, "record_not_found", "Record was not found.")
+    return RecordResponse.model_validate(record)
+
+
+@router.delete("/{record_id}", response_model=RecordDeleteResponse)
+async def delete_record(
+    record_id: UUID,
+    owner_subject: str = Depends(get_user_id_from_token),
+    service: RecordsService = Depends(get_records_service),
+) -> RecordDeleteResponse:
+    """Idempotently delete an owned record without foreign disclosure.
+
+    Args:
+        record_id: Public record UUID.
+        owner_subject: Verified subject injected by the auth dependency.
+        service: Records service dependency.
+
+    Returns:
+        Whether an owned row was removed.
+    """
+
+    deleted = await service.delete_record(owner_subject, str(record_id))
+    return RecordDeleteResponse(deleted=deleted)

@@ -1,0 +1,118 @@
+"""Application service for the generated neutral records resource."""
+
+from __future__ import annotations
+
+from uuid import uuid4
+
+from apps.__APP_ID__.models.record import Record
+from apps.__APP_ID__.repositories.records_repository import RecordsRepository
+
+
+class RecordsService:
+    """Coordinate record identity and subject-scoped repository operations."""
+
+    def __init__(self, repository: RecordsRepository | None = None) -> None:
+        """Create the service with an optional test repository.
+
+        Args:
+            repository: Repository override; defaults to selected PostgreSQL.
+        """
+
+        self._repository = repository or RecordsRepository()
+
+    async def list_records(
+        self, owner_subject: str, *, limit: int, offset: int
+    ) -> tuple[list[Record], int]:
+        """Return one subject-scoped page.
+
+        Args:
+            owner_subject: Verified identity-provider subject.
+            limit: Maximum records returned.
+            offset: Matching records skipped.
+
+        Returns:
+            Owned records and the subject's total record count.
+        """
+
+        return await self._repository.list_for_owner(
+            owner_subject, limit=limit, offset=offset
+        )
+
+    async def create_record(
+        self, owner_subject: str, *, title: str, details: str | None
+    ) -> Record:
+        """Create a UUID-addressed record for one verified subject.
+
+        Args:
+            owner_subject: Verified identity-provider subject.
+            title: Validated title.
+            details: Validated optional details.
+
+        Returns:
+            Persisted record at revision one.
+        """
+
+        record = Record(
+            id=str(uuid4()),
+            owner_subject=owner_subject,
+            title=title,
+            details=details,
+            revision=1,
+        )
+        return await self._repository.create(record)
+
+    async def get_record(self, owner_subject: str, record_id: str) -> Record | None:
+        """Return an owned record without exposing foreign rows.
+
+        Args:
+            owner_subject: Verified identity-provider subject.
+            record_id: Public record UUID.
+
+        Returns:
+            Owned record, or ``None`` when unavailable to the subject.
+        """
+
+        return await self._repository.get_for_owner(owner_subject, record_id)
+
+    async def update_record(
+        self,
+        owner_subject: str,
+        record_id: str,
+        *,
+        title: str,
+        details: str | None,
+        expected_revision: int,
+    ) -> Record | None:
+        """Apply one subject-scoped optimistic update.
+
+        Args:
+            owner_subject: Verified identity-provider subject.
+            record_id: Public record UUID.
+            title: Validated replacement title.
+            details: Validated replacement details.
+            expected_revision: Revision observed by the client.
+
+        Returns:
+            Updated record, or ``None`` when unavailable to the subject.
+        """
+
+        return await self._repository.update_for_owner(
+            owner_subject,
+            record_id,
+            title=title,
+            details=details,
+            expected_revision=expected_revision,
+        )
+
+    async def delete_record(self, owner_subject: str, record_id: str) -> bool:
+        """Idempotently delete one owned record.
+
+        Args:
+            owner_subject: Verified identity-provider subject.
+            record_id: Public record UUID.
+
+        Returns:
+            Whether an owned record was removed.
+        """
+
+        return await self._repository.delete_for_owner(owner_subject, record_id)

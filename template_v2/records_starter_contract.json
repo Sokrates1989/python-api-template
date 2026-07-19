@@ -1,0 +1,79 @@
+{
+  "contract_id": "template-v2-records-starter",
+  "contract_version": 1,
+  "starter_revision": "1.0.0",
+  "standard_profile": {
+    "auth_provider": "keycloak",
+    "backend": "postgresql"
+  },
+  "route_prefixes": [
+    "/records"
+  ],
+  "templates": [
+    {
+      "output_path": "definition.py",
+      "sha256": "0a4998d94bbf3ec60f53c41bcd1f2a4d1913e14708da837341376e96ea4d8425",
+      "template_path": "definition.py.tmpl"
+    },
+    {
+      "output_path": "migrations/README.md",
+      "sha256": "52ca2fd252c49c1bff60120b4e78b16ad19173cfc4b7c167b3964bcaa35c5c70",
+      "template_path": "migrations/README.md.tmpl"
+    },
+    {
+      "output_path": "migrations/versions/__REVISION_ID__.py",
+      "sha256": "0bd101efa043409a38d16509dbc2bd2ec2a28b2a05d569c9fc3ecb748e1e2dc7",
+      "template_path": "migrations/versions/001_records.py.tmpl"
+    },
+    {
+      "output_path": "models/__init__.py",
+      "sha256": "d2086d7af6676fcd6e050427c9b6579f35b53426e7571afdf5e0e1f4be874ead",
+      "template_path": "models/__init__.py.tmpl"
+    },
+    {
+      "output_path": "models/record.py",
+      "sha256": "c083575bc16a7d87c6c47a86e01ababd71d11f7e9d8556c7f67aa51ef4983d4f",
+      "template_path": "models/record.py.tmpl"
+    },
+    {
+      "output_path": "repositories/__init__.py",
+      "sha256": "55551321b7304aef1e40d9f9ba357c0872be48c5d594a887c0dcf37e47608f61",
+      "template_path": "repositories/__init__.py.tmpl"
+    },
+    {
+      "output_path": "repositories/records_repository.py",
+      "sha256": "6839c18b55a04f785de2a4314cddd132320bf0070364b3622062ae062be79e50",
+      "template_path": "repositories/records_repository.py.tmpl"
+    },
+    {
+      "output_path": "routes/__init__.py",
+      "sha256": "7a64fdcae9b3589e6595b91843bfaf50d169be60cb6ec98cac672e7ca4b694f3",
+      "template_path": "routes/__init__.py.tmpl"
+    },
+    {
+      "output_path": "routes/records.py",
+      "sha256": "462de33898812283601c21af4e476b0f64587dfb5fe830c5062c51d0f0840c1d",
+      "template_path": "routes/records.py.tmpl"
+    },
+    {
+      "output_path": "schemas/__init__.py",
+      "sha256": "386130aa2d3ba201fde2a29d1812ef9900c1b3f7dd78b5e2027648add36a2ebe",
+      "template_path": "schemas/__init__.py.tmpl"
+    },
+    {
+      "output_path": "schemas/records.py",
+      "sha256": "3bd9b990ce02ab5deb4043a669048fb589e8b6d1c3bbc22d852e83f90a46e20e",
+      "template_path": "schemas/records.py.tmpl"
+    },
+    {
+      "output_path": "services/__init__.py",
+      "sha256": "cd72c329945f14984703e55ae384dec007e66d86599ba9b66f5074136efcfe63",
+      "template_path": "services/__init__.py.tmpl"
+    },
+    {
+      "output_path": "services/records_service.py",
+      "sha256": "efe0cb40eaed869734f53ead00f21c7fe0823a1bb2d23a7b7c3f7da7849e9cae",
+      "template_path": "services/records_service.py.tmpl"
+    }
+  ]
+}

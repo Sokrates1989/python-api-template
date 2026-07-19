@@ -6,6 +6,9 @@ This directory is the Python repository's canonical Template V2 compatibility
 boundary. `backend_foundation_contract.json` declares the exact registry,
 application-definition, authentication, migration, Compose, dependency, and
 route-policy surfaces consumed by the Flutter Template V2 pair orchestrator.
+`records_starter_contract.json` separately owns the checksum-pinned B3 model,
+repository, service, schemas, authenticated routes, and Alembic migration used
+only by the standard Keycloak/PostgreSQL pair.
 The lifecycle modules own read-only planning, managed creation/update, explicit
 detach, root registration, and exact create rollback for generated backend
 applications.
@@ -15,6 +18,10 @@ applications.
 - `backend_foundation_contract.json` is the machine-readable contract.
 - `backend_foundation_contract.py` is the standard-library validator and digest
   implementation.
+- `records_starter_contract.json` and its companion documentation declare the
+  exact standard B3 source-to-output map.
+- `records_starter_contract.py` independently validates and renders those
+  canonical templates from `records_starter/templates/`.
 - `backend_lifecycle.py` is the public in-process lifecycle facade.
 - `backend_lifecycle_planning.py` validates desired/current ownership and
   returns content-free stale-state-bound plans.
@@ -32,6 +39,11 @@ applications.
 The contract contains no credentials or machine-specific paths. Generated
 service routes must remain relative to the API host and must never begin with
 `/api` or `/api/`.
+
+The records starter substitutes only a validated app id and identifiers derived
+from it. It exposes `/records`, scopes every operation to the verified subject,
+uses optimistic revisions, and owns an upgrade/downgrade migration. Cognito and
+MongoDB do not select these sources.
 
 ## Safe Editing
 
