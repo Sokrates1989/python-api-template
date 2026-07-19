@@ -1,0 +1,142 @@
+{
+  "contract_id": "template-v2-backend-foundation",
+  "contract_version": 1,
+  "foundation_revision": "1.0.0",
+  "requires_python": ">=3.13,<3.14",
+  "standard_connected_profile": {
+    "auth_provider": "keycloak",
+    "backend": "postgresql"
+  },
+  "retained_compatibility": {
+    "auth_providers": [
+      "cognito"
+    ],
+    "backends": [
+      "mongodb"
+    ]
+  },
+  "route_policy": {
+    "forbid_api_service_prefix": true
+  },
+  "definition_fields": [
+    "app_id",
+    "display_name",
+    "backend_data_profile",
+    "route_registrations",
+    "migration_version_locations",
+    "requires_database",
+    "requires_redis",
+    "include_shared_routes",
+    "shared_route_groups",
+    "openapi_security_schemes",
+    "openapi_route_security",
+    "background_service_factories"
+  ],
+  "provider_profiles": {
+    "mongodb": {
+      "support": "retained",
+      "source_app_id": "mongodb_template",
+      "service_name": "mongodb",
+      "base_compose_path": "local-deployment/base/mongodb.compose.yml",
+      "dependencies": [
+        "fastapi>=0.111.0",
+        "uvicorn>=0.30.1",
+        "pydantic-settings>=2.3.4",
+        "python-dotenv>=1.0.1",
+        "redis>=5.0.1",
+        "motor>=3.6.0",
+        "python-multipart>=0.0.20",
+        "python-jose[cryptography]>=3.3.0",
+        "requests>=2.32.3",
+        "pydantic[email]>=2.12.4"
+      ]
+    },
+    "postgresql": {
+      "support": "standard",
+      "source_app_id": "postgres_template",
+      "service_name": "postgres",
+      "base_compose_path": "local-deployment/base/postgres.compose.yml",
+      "dependencies": [
+        "fastapi>=0.111.0",
+        "uvicorn>=0.30.1",
+        "pydantic-settings>=2.3.4",
+        "python-dotenv>=1.0.1",
+        "redis>=5.0.1",
+        "sqlalchemy>=2.0.25",
+        "psycopg2-binary>=2.9.9",
+        "asyncpg>=0.29.0",
+        "alembic>=1.13.1",
+        "python-multipart>=0.0.20",
+        "python-jose[cryptography]>=3.3.0",
+        "requests>=2.32.3",
+        "pydantic[email]>=2.12.4"
+      ]
+    }
+  },
+  "source_files": [
+    "app/api/settings.py",
+    "app/apps/contracts.py",
+    "app/apps/mongodb_template/pdm.lock",
+    "app/apps/mongodb_template/pyproject.toml",
+    "app/apps/postgres_template/pdm.lock",
+    "app/apps/postgres_template/pyproject.toml",
+    "app/apps/registry.py",
+    "app/backend/auth_provider_utils.py",
+    "app/backend/database/migrations.py",
+    "Dockerfile",
+    "local-deployment/base/api.compose.yml",
+    "local-deployment/base/mongodb.compose.yml",
+    "local-deployment/base/postgres.compose.yml",
+    "local-deployment/base/redis.compose.yml"
+  ],
+  "surface_markers": {
+    "Dockerfile": [
+      "${BACKEND_APP_ID}/pyproject.toml",
+      "${BACKEND_APP_ID}/pdm.lock"
+    ],
+    "app/api/settings.py": [
+      "AUTH_PROVIDER",
+      "KEYCLOAK_ISSUER_URL",
+      "KEYCLOAK_CLIENT_ID",
+      "KEYCLOAK_ENFORCE_AUDIENCE"
+    ],
+    "app/apps/contracts.py": [
+      "class BackendAppDefinition:",
+      "route_registrations:",
+      "migration_version_locations:",
+      "requires_database:",
+      "requires_redis:",
+      "include_shared_routes:",
+      "shared_route_groups:"
+    ],
+    "app/apps/registry.py": [
+      "apps.{package_name}.definition",
+      "BACKEND_APP_DEFINITION"
+    ],
+    "app/backend/auth_provider_utils.py": [
+      "get_keycloak_issuer_url",
+      "get_cognito_user_pool_id"
+    ],
+    "app/backend/database/migrations.py": [
+      "migration_version_locations",
+      "version_locations"
+    ],
+    "local-deployment/base/api.compose.yml": [
+      "services:",
+      "  api:"
+    ],
+    "local-deployment/base/mongodb.compose.yml": [
+      "services:",
+      "  mongodb:"
+    ],
+    "local-deployment/base/postgres.compose.yml": [
+      "services:",
+      "  postgres:"
+    ],
+    "local-deployment/base/redis.compose.yml": [
+      "services:",
+      "  redis:"
+    ]
+  },
+  "source_sha256": "205faada913b8698535adc3d6b04be16a278fa9c089dc3057f09d4989f47c43b"
+}

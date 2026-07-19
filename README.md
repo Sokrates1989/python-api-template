@@ -2,6 +2,11 @@
 
 A production-ready FastAPI template with multi-database support, Redis cache, Docker-based development, and modern Python dependency management.
 
+Template V2 pair generation uses the versioned, executable backend-foundation
+contract documented in [`template_v2/README.md`](template_v2/README.md).
+Keycloak/PostgreSQL is its standard Connected profile; Cognito and MongoDB are
+retained compatibility paths rather than defaults.
+
 ## 📚 Table of Contents
 
 1. [📖 Overview](#-overview)
@@ -441,5 +446,4 @@ uvicorn main:app --reload
 ```
 
 </details>
-
 
