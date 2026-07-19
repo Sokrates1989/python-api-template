@@ -33,12 +33,21 @@ class SQLHandler(BaseDatabaseHandler):
         self.echo = echo
         self.db_type = "sql"
         
-        # Synchronous engine for migrations and simple operations
-        self.engine = create_engine(database_url, echo=echo)
+        # Synchronous engine for migrations and simple operations. Pre-ping
+        # replaces connections invalidated by a database restart before use.
+        self.engine = create_engine(
+            database_url,
+            echo=echo,
+            pool_pre_ping=True,
+        )
         
         # Asynchronous engine for API operations
         async_url = self._get_async_url(database_url)
-        self.async_engine = create_async_engine(async_url, echo=echo)
+        self.async_engine = create_async_engine(
+            async_url,
+            echo=echo,
+            pool_pre_ping=True,
+        )
         
         # Session factories
         self.SessionLocal = sessionmaker(
