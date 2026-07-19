@@ -1,5 +1,5 @@
 {
-  "catalog_revision": "0.4.0",
+  "catalog_revision": "0.5.0",
   "contract_id": "template-v2-networked-recipes",
   "contract_version": 3,
   "recipes": [
@@ -153,13 +153,13 @@
     },
     {
       "backend_recipe_id": "account_erasure",
-      "backend_revision": "0.1.0",
+      "backend_revision": "1.0.0",
       "depends_on": [
         "keycloak_auth"
       ],
       "flutter_recipe_id": "account_erasure",
       "flutter_recipe_version": "1.0.0",
-      "implementation_status": "contract_only",
+      "implementation_status": "renderable",
       "migration_paths": [],
       "public_configuration_keys": [],
       "python_dependencies": [],
@@ -177,7 +177,7 @@
         }
       ],
       "secret_configuration_keys": [],
-      "source_contract": null,
+      "source_contract": "template_v2/networked_recipes/account_erasure/recipe.json",
       "service_paths": [
         "routes/account_erasure.py",
         "schemas/account_erasure.py",

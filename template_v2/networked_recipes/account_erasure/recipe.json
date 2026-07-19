@@ -1,0 +1,21 @@
+{
+  "backend_recipe_id": "account_erasure",
+  "backend_revision": "1.0.0",
+  "templates": [
+    {
+      "output_path": "routes/account_erasure.py",
+      "sha256": "26cde3183fcb83fbcca22a7321131a1c4950bb4dd85ea7de7ab22e43be376c73",
+      "template_path": "routes/account_erasure.py.tmpl"
+    },
+    {
+      "output_path": "schemas/account_erasure.py",
+      "sha256": "ae91e9daa3899ae660151f92234d317965e57c39818e78ae5b53917151b3e004",
+      "template_path": "schemas/account_erasure.py.tmpl"
+    },
+    {
+      "output_path": "services/account_erasure_service.py",
+      "sha256": "25e86c808fe131f11e620f46a29b58b074ec4644661ce5d72c7c2756a7f27c27",
+      "template_path": "services/account_erasure_service.py.tmpl"
+    }
+  ]
+}

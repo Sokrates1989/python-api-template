@@ -12,9 +12,10 @@ only by the standard Keycloak/PostgreSQL pair.
 `networked_recipes_contract.json` starts B4 with the fixed four-recipe catalog,
 matching Flutter versions, dependency order, routes, configuration ownership,
 generated paths, and complete removal boundaries. Hybrid sync, authenticated
-Web Push, and AI chat are checksum-pinned `renderable` source contracts.
-Account erasure remains honestly `contract_only` until its Python sources pass
-lifecycle proof.
+Web Push, AI chat, and account erasure are checksum-pinned `renderable` source
+contracts. Account erasure fails preflight unless every generated app table has
+canonical owner coverage, then deletes product rows before the Keycloak
+identity so partial requests remain retryable.
 The lifecycle modules own read-only planning, managed creation/update, explicit
 detach, root registration, and exact create rollback for generated backend
 applications.

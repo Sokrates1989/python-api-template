@@ -1,0 +1,77 @@
+"""Authenticated self-service erasure route for the generated backend app.
+
+The route accepts no caller-selected subject. Ownership comes exclusively from
+the verified bearer token, and no service route uses a redundant ``/api``
+prefix.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from api.shared_dependencies.auth import get_user_id_from_token
+from apps.__APP_ID__.schemas.account_erasure import (
+    AccountErasureData,
+    AccountErasureResponse,
+)
+from apps.__APP_ID__.services.account_erasure_service import (
+    AccountErasureError,
+    AccountErasureService,
+)
+
+
+router = APIRouter(tags=["account-erasure"])
+
+
+def get_account_erasure_service() -> AccountErasureService:
+    """Return the generated product-data and Keycloak erasure service.
+
+    Returns:
+        Service bound to the generated SQL tables and runtime Keycloak config.
+    """
+
+    return AccountErasureService()
+
+
+@router.delete("/me", response_model=AccountErasureResponse)
+async def delete_current_account(
+    owner_subject: str = Depends(get_user_id_from_token),
+    service: AccountErasureService = Depends(get_account_erasure_service),
+) -> AccountErasureResponse:
+    """Permanently delete the current authenticated account.
+
+    Args:
+        owner_subject: Verified bearer-token subject.
+        service: Generated erasure orchestration dependency.
+
+    Returns:
+        Success envelope only after product and identity deletion complete.
+
+    Raises:
+        HTTPException: Stable classified failure with an explicit partial-data
+            marker and no subject, table, credential, URL, or raw error.
+
+    Side Effects:
+        Deletes generated app-owned rows and the external Keycloak identity.
+    """
+
+    try:
+        result = await service.delete_account(owner_subject)
+    except AccountErasureError as error:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail={
+                "code": error.code,
+                "message": "Account erasure could not be completed.",
+                "product_data_deleted": error.product_data_deleted,
+                "retryable": error.retryable,
+            },
+        ) from error
+    return AccountErasureResponse(
+        status="success",
+        message="Account erasure completed.",
+        data=AccountErasureData(
+            product_data_deleted=result.product_data_deleted,
+            identity_deleted=result.identity_deleted,
+        ),
+    )

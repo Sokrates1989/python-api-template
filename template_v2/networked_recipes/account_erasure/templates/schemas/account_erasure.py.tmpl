@@ -1,0 +1,37 @@
+"""Strict response schemas for generated authenticated account erasure."""
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class AccountErasureData(BaseModel):
+    """Describe completed deletion domains without record counts.
+
+    Attributes:
+        product_data_deleted: Whether every generated app-owned row was deleted.
+        identity_deleted: Whether the Keycloak identity was deleted.
+    """
+
+    product_data_deleted: bool = Field(
+        description="Whether generated app-owned product data was deleted."
+    )
+    identity_deleted: bool = Field(
+        description="Whether the external Keycloak identity was deleted."
+    )
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AccountErasureResponse(BaseModel):
+    """Return a stable success envelope for permanent account erasure.
+
+    Attributes:
+        status: Stable success status.
+        message: Non-sensitive completion summary.
+        data: Explicit two-domain completion markers.
+    """
+
+    status: str = Field(description="Stable response status.")
+    message: str = Field(description="Non-sensitive completion summary.")
+    data: AccountErasureData = Field(description="Completed erasure markers.")
+
+    model_config = ConfigDict(extra="forbid")

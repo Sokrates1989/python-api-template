@@ -17,8 +17,10 @@ direct-dependency fields above the nullable `source_contract` field introduced
 in version `2`.
 `renderable` certifies that a recipe has a complete checksum-pinned source
 contract; it does not by itself claim public selection, lifecycle, runtime, or
-release proof. Catalog revision `0.4.0` promotes hybrid sync, authenticated Web
-Push, and AI chat revision `1.0.0`. Account erasure remains `contract_only`.
+release proof. Catalog revision `0.5.0` promotes hybrid sync, authenticated Web
+Push, AI chat, and account erasure revision `1.0.0`. Account erasure validates
+canonical-owner coverage before deleting product rows and then the Keycloak
+identity.
 The Web Push entry selects `postgresql_web_push`, whose lock adds only
 `pywebpush`; unselected Connected and hybrid-sync profiles keep the standard
 PostgreSQL dependency graph.
@@ -37,10 +39,8 @@ python tools/validate_template_v2_networked_recipes.py --json
 ```
 
 The Flutter pair orchestrator independently validates the same exact contract
-identity, source checksums for renderable entries, and the three already
-implemented Flutter recipe versions.
-The account-erasure Flutter client remains an explicit B4 implementation task;
-its declared version is reserved but not treated as implemented.
+identity, source checksums for all four entries, and their matching Flutter
+recipe versions.
 
 ## Safe Editing
 

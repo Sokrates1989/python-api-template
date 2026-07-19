@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from template_v2.networked_recipes_contract import (
     CONTRACT_RELATIVE_PATH,
@@ -44,7 +48,7 @@ class NetworkedRecipesContractTest(unittest.TestCase):
         catalog = validate_networked_recipes_contract(REPOSITORY_ROOT)
 
         self.assertEqual(catalog.contract_version, 3)
-        self.assertEqual(catalog.catalog_revision, "0.4.0")
+        self.assertEqual(catalog.catalog_revision, "0.5.0")
         self.assertEqual(
             tuple(recipe.backend_recipe_id for recipe in catalog.recipes),
             (
@@ -56,7 +60,7 @@ class NetworkedRecipesContractTest(unittest.TestCase):
         )
         self.assertEqual(
             tuple(recipe.implementation_status for recipe in catalog.recipes),
-            ("renderable", "renderable", "renderable", "contract_only"),
+            ("renderable", "renderable", "renderable", "renderable"),
         )
         self.assertEqual(
             catalog.recipes[1].python_dependency_profile,
@@ -82,7 +86,7 @@ class NetworkedRecipesContractTest(unittest.TestCase):
 
         catalog = validate_networked_recipes_contract(REPOSITORY_ROOT)
         recipes = validate_networked_recipe_sources(REPOSITORY_ROOT, catalog)
-        self.assertEqual(len(recipes), 3)
+        self.assertEqual(len(recipes), 4)
         self.assertEqual(recipes[0].backend_recipe_id, "hybrid_sync")
         self.assertEqual(recipes[0].backend_revision, "1.0.0")
         files = {
@@ -182,6 +186,165 @@ class NetworkedRecipesContractTest(unittest.TestCase):
         self.assertNotIn(b'prefix="/api/', rendered)
         for path, content in files.items():
             compile(content, path, "exec")
+
+    def test_account_erasure_sources_cover_ordering_retry_and_provider_boundary(self) -> None:
+        """Render complete data-first idempotent Keycloak erasure sources."""
+
+        catalog = validate_networked_recipes_contract(REPOSITORY_ROOT)
+        recipes = validate_networked_recipe_sources(REPOSITORY_ROOT, catalog)
+        recipe = next(
+            item for item in recipes if item.backend_recipe_id == "account_erasure"
+        )
+        self.assertEqual(recipe.backend_revision, "1.0.0")
+        files = {
+            item.relative_path: item.content
+            for item in recipe.render("sample_app")
+        }
+        self.assertEqual(
+            tuple(files),
+            (
+                "routes/account_erasure.py",
+                "schemas/account_erasure.py",
+                "services/account_erasure_service.py",
+            ),
+        )
+        rendered = b"\n".join(files.values())
+        self.assertIn(b'@router.delete("/me"', rendered)
+        self.assertIn(b"SqlAlchemyOwnerDataEraser", rendered)
+        self.assertIn(b"product_data_contract_incomplete", rendered)
+        self.assertIn(b"KeycloakIdentityErasureGateway", rendered)
+        self.assertIn(b"product_data_deleted=True", rendered)
+        self.assertIn(b"{204, 404}", rendered)
+        self.assertNotIn(b"__APP_ID__", rendered)
+        self.assertNotIn(b'prefix="/api/', rendered)
+        for path, content in files.items():
+            compile(content, path, "exec")
+
+    def test_account_erasure_service_orders_data_before_identity_and_marks_partial(self) -> None:
+        """Execute injected ports to prove preflight, ordering, and retry state."""
+
+        catalog = validate_networked_recipes_contract(REPOSITORY_ROOT)
+        recipe = next(
+            item
+            for item in validate_networked_recipe_sources(REPOSITORY_ROOT, catalog)
+            if item.backend_recipe_id == "account_erasure"
+        )
+        service_source = next(
+            item.content
+            for item in recipe.render("sample_app")
+            if item.relative_path == "services/account_erasure_service.py"
+        )
+        requests_module = types.ModuleType("requests")
+
+        class FakeSession:
+            """Provide the session type required by generated annotations."""
+
+        class FakeRequestException(Exception):
+            """Provide the transport-error type caught by the gateway."""
+
+        requests_module.Session = FakeSession
+        requests_module.RequestException = FakeRequestException
+        sqlalchemy_module = types.ModuleType("sqlalchemy")
+        sqlalchemy_module.delete = lambda value: value
+        settings_module = types.ModuleType("api.settings")
+
+        class FakeSettings:
+            """Provide the settings type required by generated annotations."""
+
+        settings_module.Settings = FakeSettings
+        settings_module.settings = FakeSettings()
+        factory_module = types.ModuleType("backend.database.factory")
+        factory_module.get_database_handler = lambda: object()
+        sql_handler_module = types.ModuleType("backend.database.sql_handler")
+
+        class FakeSqlHandler:
+            """Provide the SQL handler type required by generated preflight."""
+
+        sql_handler_module.SQLHandler = FakeSqlHandler
+        base_module = types.ModuleType("models.sql.base")
+        base_module.Base = types.SimpleNamespace(
+            metadata=types.SimpleNamespace(sorted_tables=[])
+        )
+        generated_module = types.ModuleType("generated_account_erasure_test")
+        modules = {
+            "requests": requests_module,
+            "sqlalchemy": sqlalchemy_module,
+            "api.settings": settings_module,
+            "backend.database.factory": factory_module,
+            "backend.database.sql_handler": sql_handler_module,
+            "models.sql.base": base_module,
+            "generated_account_erasure_test": generated_module,
+        }
+        namespace = generated_module.__dict__
+        with patch.dict(sys.modules, modules):
+            exec(
+                compile(service_source, "account_erasure_service.py", "exec"),
+                namespace,
+            )
+        error_type = namespace["AccountErasureError"]
+        service_type = namespace["AccountErasureService"]
+        events: list[str] = []
+
+        class RecordingDataEraser:
+            """Record product-data preflight and deletion events."""
+
+            def validate_support(self) -> None:
+                """Record data-contract preflight."""
+
+                events.append("data-preflight")
+
+            async def delete_owner_data(self, owner_subject: str) -> None:
+                """Record normalized owner deletion.
+
+                Args:
+                    owner_subject: Normalized subject under test.
+                """
+
+                events.append(f"data:{owner_subject}")
+
+        class RecordingIdentityGateway:
+            """Record identity preflight and fail after product deletion."""
+
+            def validate_support(self) -> None:
+                """Record identity-provider preflight."""
+
+                events.append("identity-preflight")
+
+            async def delete_identity(self, owner_subject: str) -> None:
+                """Record and reject identity deletion.
+
+                Args:
+                    owner_subject: Normalized subject under test.
+
+                Raises:
+                    AccountErasureError: Always, to model a retryable gateway.
+                """
+
+                events.append(f"identity:{owner_subject}")
+                raise error_type(
+                    "identity_deletion_failed",
+                    retryable=True,
+                    status_code=502,
+                )
+
+        service = service_type(
+            data_eraser=RecordingDataEraser(),
+            identity_gateway=RecordingIdentityGateway(),
+        )
+        with self.assertRaises(error_type) as context:
+            asyncio.run(service.delete_account(" owner-1 "))
+
+        self.assertEqual(
+            events,
+            [
+                "data-preflight",
+                "identity-preflight",
+                "data:owner-1",
+                "identity:owner-1",
+            ],
+        )
+        self.assertTrue(context.exception.product_data_deleted)
+        self.assertTrue(context.exception.retryable)
 
     def test_hybrid_sync_source_drift_fails_closed(self) -> None:
         """Reject a changed renderable template before any output is returned."""

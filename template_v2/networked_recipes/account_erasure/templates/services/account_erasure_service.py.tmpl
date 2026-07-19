@@ -1,0 +1,407 @@
+"""Product-neutral account erasure with explicit data and identity boundaries.
+
+The generated service validates complete product-data coverage and Keycloak
+administration before mutation. It deletes app-owned rows first and the
+external identity last so a failed identity step can be retried with the
+still-valid bearer session. Repeated data and Keycloak deletion are idempotent.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any, Protocol
+from urllib.parse import quote
+
+import requests
+from sqlalchemy import delete
+
+from api.settings import Settings, settings
+from backend.database.factory import get_database_handler
+from backend.database.sql_handler import SQLHandler
+from models.sql.base import Base
+
+
+@dataclass(frozen=True)
+class AccountErasureResult:
+    """Describe completed erasure domains without exposing record counts.
+
+    Attributes:
+        product_data_deleted: Whether every generated app-owned row was removed.
+        identity_deleted: Whether the external Keycloak identity was removed.
+    """
+
+    product_data_deleted: bool
+    identity_deleted: bool
+
+
+class AccountErasureError(RuntimeError):
+    """Expose one stable content-free account-erasure failure.
+
+    Attributes:
+        code: Machine-readable failure code.
+        product_data_deleted: Whether product data was already removed.
+        retryable: Whether a later identical request may succeed.
+        status_code: Safe HTTP status selected by the service boundary.
+    """
+
+    def __init__(
+        self,
+        code: str,
+        *,
+        product_data_deleted: bool = False,
+        retryable: bool,
+        status_code: int,
+    ) -> None:
+        """Create a classified failure without retaining subject or raw errors.
+
+        Args:
+            code: Stable machine-readable failure code.
+            product_data_deleted: Whether backend erasure already completed.
+            retryable: Whether retry may complete the remaining work.
+            status_code: Safe route status code.
+        """
+
+        self.code = code
+        self.product_data_deleted = product_data_deleted
+        self.retryable = retryable
+        self.status_code = status_code
+        super().__init__(code)
+
+
+class AccountDataEraserPort(Protocol):
+    """Define preflight and deletion for app-owned product persistence."""
+
+    def validate_support(self) -> None:
+        """Fail before mutation when app-owned data coverage is incomplete.
+
+        Raises:
+            AccountErasureError: If the active data profile cannot be erased.
+        """
+
+        ...
+
+    async def delete_owner_data(self, owner_subject: str) -> None:
+        """Idempotently delete all product data for one verified subject.
+
+        Args:
+            owner_subject: Verified identity-provider subject.
+
+        Raises:
+            AccountErasureError: If the transactional deletion fails.
+        """
+
+        ...
+
+
+class IdentityErasureGateway(Protocol):
+    """Define preflight and deletion for an external identity provider."""
+
+    def validate_support(self) -> None:
+        """Fail before product mutation when identity deletion is unavailable.
+
+        Raises:
+            AccountErasureError: If provider support or credentials are absent.
+        """
+
+        ...
+
+    async def delete_identity(self, owner_subject: str) -> None:
+        """Idempotently delete one verified external identity.
+
+        Args:
+            owner_subject: Verified identity-provider subject.
+
+        Raises:
+            AccountErasureError: If identity deletion is not complete.
+        """
+
+        ...
+
+
+class SqlAlchemyOwnerDataEraser:
+    """Delete every generated app table through its canonical owner column.
+
+    The bounded generator contract requires each ``__APP_ID___*`` table to
+    expose ``owner_subject``. Any uncovered app table fails preflight so a new
+    capability cannot silently escape account erasure.
+    """
+
+    def __init__(
+        self,
+        handler_factory: Callable[[], Any] = get_database_handler,
+    ) -> None:
+        """Resolve the configured handler without opening a database session.
+
+        Args:
+            handler_factory: Callable returning the active database handler.
+        """
+
+        self._handler = handler_factory()
+        self._tables: tuple[Any, ...] = ()
+
+    def validate_support(self) -> None:
+        """Validate SQL support and complete canonical owner coverage.
+
+        Raises:
+            AccountErasureError: If PostgreSQL is inactive, no generated table
+                is loaded, or any generated app table lacks ``owner_subject``.
+        """
+
+        if not isinstance(self._handler, SQLHandler):
+            raise AccountErasureError(
+                "product_data_provider_unsupported",
+                retryable=False,
+                status_code=409,
+            )
+        app_tables = tuple(
+            table
+            for table in reversed(Base.metadata.sorted_tables)
+            if table.name.startswith("__APP_ID___")
+        )
+        if not app_tables or any("owner_subject" not in table.c for table in app_tables):
+            raise AccountErasureError(
+                "product_data_contract_incomplete",
+                retryable=False,
+                status_code=409,
+            )
+        self._tables = app_tables
+
+    async def delete_owner_data(self, owner_subject: str) -> None:
+        """Delete all generated owner rows in reverse dependency order.
+
+        Args:
+            owner_subject: Verified identity-provider subject.
+
+        Raises:
+            AccountErasureError: If the database transaction fails.
+
+        Side Effects:
+            Permanently deletes matching rows in one transaction.
+        """
+
+        if not self._tables:
+            self.validate_support()
+        try:
+            async with self._handler.AsyncSessionLocal() as session:
+                async with session.begin():
+                    for table in self._tables:
+                        await session.execute(
+                            delete(table).where(table.c.owner_subject == owner_subject)
+                        )
+        except AccountErasureError:
+            raise
+        except Exception as error:
+            raise AccountErasureError(
+                "product_data_deletion_failed",
+                retryable=True,
+                status_code=500,
+            ) from error
+
+
+class KeycloakIdentityErasureGateway:
+    """Delete a subject through a confidential Keycloak service account."""
+
+    def __init__(
+        self,
+        runtime_settings: Settings = settings,
+        *,
+        request_session: requests.Session | None = None,
+    ) -> None:
+        """Create a deferred gateway around runtime-owned settings.
+
+        Args:
+            runtime_settings: Active authentication and Keycloak settings.
+            request_session: Optional HTTP session override for tests.
+        """
+
+        self._settings = runtime_settings
+        self._session = request_session or requests.Session()
+
+    def validate_support(self) -> None:
+        """Require Keycloak plus complete confidential-client configuration.
+
+        Raises:
+            AccountErasureError: If another provider is active or a required
+                URL, realm, client identifier, or secret is absent.
+        """
+
+        if self._settings.get_auth_provider() != "keycloak":
+            raise AccountErasureError(
+                "identity_provider_unsupported",
+                retryable=False,
+                status_code=409,
+            )
+        if not self._configuration_complete():
+            raise AccountErasureError(
+                "identity_provider_not_configured",
+                retryable=False,
+                status_code=409,
+            )
+
+    async def delete_identity(self, owner_subject: str) -> None:
+        """Delete one Keycloak identity outside the async event loop.
+
+        Args:
+            owner_subject: Verified Keycloak subject.
+
+        Raises:
+            AccountErasureError: If token acquisition or deletion fails. A
+                missing identity is accepted for retry idempotency.
+        """
+
+        self.validate_support()
+        await asyncio.to_thread(self._delete_identity_blocking, owner_subject)
+
+    def _delete_identity_blocking(self, owner_subject: str) -> None:
+        """Perform confidential token acquisition and administrative deletion.
+
+        Args:
+            owner_subject: Verified Keycloak subject.
+
+        Raises:
+            AccountErasureError: If Keycloak transport or response fails.
+
+        Side Effects:
+            Sends two bounded HTTP requests to the configured Keycloak host.
+        """
+
+        base_url = self._base_url()
+        realm = quote(str(self._settings.KEYCLOAK_REALM).strip(), safe="")
+        try:
+            token_response = self._session.post(
+                f"{base_url}/realms/{realm}/protocol/openid-connect/token",
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": str(self._settings.KEYCLOAK_CLIENT_ID).strip(),
+                    "client_secret": str(self._settings.KEYCLOAK_CLIENT_SECRET).strip(),
+                },
+                timeout=10,
+            )
+            if token_response.status_code != 200:
+                raise AccountErasureError(
+                    "identity_token_failed",
+                    retryable=True,
+                    status_code=502,
+                )
+            access_token = str(token_response.json().get("access_token", "")).strip()
+            if not access_token:
+                raise AccountErasureError(
+                    "identity_token_failed",
+                    retryable=True,
+                    status_code=502,
+                )
+            delete_response = self._session.delete(
+                f"{base_url}/admin/realms/{realm}/users/"
+                f"{quote(owner_subject, safe='')}",
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=10,
+            )
+            if delete_response.status_code not in {204, 404}:
+                raise AccountErasureError(
+                    "identity_deletion_failed",
+                    retryable=True,
+                    status_code=502,
+                )
+        except AccountErasureError:
+            raise
+        except (requests.RequestException, ValueError) as error:
+            raise AccountErasureError(
+                "identity_provider_unavailable",
+                retryable=True,
+                status_code=502,
+            ) from error
+
+    def _configuration_complete(self) -> bool:
+        """Return whether every Keycloak administration value is non-empty.
+
+        Returns:
+            True only for a complete internal/public URL, realm, client, and
+            confidential client secret.
+        """
+
+        return all(
+            str(value or "").strip()
+            for value in (
+                self._settings.KEYCLOAK_INTERNAL_URL
+                or self._settings.KEYCLOAK_SERVER_URL,
+                self._settings.KEYCLOAK_REALM,
+                self._settings.KEYCLOAK_CLIENT_ID,
+                self._settings.KEYCLOAK_CLIENT_SECRET,
+            )
+        )
+
+    def _base_url(self) -> str:
+        """Return the preferred Keycloak URL without a trailing slash.
+
+        Returns:
+            Internal URL when configured, otherwise the public server URL.
+        """
+
+        value = (
+            self._settings.KEYCLOAK_INTERNAL_URL
+            or self._settings.KEYCLOAK_SERVER_URL
+            or ""
+        )
+        return str(value).strip().rstrip("/")
+
+
+class AccountErasureService:
+    """Coordinate preflight, product-data deletion, and identity deletion."""
+
+    def __init__(
+        self,
+        *,
+        data_eraser: AccountDataEraserPort | None = None,
+        identity_gateway: IdentityErasureGateway | None = None,
+    ) -> None:
+        """Bind injectable destructive boundaries without starting mutation.
+
+        Args:
+            data_eraser: Optional generated-data deletion override.
+            identity_gateway: Optional external identity deletion override.
+        """
+
+        self._data_eraser = data_eraser or SqlAlchemyOwnerDataEraser()
+        self._identity_gateway = identity_gateway or KeycloakIdentityErasureGateway()
+
+    async def delete_account(self, owner_subject: str) -> AccountErasureResult:
+        """Permanently delete the verified subject from both owned domains.
+
+        Args:
+            owner_subject: Exact subject derived from the verified bearer token.
+
+        Returns:
+            Completed product-data and identity markers.
+
+        Raises:
+            AccountErasureError: For input, preflight, data, or identity failure.
+
+        Side Effects:
+            Permanently deletes app-owned rows, then the external identity.
+        """
+
+        normalized_subject = owner_subject.strip()
+        if not normalized_subject:
+            raise AccountErasureError(
+                "invalid_owner_subject",
+                retryable=False,
+                status_code=401,
+            )
+        self._data_eraser.validate_support()
+        self._identity_gateway.validate_support()
+        await self._data_eraser.delete_owner_data(normalized_subject)
+        try:
+            await self._identity_gateway.delete_identity(normalized_subject)
+        except AccountErasureError as error:
+            raise AccountErasureError(
+                error.code,
+                product_data_deleted=True,
+                retryable=error.retryable,
+                status_code=error.status_code,
+            ) from error
+        return AccountErasureResult(
+            product_data_deleted=True,
+            identity_deleted=True,
+        )
