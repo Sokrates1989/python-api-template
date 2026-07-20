@@ -9,7 +9,7 @@ route-policy surfaces consumed by the Flutter Template V2 pair orchestrator.
 `records_starter_contract.json` separately owns the checksum-pinned B3 model,
 repository, service, schemas, authenticated routes, and Alembic migration used
 only by the standard Keycloak/PostgreSQL pair.
-`networked_recipes_contract.json` starts B4 with the fixed four-recipe catalog,
+`networked_recipes_contract.json` fixes the completed B4 four-recipe catalog,
 matching Flutter versions, dependency order, routes, configuration ownership,
 generated paths, and complete removal boundaries. Hybrid sync, authenticated
 Web Push, AI chat, and account erasure are checksum-pinned `renderable` source
@@ -36,6 +36,10 @@ applications.
 - `networked_recipe_sources.py` verifies every promoted source manifest,
   complete output coverage, and LF-normalized template checksum before safe
   app-id substitution.
+- `tests/test_template_v2_networked_recipe_runtime.py` executes the generated
+  hybrid-sync and Web Push services through in-memory ports; the AI-chat and
+  Account-Erasure suites complete the fixed four-recipe behavior gate inside a
+  dependency-complete Python test image.
 - `dependency_profiles/postgresql_web_push/` owns the Python 3.13 PDM lock
   selected only with authenticated Web Push.
 - `backend_lifecycle.py` is the public in-process lifecycle facade.
