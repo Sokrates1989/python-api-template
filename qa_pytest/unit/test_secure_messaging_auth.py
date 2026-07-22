@@ -49,21 +49,21 @@ def _request(auth_header: str | None) -> MagicMock:
 def test_missing_auth_header_raises_401() -> None:
     """Absent Authorization header must return 401."""
     with pytest.raises(HTTPException) as exc_info:
-        authenticate_request(_request(None), app="test-app")
+        authenticate_request(_request(None), request_app="test-app")
     assert exc_info.value.status_code == 401
 
 
 def test_malformed_auth_header_raises_401() -> None:
     """Authorization header without 'Bearer' scheme must return 401."""
     with pytest.raises(HTTPException) as exc_info:
-        authenticate_request(_request("Basic dXNlcjpwYXNz"), app="test-app")
+        authenticate_request(_request("Basic dXNlcjpwYXNz"), request_app="test-app")
     assert exc_info.value.status_code == 401
 
 
 def test_bearer_without_token_raises_401() -> None:
     """'Bearer' keyword alone (no token value) must return 401."""
     with pytest.raises(HTTPException) as exc_info:
-        authenticate_request(_request("Bearer"), app="test-app")
+        authenticate_request(_request("Bearer"), request_app="test-app")
     assert exc_info.value.status_code == 401
 
 
@@ -80,7 +80,7 @@ def test_client_registry_hit_returns_client_name() -> None:
         return_value=registry,
     ):
         result = authenticate_request(
-            _request("Bearer token-abc"), app="file-backup"
+            _request("Bearer token-abc"), request_app="file-backup"
         )
 
     assert result.app == "file-backup"
@@ -96,7 +96,7 @@ def test_client_registry_second_entry_matches() -> None:
         return_value=registry,
     ):
         result = authenticate_request(
-            _request("Bearer token-bbb"), app="client-b"
+            _request("Bearer token-bbb"), request_app="client-b"
         )
 
     assert result.client_name == "client-b"
@@ -121,7 +121,7 @@ def test_registry_miss_falls_through_to_legacy() -> None:
         return_value="legacy-token",
     ):
         result = authenticate_request(
-            _request("Bearer legacy-token"), app="old-client"
+            _request("Bearer legacy-token"), request_app="old-client"
         )
 
     assert result.app == "old-client"
@@ -140,7 +140,9 @@ def test_legacy_fallback_logs_migration_warning(caplog: pytest.LogCaptureFixture
         return_value="legacy-token",
     ):
         with caplog.at_level(logging.WARNING, logger="secure_messaging.auth"):
-            authenticate_request(_request("Bearer legacy-token"), app="old-client")
+            authenticate_request(
+                _request("Bearer legacy-token"), request_app="old-client"
+            )
 
     assert any("legacy" in record.message.lower() for record in caplog.records)
 
@@ -158,7 +160,9 @@ def test_empty_registry_falls_through_to_legacy() -> None:
         "apps.secure_messaging.services.auth.SecureMessagingSettings.get_auth_token",
         return_value="legacy-only",
     ):
-        result = authenticate_request(_request("Bearer legacy-only"), app="x")
+        result = authenticate_request(
+            _request("Bearer legacy-only"), request_app="x"
+        )
 
     assert result.client_name is None
 
@@ -177,7 +181,9 @@ def test_wrong_token_raises_403() -> None:
         return_value="legacy-correct",
     ):
         with pytest.raises(HTTPException) as exc_info:
-            authenticate_request(_request("Bearer wrong-token"), app="attacker")
+            authenticate_request(
+                _request("Bearer wrong-token"), request_app="attacker"
+            )
 
     assert exc_info.value.status_code == 403
 
@@ -192,7 +198,9 @@ def test_wrong_legacy_token_raises_403() -> None:
         return_value="the-real-token",
     ):
         with pytest.raises(HTTPException) as exc_info:
-            authenticate_request(_request("Bearer not-the-token"), app="attacker")
+            authenticate_request(
+                _request("Bearer not-the-token"), request_app="attacker"
+            )
 
     assert exc_info.value.status_code == 403
 
@@ -215,7 +223,9 @@ def test_registry_checked_before_legacy() -> None:
         "apps.secure_messaging.services.auth.SecureMessagingSettings.get_auth_token",
         return_value="shared-token",
     ):
-        result = authenticate_request(_request("Bearer shared-token"), app="preferred")
+        result = authenticate_request(
+            _request("Bearer shared-token"), request_app="preferred"
+        )
 
     assert result.client_name == "preferred"
 
@@ -231,7 +241,7 @@ def test_registry_config_error_raises_503() -> None:
         side_effect=ValueError("Bad JSON"),
     ):
         with pytest.raises(HTTPException) as exc_info:
-            authenticate_request(_request("Bearer any"), app="any")
+            authenticate_request(_request("Bearer any"), request_app="any")
 
     assert exc_info.value.status_code == 503
 
@@ -246,6 +256,6 @@ def test_legacy_config_error_raises_503() -> None:
         side_effect=ValueError("Token not configured"),
     ):
         with pytest.raises(HTTPException) as exc_info:
-            authenticate_request(_request("Bearer any"), app="any")
+            authenticate_request(_request("Bearer any"), request_app="any")
 
     assert exc_info.value.status_code == 503

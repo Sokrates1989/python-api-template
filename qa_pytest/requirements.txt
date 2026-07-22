@@ -1,0 +1,3 @@
+# Exact test-only overlay for the locked Felix dependency environment in CI.
+httpx==0.28.1
+pytest==9.1.1

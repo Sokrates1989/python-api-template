@@ -184,15 +184,25 @@ def drop_postgresql_tables() -> None:
 
 
 def drop_mysql_tables() -> None:
-    """Drop all MySQL tables in the configured schema."""
+    """Drop all MySQL tables in the selected connection database.
+
+    Returns:
+        None after the maintenance client completes successfully.
+
+    Raises:
+        Exception: If no MySQL-compatible client exists or the command fails.
+
+    Side Effects:
+        Executes destructive schema maintenance through the external client.
+    """
     env = os.environ.copy()
     env["MYSQL_PWD"] = settings.get_db_password()
-    drop_sql = f"""
+    drop_sql = """
     SET FOREIGN_KEY_CHECKS = 0;
     SET @tables = NULL;
     SELECT GROUP_CONCAT(table_name) INTO @tables
     FROM information_schema.tables
-    WHERE table_schema = '{settings.DB_NAME}';
+    WHERE table_schema = DATABASE();
     SET @tables = CONCAT('DROP TABLE IF EXISTS ', @tables);
     PREPARE stmt FROM @tables;
     EXECUTE stmt;
@@ -207,7 +217,18 @@ def drop_mysql_tables() -> None:
 
 
 def drop_sqlite_tables() -> None:
-    """Drop all SQLite tables from the configured database file."""
+    """Drop all SQLite tables from the configured database file.
+
+    Returns:
+        None after deleting every database-owned table, or immediately when
+        the configured database file does not exist.
+
+    Raises:
+        Exception: If SQLite discovery or table deletion fails.
+
+    Side Effects:
+        Mutates the configured SQLite database in place.
+    """
     db_file = Path(settings.DB_NAME)
     if not db_file.exists():
         return
@@ -218,11 +239,29 @@ def drop_sqlite_tables() -> None:
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         tables = cursor.fetchall()
         for table_name, in tables:
-            cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
+            identifier = _quote_sqlite_identifier(table_name)
+            cursor.execute("DROP TABLE IF EXISTS " + identifier)  # nosec B608
         conn.commit()
         conn.close()
     except Exception as exc:
         raise Exception(f"Failed to drop SQLite tables: {exc}") from exc
+
+
+def _quote_sqlite_identifier(value: str) -> str:
+    """Quote a database-owned SQLite identifier safely.
+
+    SQLite does not support bound parameters for identifiers. Doubling every
+    embedded quote and enclosing the result preserves the exact table name
+    without allowing it to alter the maintenance statement.
+
+    Args:
+        value: Table identifier returned by ``sqlite_master``.
+
+    Returns:
+        Double-quoted SQLite identifier safe for statement composition.
+    """
+
+    return '"' + value.replace('"', '""') + '"'
 
 
 def _build_mysql_drop_command() -> list[str]:

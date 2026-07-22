@@ -1,10 +1,12 @@
+"""Contract tests for provider capabilities and their SQL sync guard."""
+
 import asyncio
 from dataclasses import asdict
 
 import pytest
 from fastapi import HTTPException, status
 
-from api.routes.sql.sync import ensure_sync_supported
+from api.routes.sql.sync import ensure_sql_sync_supported
 from api.settings import settings
 from backend.adapters.provider_capability_factory import (
     get_current_provider_capabilities,
@@ -55,6 +57,15 @@ EXPECTED_CAPABILITIES_BY_PROFILE = {
 
 
 async def _run_with_initialized_database(test_coro):
+    """Run one contract scenario inside the configured provider lifecycle.
+
+    Args:
+        test_coro: Awaitable scenario callback executed after initialization.
+
+    Returns:
+        None after the scenario and provider teardown complete.
+    """
+
     try:
         result = await initialize_database()
         assert result.get("status") == "success"
@@ -65,7 +76,11 @@ async def _run_with_initialized_database(test_coro):
 
 @pytest.mark.contract
 def test_capability_profile_matches_current_database():
+    """Match current and explicit capability resolution for the provider."""
+
     async def _scenario():
+        """Compare both capability access paths with the profile contract."""
+
         configured_db_type = settings.normalized_db_type()
         profile_key = normalize_provider_db_type(configured_db_type)
         expected = EXPECTED_CAPABILITIES_BY_PROFILE[profile_key]
@@ -81,14 +96,18 @@ def test_capability_profile_matches_current_database():
 
 @pytest.mark.contract
 def test_sync_route_guard_matches_capabilities():
+    """Keep SQL sync availability aligned with provider capabilities."""
+
     async def _scenario():
+        """Require success for SQL and HTTP 400 for unsupported providers."""
+
         capabilities = get_current_provider_capabilities()
         if capabilities.supports_sync_api:
-            ensure_sync_supported()
+            ensure_sql_sync_supported()
             return
 
         with pytest.raises(HTTPException) as exc_info:
-            ensure_sync_supported()
+            ensure_sql_sync_supported()
         assert exc_info.value.status_code == status.HTTP_400_BAD_REQUEST
 
     asyncio.run(_run_with_initialized_database(_scenario))

@@ -58,14 +58,22 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install pytest
-        run: python -m pip install --upgrade pip pytest
+      # Shared tests exercise the Felix superset plus secure messaging. Reuse
+      # the committed app lock and layer only exact test-only dependencies.
+      - name: Install locked shared test environment
+        run: |
+          python -m pip install --upgrade pip pdm
+          pdm sync -p app/apps/felix --prod --no-self
+          pdm run -p app/apps/felix python -m ensurepip --upgrade
+          pdm run -p app/apps/felix python -m pip install --requirement qa_pytest/requirements.txt
 
       - name: Run shared unit tests
-        run: python -m pytest -c pytest.ini qa_pytest/unit -q
+        env:
+          PYTHONPATH: ${{ github.workspace }}/app
+        run: pdm run -p app/apps/felix python -m pytest -c pytest.ini qa_pytest/unit -q
 
-      - name: Run shared contract tests
-        run: python -m pytest -c pytest.ini qa_pytest/contracts -m contract -q
+      # Provider contracts require live database services and run below in the
+      # PostgreSQL/MongoDB integration matrix, not in this service-free job.
 
   security-and-standards:
     runs-on: ubuntu-latest
@@ -154,9 +162,18 @@ jobs:
         with:
           python-version: "3.13"
 
+      # Definition imports require the shared FastAPI contracts. The Felix
+      # lock is the existing dependency superset and keeps versions exact.
+      - name: Install locked definition environment
+        run: |
+          python -m pip install --upgrade pip pdm
+          pdm sync -p app/apps/felix --prod --no-self
+          pdm run -p app/apps/felix python -m ensurepip --upgrade
+          pdm run -p app/apps/felix python -m pip install --requirement qa_pytest/requirements.txt
+
       - name: App definition import check
         working-directory: app
-        run: python3 -c "from apps.registry import get_backend_app_definition; get_backend_app_definition('${{ matrix.app.name }}')"
+        run: pdm run -p apps/felix python -c "from apps.registry import get_backend_app_definition; get_backend_app_definition('${{ matrix.app.name }}')"
 
       - name: App dependency isolation check
         if: matrix.app.has_pyproject && matrix.app.has_lock

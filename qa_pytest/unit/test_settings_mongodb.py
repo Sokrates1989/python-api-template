@@ -1,7 +1,11 @@
+"""Tests normalized MongoDB and SQL settings helpers."""
+
 from api.settings import Settings
 
 
 def test_mongodb_helpers_with_explicit_url() -> None:
+    """Preserve an explicitly configured MongoDB URL unchanged."""
+
     cfg = Settings(
         _env_file=None,
         DB_TYPE="mongodb",
@@ -16,6 +20,8 @@ def test_mongodb_helpers_with_explicit_url() -> None:
 
 
 def test_mongodb_helpers_build_url_from_parts(monkeypatch) -> None:
+    """Build an authenticated URL with the administrative auth source."""
+
     monkeypatch.delenv("MONGODB_URL", raising=False)
     monkeypatch.setenv("MONGODB_ROOT_USER", "mongo")
     monkeypatch.setenv("MONGODB_ROOT_PASSWORD", "secret")
@@ -27,10 +33,15 @@ def test_mongodb_helpers_build_url_from_parts(monkeypatch) -> None:
         MONGODB_PORT=27017,
     )
 
-    assert cfg.get_mongodb_url() == "mongodb://mongo:secret@mongodb:27017"
+    assert (
+        cfg.get_mongodb_url()
+        == "mongodb://mongo:secret@mongodb:27017/?authSource=admin"
+    )
 
 
 def test_postgres_alias_is_sql_database() -> None:
+    """Classify the PostgreSQL alias as a SQL database."""
+
     cfg = Settings(_env_file=None, DB_TYPE="postgres")
     assert cfg.normalized_db_type() == "postgres"
     assert cfg.is_sql_database()

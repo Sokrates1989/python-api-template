@@ -1,6 +1,7 @@
 """Database statistics helpers for SQL backup operations."""
 from __future__ import annotations
 
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -75,18 +76,37 @@ def get_postgresql_stats() -> Dict:
 
 
 def get_mysql_stats() -> Dict:
-    """Return per-table and aggregate size stats for MySQL/MariaDB."""
-    mysql_cmd = next((candidate for candidate in ["mysql", "mariadb"] if shutil.which(candidate)), None)
+    """Return per-table and aggregate size stats for MySQL/MariaDB.
+
+    Returns:
+        Mapping with table count, total rows, size, and table summaries.
+
+    Raises:
+        Exception: If no client exists or the statistics query fails.
+
+    Side Effects:
+        Executes a read-only query through the selected external SQL client.
+    """
+
+    mysql_cmd = next(
+        (
+            candidate
+            for candidate in ["mysql", "mariadb"]
+            if shutil.which(candidate)
+        ),
+        None,
+    )
     if not mysql_cmd:
         raise Exception("MySQL client (mysql or mariadb) not found on system")
 
-    escaped_db = settings.DB_NAME.replace("'", "''")
     query = (
         "SELECT table_name, IFNULL(table_rows, 0) AS rows, "
         "IFNULL(data_length + index_length, 0) AS total_bytes "
         "FROM information_schema.tables "
-        f"WHERE table_schema = '{escaped_db}';"
+        "WHERE table_schema = DATABASE();"
     )
+    environment = os.environ.copy()
+    environment["MYSQL_PWD"] = settings.get_db_password()
     cmd = [
         mysql_cmd,
         "-h",
@@ -95,7 +115,8 @@ def get_mysql_stats() -> Dict:
         str(settings.DB_PORT),
         "-u",
         settings.DB_USER,
-        f"-p{settings.get_db_password()}",
+        "-D",
+        settings.DB_NAME,
         "--batch",
         "--raw",
         "--silent",
@@ -103,7 +124,7 @@ def get_mysql_stats() -> Dict:
         "-e",
         query,
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, env=environment, capture_output=True, text=True)
     if result.returncode != 0:
         raise Exception(f"MySQL stats query failed: {result.stderr.strip()}")
 
@@ -133,7 +154,17 @@ def get_mysql_stats() -> Dict:
 
 
 def get_sqlite_stats() -> Dict:
-    """Return table counts and file size stats for SQLite."""
+    """Return table counts and file size stats for SQLite.
+
+    Returns:
+        Mapping with table count, total rows, file size, and table summaries.
+
+    Raises:
+        Exception: If the configured SQLite database file does not exist.
+
+    Side Effects:
+        Opens the database for read-only statistics queries.
+    """
     db_path = Path(settings.DB_NAME)
     if not db_path.exists():
         raise Exception(f"SQLite database file not found: {db_path}")
@@ -141,13 +172,17 @@ def get_sqlite_stats() -> Dict:
     conn = sqlite3.connect(db_path)
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
+        cursor.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name NOT LIKE 'sqlite_%';"
+        )
         table_names = [row[0] for row in cursor.fetchall()]
 
         tables = []
         total_rows = 0
         for table_name in table_names:
-            cursor.execute(f'SELECT COUNT(*) FROM "{table_name}"')
+            identifier = _quote_sqlite_identifier(table_name)
+            cursor.execute("SELECT COUNT(*) FROM " + identifier)  # nosec B608
             row_count = cursor.fetchone()[0]
             total_rows += row_count
             tables.append({"name": table_name, "row_count": row_count})
@@ -161,6 +196,19 @@ def get_sqlite_stats() -> Dict:
         "database_size_mb": round(size_bytes / (1024 * 1024), 2),
         "tables": tables,
     }
+
+
+def _quote_sqlite_identifier(value: str) -> str:
+    """Quote a database-owned SQLite identifier safely.
+
+    Args:
+        value: Table identifier returned by ``sqlite_master``.
+
+    Returns:
+        Double-quoted SQLite identifier with embedded quotes escaped.
+    """
+
+    return '"' + value.replace('"', '""') + '"'
 
 
 def _parse_mysql_stat_line(line: str) -> tuple[str, int, int]:
