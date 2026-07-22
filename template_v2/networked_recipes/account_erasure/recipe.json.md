@@ -16,10 +16,13 @@ identity. It fails preflight when an app-owned table is not covered.
 
 ## Security and retry boundary
 
-The caller cannot submit a subject. Provider support and confidential-client
-configuration are validated before product mutation. Keycloak `404` is treated
-as idempotent success; an identity failure after product deletion carries only
-a boolean partial-completion marker so the still-valid bearer session can retry.
+The caller cannot submit a subject. Provider support and a backend-only
+administration client are validated before product mutation. That client is
+distinct from the Flutter public OIDC client, accepts its secret directly or
+through a deployment-owned file, and receives only account-management duties.
+Keycloak `404` is treated as idempotent success; an identity failure after
+product deletion carries only a boolean partial-completion marker so the
+still-valid bearer session can retry.
 
 ## Safe editing
 

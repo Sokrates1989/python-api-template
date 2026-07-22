@@ -1,6 +1,6 @@
 {
   "backend_recipe_id": "account_erasure",
-  "backend_revision": "1.0.0",
+  "backend_revision": "1.0.1",
   "templates": [
     {
       "output_path": "routes/account_erasure.py",
@@ -14,7 +14,7 @@
     },
     {
       "output_path": "services/account_erasure_service.py",
-      "sha256": "25e86c808fe131f11e620f46a29b58b074ec4644661ce5d72c7c2756a7f27c27",
+      "sha256": "516aa7fc8eb50c6aeec325259dd48cce6cb75aebb6dc20453af83b8542f0961e",
       "template_path": "services/account_erasure_service.py.tmpl"
     }
   ]

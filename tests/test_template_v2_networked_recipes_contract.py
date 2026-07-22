@@ -48,7 +48,7 @@ class NetworkedRecipesContractTest(unittest.TestCase):
         catalog = validate_networked_recipes_contract(REPOSITORY_ROOT)
 
         self.assertEqual(catalog.contract_version, 3)
-        self.assertEqual(catalog.catalog_revision, "0.5.0")
+        self.assertEqual(catalog.catalog_revision, "0.5.1")
         self.assertEqual(
             tuple(recipe.backend_recipe_id for recipe in catalog.recipes),
             (
@@ -195,7 +195,7 @@ class NetworkedRecipesContractTest(unittest.TestCase):
         recipe = next(
             item for item in recipes if item.backend_recipe_id == "account_erasure"
         )
-        self.assertEqual(recipe.backend_revision, "1.0.0")
+        self.assertEqual(recipe.backend_revision, "1.0.1")
         files = {
             item.relative_path: item.content
             for item in recipe.render("sample_app")
@@ -213,6 +213,9 @@ class NetworkedRecipesContractTest(unittest.TestCase):
         self.assertIn(b"SqlAlchemyOwnerDataEraser", rendered)
         self.assertIn(b"product_data_contract_incomplete", rendered)
         self.assertIn(b"KeycloakIdentityErasureGateway", rendered)
+        self.assertIn(b"KEYCLOAK_ADMIN_CLIENT_ID", rendered)
+        self.assertIn(b"KEYCLOAK_ADMIN_CLIENT_SECRET_FILE", rendered)
+        self.assertNotIn(b"self._settings.KEYCLOAK_CLIENT_SECRET", rendered)
         self.assertIn(b"product_data_deleted=True", rendered)
         self.assertIn(b"{204, 404}", rendered)
         self.assertNotIn(b"__APP_ID__", rendered)

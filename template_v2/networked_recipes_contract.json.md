@@ -17,10 +17,11 @@ direct-dependency fields above the nullable `source_contract` field introduced
 in version `2`.
 `renderable` certifies that a recipe has a complete checksum-pinned source
 contract; it does not by itself claim public selection, lifecycle, runtime, or
-release proof. Catalog revision `0.5.0` promotes hybrid sync, authenticated Web
-Push, AI chat, and account erasure revision `1.0.0`. Account erasure validates
-canonical-owner coverage before deleting product rows and then the Keycloak
-identity.
+release proof. Catalog revision `0.5.1` retains hybrid sync, authenticated Web
+Push, and AI chat `1.0.0` while promoting account erasure `1.0.1`. Account
+erasure validates canonical-owner coverage before deleting product rows and
+then the Keycloak identity through a backend-only administration client that
+is distinct from the Flutter public OIDC client.
 The Web Push entry selects `postgresql_web_push`, whose lock adds only
 `pywebpush`; unselected Connected and hybrid-sync profiles keep the standard
 PostgreSQL dependency graph.

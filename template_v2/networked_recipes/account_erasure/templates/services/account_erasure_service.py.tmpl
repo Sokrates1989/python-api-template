@@ -9,8 +9,10 @@ still-valid bearer session. Repeated data and Keycloak deletion are idempotent.
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import quote
 
@@ -200,27 +202,89 @@ class SqlAlchemyOwnerDataEraser:
             ) from error
 
 
+def _load_admin_client_secret(
+    direct_secret: str | None,
+    secret_file: str | None,
+) -> str:
+    """Load the backend-only Keycloak administration secret safely.
+
+    Args:
+        direct_secret: Optional injected or deployment-owned direct secret.
+        secret_file: Optional injected secret-file path.
+
+    Returns:
+        Direct secret when supplied, otherwise trimmed UTF-8 file content.
+        Missing or unreadable configuration returns an empty string so the
+        gateway's content-free preflight fails before product mutation.
+
+    Side Effects:
+        Reads at most one deployment-owned secret file.
+    """
+
+    value = (
+        direct_secret
+        if direct_secret is not None
+        else os.environ.get("KEYCLOAK_ADMIN_CLIENT_SECRET", "")
+    ).strip()
+    if value:
+        return value
+    configured_path = (
+        secret_file
+        if secret_file is not None
+        else os.environ.get("KEYCLOAK_ADMIN_CLIENT_SECRET_FILE", "")
+    ).strip()
+    if not configured_path:
+        return ""
+    try:
+        return Path(configured_path).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
 class KeycloakIdentityErasureGateway:
-    """Delete a subject through a confidential Keycloak service account."""
+    """Delete a subject through a backend-only Keycloak service account.
+
+    The administration client is distinct from the Flutter public OIDC client
+    so no mobile or browser configuration can acquire its secret.
+    """
 
     def __init__(
         self,
         runtime_settings: Settings = settings,
         *,
         request_session: requests.Session | None = None,
+        admin_client_id: str | None = None,
+        admin_client_secret: str | None = None,
+        admin_client_secret_file: str | None = None,
     ) -> None:
         """Create a deferred gateway around runtime-owned settings.
 
         Args:
             runtime_settings: Active authentication and Keycloak settings.
             request_session: Optional HTTP session override for tests.
+            admin_client_id: Optional backend-only client identifier override.
+            admin_client_secret: Optional direct secret override.
+            admin_client_secret_file: Optional deployment secret-file override.
+
+        Side Effects:
+            Reads the configured administration secret file when no direct
+            secret is supplied.
         """
 
         self._settings = runtime_settings
         self._session = request_session or requests.Session()
+        self._admin_client_id = (
+            admin_client_id
+            if admin_client_id is not None
+            else os.environ.get("KEYCLOAK_ADMIN_CLIENT_ID", "")
+        ).strip()
+        self._admin_client_secret = _load_admin_client_secret(
+            admin_client_secret,
+            admin_client_secret_file,
+        )
 
     def validate_support(self) -> None:
-        """Require Keycloak plus complete confidential-client configuration.
+        """Require Keycloak plus complete administration-client configuration.
 
         Raises:
             AccountErasureError: If another provider is active or a required
@@ -274,8 +338,8 @@ class KeycloakIdentityErasureGateway:
                 f"{base_url}/realms/{realm}/protocol/openid-connect/token",
                 data={
                     "grant_type": "client_credentials",
-                    "client_id": str(self._settings.KEYCLOAK_CLIENT_ID).strip(),
-                    "client_secret": str(self._settings.KEYCLOAK_CLIENT_SECRET).strip(),
+                    "client_id": self._admin_client_id,
+                    "client_secret": self._admin_client_secret,
                 },
                 timeout=10,
             )
@@ -327,8 +391,8 @@ class KeycloakIdentityErasureGateway:
                 self._settings.KEYCLOAK_INTERNAL_URL
                 or self._settings.KEYCLOAK_SERVER_URL,
                 self._settings.KEYCLOAK_REALM,
-                self._settings.KEYCLOAK_CLIENT_ID,
-                self._settings.KEYCLOAK_CLIENT_SECRET,
+                self._admin_client_id,
+                self._admin_client_secret,
             )
         )
 

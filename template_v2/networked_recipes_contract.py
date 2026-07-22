@@ -17,7 +17,7 @@ from typing import Any
 CONTRACT_RELATIVE_PATH = "template_v2/networked_recipes_contract.json"
 SUPPORTED_CONTRACT_ID = "template-v2-networked-recipes"
 SUPPORTED_CONTRACT_VERSION = 3
-SUPPORTED_CATALOG_REVISION = "0.5.0"
+SUPPORTED_CATALOG_REVISION = "0.5.1"
 _MAX_FILE_BYTES = 1_000_000
 _CONFIG_KEY_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{2,79}$")
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -37,7 +37,7 @@ _EXPECTED_RECIPES = (
     ("hybrid_sync", "1.0.0", "hybrid_sync", "1.0.0"),
     ("authenticated_web_push", "1.0.0", "pwa_web", "1.0.0"),
     ("ai_chat", "1.0.0", "ai_chat", "1.0.0"),
-    ("account_erasure", "1.0.0", "account_erasure", "1.0.0"),
+    ("account_erasure", "1.0.1", "account_erasure", "1.0.1"),
 )
 _EXPECTED_SOURCE_CONTRACTS = {
     "hybrid_sync": "template_v2/networked_recipes/hybrid_sync/recipe.json",
