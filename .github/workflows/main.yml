@@ -69,6 +69,7 @@ jobs:
 
       - name: Run shared unit tests
         env:
+          LOG_DIR: ${{ runner.temp }}/python-api-template-logs
           PYTHONPATH: ${{ github.workspace }}/app
         run: pdm run -p app/apps/felix python -m pytest -c pytest.ini qa_pytest/unit -q
 
@@ -177,10 +178,10 @@ jobs:
 
       - name: App dependency isolation check
         if: matrix.app.has_pyproject && matrix.app.has_lock
+        env:
+          PYTHONPATH: ${{ github.workspace }}/app
         run: |
           python -m pip install --upgrade pip pdm
-          pdm venv create --with venv 2>/dev/null || true
-          pdm use -f .venv 2>/dev/null || true
           pdm sync -p "app/apps/${{ matrix.app.name }}" --prod --no-self
           pdm run -p "app/apps/${{ matrix.app.name }}" python -c "import apps.${{ matrix.app.name }}.definition; print('ok')"
 
