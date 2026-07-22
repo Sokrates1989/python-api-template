@@ -1,6 +1,6 @@
 """Create Postgres Template-owned SQL wellness tables.
 
-Revision ID: postgres_template_001_wellness_tables
+Revision ID: postgres_tpl_001_wellness
 Revises: None
 Create Date: 2026-06-30 00:00:00.000000
 
@@ -12,7 +12,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "postgres_template_001_wellness_tables"
+revision = "postgres_tpl_001_wellness"
 down_revision = None
 branch_labels = None
 depends_on = None
