@@ -51,6 +51,36 @@ This template is a clean and extensible FastAPI project with:
 
 ## 🚀 Quick Start
 
+### Create a new Template V2 app/backend pair
+
+New generated applications must start from the shared creator in the sibling
+`flutter_app_template` repository. The creator gathers this Python template
+root, the empty backend publication repository, and the exact
+`app/apps/<app_id>` destination, then shows one content-free app/backend plan
+before either repository can change.
+
+**Windows PowerShell (from `flutter_app_template`):**
+
+```powershell
+.\quick-start-v2.ps1
+```
+
+**Linux/macOS/WSL (from `flutter_app_template`):**
+
+```bash
+./quick-start-v2.sh
+```
+
+Choose `author` to create public blueprint/brand inputs, then `create` for the
+paired plan. Choose `manage` later for paired reconcile, rebrand/extension
+apply, or role-scoped detach. Enter, cancellation, and missing exact intent are
+read-only. Credentials, database passwords, Keycloak administrator setup, and
+signing values remain deployment inputs and are never creator inputs.
+
+The Python `quick-start.ps1`/`quick-start.sh` scripts below configure and run an
+already selected backend checkout. They are not an alternative application
+generator and must not create `app/apps/<app_id>` targets directly.
+
 ### Guided Setup (Recommended)
 
 On first run, the quick-start scripts will launch an **interactive setup wizard** that helps you configure:
