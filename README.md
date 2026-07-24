@@ -62,13 +62,13 @@ before either repository can change.
 **Windows PowerShell (from `flutter_app_template`):**
 
 ```powershell
-.\quick-start-v2.ps1
+.\quick-start.ps1
 ```
 
 **Linux/macOS/WSL (from `flutter_app_template`):**
 
 ```bash
-./quick-start-v2.sh
+./quick-start.sh
 ```
 
 Choose `author` to create public blueprint/brand inputs, then `create` for the

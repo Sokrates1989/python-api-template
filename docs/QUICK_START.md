@@ -6,8 +6,8 @@ Get started with this FastAPI template in minutes.
 
 Create and manage a new Flutter/backend pair only through the shared Template
 V2 creator in `flutter_app_template`. From that repository run
-`.\quick-start-v2.ps1` on PowerShell or `./quick-start-v2.sh` on Bash, then use
-the `author`, `create`, and `manage` menu actions. The guided flow requests this
+`.\quick-start.ps1` on PowerShell or `./quick-start.sh` on Bash, then use the
+`author`, `create`, and `manage` menu actions. The guided flow requests this
 Python template root, a distinct empty backend repository, and the exact
 `app/apps/<app_id>` destination. It renders one content-free aggregate plan and
 requires exact intent before app or backend publication.

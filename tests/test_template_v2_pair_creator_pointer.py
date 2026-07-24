@@ -27,8 +27,9 @@ def test_quick_start_points_to_shared_pair_creator() -> None:
     )
     for content in documents:
         assert "flutter_app_template" in content
-        assert "quick-start-v2.ps1" in content
-        assert "quick-start-v2.sh" in content
+        assert "quick-start.ps1" in content
+        assert "quick-start.sh" in content
+        assert "quick-start-v2" not in content
         assert "manage" in content
         assert "backend checkout" in content
         assert "must not" in content or "do not generate" in content
