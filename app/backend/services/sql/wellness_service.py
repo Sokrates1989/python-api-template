@@ -6,31 +6,16 @@ from typing import Dict, List, Optional
 from uuid import uuid4
 
 from sqlalchemy import and_, delete, select
-
 from backend.database import get_database_handler
 from backend.database.sql_handler import SQLHandler
+from backend.services.sql.wellness_catalog_seed import SQLWellnessCatalogSeeder
 from models.sql.sync_conflict_log import SyncConflictLog
 from models.sql.sync_operation_log import SyncOperationLog
-from models.sql.user import User
 from models.sql.wellness import WellnessActivity, WellnessActivityCategory, WellnessCheckIn, WellnessDiaryEntry, WellnessSyncTombstone
 
 
 class WellnessService:
     _WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
-    _CATEGORY_DEFINITIONS = {
-        "calm": {
-            "title_key": "app_shell.activities.category_calm",
-            "description_key": "app_shell.activities.category_calm_desc",
-        },
-        "focus": {
-            "title_key": "app_shell.activities.category_focus",
-            "description_key": "app_shell.activities.category_focus_desc",
-        },
-        "energy": {
-            "title_key": "app_shell.activities.category_energy",
-            "description_key": "app_shell.activities.category_energy_desc",
-        },
-    }
 
     def __init__(self) -> None:
         handler = get_database_handler()
@@ -134,75 +119,43 @@ class WellnessService:
         cleaned = value.strip()
         return cleaned or None
 
-    async def _ensure_user_exists(self, session, user_id: str) -> None:
-        result = await session.execute(select(User.id).where(User.id == user_id))
-        if result.scalar_one_or_none() is None:
-            raise ValueError("User not found")
-
-    def _starter_activities(self, user_id: str) -> List[WellnessActivity]:
-        now = self._now_utc().replace(hour=9, minute=0, second=0, microsecond=0)
-        payloads = [
-            {"id": "breathe-reset", "icon_key": "air", "title_key": "app_shell.activities.seed_breathe_title", "summary_key": "app_shell.activities.seed_breathe_summary", "duration_minutes": 1, "favorite": True, "category_keys": ["calm", "focus"], "energy_impact": "reset"},
-            {"id": "clarity-journal", "icon_key": "book", "title_key": "app_shell.activities.seed_journal_title", "summary_key": "app_shell.activities.seed_journal_summary", "duration_minutes": 8, "favorite": True, "category_keys": ["focus"], "energy_impact": "grounding"},
-            {"id": "soft-stretch", "icon_key": "self_improvement", "title_key": "app_shell.activities.seed_stretch_title", "summary_key": "app_shell.activities.seed_stretch_summary", "duration_minutes": 6, "favorite": False, "category_keys": ["energy", "calm"], "energy_impact": "lift"},
-            {"id": "focus-walk", "icon_key": "directions_walk", "title_key": "app_shell.activities.seed_walk_title", "summary_key": "app_shell.activities.seed_walk_summary", "duration_minutes": 12, "favorite": False, "category_keys": ["energy", "focus"], "energy_impact": "lift"},
-            {"id": "pause-and-tea", "icon_key": "local_cafe", "title_key": "app_shell.activities.seed_tea_title", "summary_key": "app_shell.activities.seed_tea_summary", "duration_minutes": 10, "favorite": False, "category_keys": ["calm"], "energy_impact": "ease"},
-        ]
-        activities: List[WellnessActivity] = []
-        for sort_order, item in enumerate(payloads):
-            activity = WellnessActivity(
-                user_id=user_id,
-                id=item["id"],
-                icon_key=item["icon_key"],
-                title_key=item["title_key"],
-                title=None,
-                summary_key=item["summary_key"],
-                summary=None,
-                duration_minutes=item["duration_minutes"],
-                favorite=item["favorite"],
-                harmful=False,
-                sort_order=sort_order,
-                energy_impact=item["energy_impact"],
-                created_at=now,
-                updated_at=now,
-            )
-            activity.category_keys = list(item["category_keys"])
-            activities.append(activity)
-        return activities
-
-    def _starter_categories(self, user_id: str) -> List[WellnessActivityCategory]:
-        """Build the default persisted category rows for a user.
+    async def _ensure_user_exists(
+        self,
+        session,
+        user_id: str,
+    ) -> None:
+        """Require the SQL parent user before destructive reset operations.
 
         Args:
-            user_id (str): Owner identifier applied to every category.
-
+            session: Active SQLAlchemy asynchronous session.
+            user_id (str): Authenticated owner identifier.
         Returns:
-            List[WellnessActivityCategory]: Ordered default category rows.
+            None: The function returns only when the parent row exists.
+
+        Raises:
+            ValueError: When the application user row does not exist.
+
+        Side Effects:
+            Executes a user lookup through the catalog seeder's shared guard.
         """
-        return [
-            WellnessActivityCategory(
-                user_id=user_id,
-                key=key,
-                title_key=definition["title_key"],
-                title=None,
-                description_key=definition["description_key"],
-                description=None,
-                icon_key={"calm": "self_improvement", "focus": "center_focus_strong", "energy": "bolt"}.get(key, "category"),
-                sort_order=sort_order,
-            )
-            for sort_order, (key, definition) in enumerate(self._CATEGORY_DEFINITIONS.items())
-        ]
+        await SQLWellnessCatalogSeeder.ensure_user_exists(session, user_id)
 
     async def _ensure_seed_data(self, user_id: str) -> None:
-        async with self.handler.AsyncSessionLocal() as session:
-            await self._ensure_user_exists(session, user_id)
-            existing = await session.execute(select(WellnessActivity.pk).where(WellnessActivity.user_id == user_id).limit(1))
-            if existing.scalar_one_or_none() is None:
-                session.add_all(self._starter_activities(user_id))
-            existing_category = await session.execute(select(WellnessActivityCategory.pk).where(WellnessActivityCategory.user_id == user_id).limit(1))
-            if existing_category.scalar_one_or_none() is None:
-                session.add_all(self._starter_categories(user_id))
-            await session.commit()
+        """Delegate SQL catalog initialization and exact legacy replacement.
+
+        Args:
+            user_id (str): Authenticated owner identifier.
+
+        Returns:
+            None.
+
+        Raises:
+            Exception: When the provider-specific seed workflow fails.
+
+        Side Effects:
+            May atomically seed or replace eligible catalog groups.
+        """
+        await SQLWellnessCatalogSeeder(self.handler).ensure(user_id)
 
     async def _find_activity(self, session, user_id: str, activity_id: Optional[str]) -> Optional[WellnessActivity]:
         if not activity_id:

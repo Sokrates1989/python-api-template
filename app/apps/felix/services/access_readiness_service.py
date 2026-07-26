@@ -17,6 +17,11 @@ from apps.felix.services.access_readiness_state import (
     normalize_access_readiness_patch,
     normalize_access_readiness_state,
 )
+from apps.felix.services.sql_user_provisioning import (
+    SQLUserNotProvisionedError,
+    ensure_sql_user_provisioned,
+    sql_user_not_found_result,
+)
 from backend.database import get_database_handler
 
 
@@ -64,6 +69,8 @@ class FelixAccessReadinessService:
                     "data": None,
                 }
             return {"status": "success", "data": state}
+        except SQLUserNotProvisionedError:
+            return sql_user_not_found_result()
         except Exception as exc:
             return {"status": "error", "message": f"Error loading Felix access readiness: {str(exc)}", "data": None}
 
@@ -100,6 +107,8 @@ class FelixAccessReadinessService:
                     "data": None,
                 }
             return {"status": "success", "message": "Felix access readiness updated successfully", "data": state}
+        except SQLUserNotProvisionedError:
+            return sql_user_not_found_result()
         except Exception as exc:
             return {"status": "error", "message": f"Error updating Felix access readiness: {str(exc)}", "data": None}
 
@@ -213,9 +222,15 @@ class FelixAccessReadinessService:
             Dict[str, Any]: Canonical readiness dictionary.
 
         Side Effects:
-            Inserts a default SQL row when absent.
+            Verifies the parent application user and inserts a default SQL row
+            when readiness state is absent.
+
+        Raises:
+            SQLUserNotProvisionedError: When the parent application user row
+            does not exist yet.
         """
         async with self.handler.AsyncSessionLocal() as session:
+            await ensure_sql_user_provisioned(session, user_id)
             result = await session.execute(
                 text(
                     """
@@ -247,10 +262,16 @@ class FelixAccessReadinessService:
             Dict[str, Any]: Canonical state after persistence.
 
         Side Effects:
-            Inserts or updates the SQL readiness row.
+            Verifies the parent application user, then inserts or updates the
+            SQL readiness row.
+
+        Raises:
+            SQLUserNotProvisionedError: When the parent application user row
+            does not exist yet.
         """
         normalized = normalize_access_readiness_state(state)
         async with self.handler.AsyncSessionLocal() as session:
+            await ensure_sql_user_provisioned(session, user_id)
             result = await session.execute(
                 text("SELECT pk FROM felix_access_readiness WHERE user_id = :user_id"),
                 {"user_id": user_id},

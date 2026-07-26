@@ -4,21 +4,12 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
+from backend.services.wellness_starter_catalog import (
+    build_starter_activity_payloads,
+    build_starter_category_payloads,
+)
+
 WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
-CATEGORY_DEFINITIONS = {
-    "calm": {
-        "title_key": "app_shell.activities.category_calm",
-        "description_key": "app_shell.activities.category_calm_desc",
-    },
-    "focus": {
-        "title_key": "app_shell.activities.category_focus",
-        "description_key": "app_shell.activities.category_focus_desc",
-    },
-    "energy": {
-        "title_key": "app_shell.activities.category_energy",
-        "description_key": "app_shell.activities.category_energy_desc",
-    },
-}
 
 
 def now_utc() -> datetime:
@@ -107,76 +98,44 @@ def normalize_metric_values(metrics: Optional[Dict[str, Any]]) -> Dict[str, int]
 
 
 def starter_activities(user_id: str) -> List[Dict[str, Any]]:
-    """Build the shared starter activity catalog for one user."""
+    """Build the canonical starter activity documents for one MongoDB user.
+
+    Args:
+        user_id (str): Authenticated owner id added to every document.
+
+    Returns:
+        List[Dict[str, Any]]: Fresh activity documents with shared catalog
+        fields and provider-formatted timestamps.
+
+    Side Effects:
+        Reads the current time once for consistent creation/update timestamps.
+    """
     now = now_utc().replace(hour=9, minute=0, second=0, microsecond=0)
     created_at = iso_utc(now)
-    return [
-        {
-            "id": "breathe-reset",
-            "user_id": user_id,
-            "icon_key": "air",
-            "title_key": "app_shell.activities.seed_breathe_title",
-            "summary_key": "app_shell.activities.seed_breathe_summary",
-            "duration_minutes": 1,
-            "favorite": True,
-            "category_keys": ["calm", "focus"],
-            "energy_impact": "reset",
-            "created_at": created_at,
-            "updated_at": created_at,
-        },
-        {
-            "id": "clarity-journal",
-            "user_id": user_id,
-            "icon_key": "book",
-            "title_key": "app_shell.activities.seed_journal_title",
-            "summary_key": "app_shell.activities.seed_journal_summary",
-            "duration_minutes": 8,
-            "favorite": True,
-            "category_keys": ["focus"],
-            "energy_impact": "grounding",
-            "created_at": created_at,
-            "updated_at": created_at,
-        },
-        {
-            "id": "soft-stretch",
-            "user_id": user_id,
-            "icon_key": "self_improvement",
-            "title_key": "app_shell.activities.seed_stretch_title",
-            "summary_key": "app_shell.activities.seed_stretch_summary",
-            "duration_minutes": 6,
-            "favorite": False,
-            "category_keys": ["energy", "calm"],
-            "energy_impact": "lift",
-            "created_at": created_at,
-            "updated_at": created_at,
-        },
-        {
-            "id": "focus-walk",
-            "user_id": user_id,
-            "icon_key": "directions_walk",
-            "title_key": "app_shell.activities.seed_walk_title",
-            "summary_key": "app_shell.activities.seed_walk_summary",
-            "duration_minutes": 12,
-            "favorite": False,
-            "category_keys": ["energy", "focus"],
-            "energy_impact": "lift",
-            "created_at": created_at,
-            "updated_at": created_at,
-        },
-        {
-            "id": "pause-and-tea",
-            "user_id": user_id,
-            "icon_key": "local_cafe",
-            "title_key": "app_shell.activities.seed_tea_title",
-            "summary_key": "app_shell.activities.seed_tea_summary",
-            "duration_minutes": 10,
-            "favorite": False,
-            "category_keys": ["calm"],
-            "energy_impact": "ease",
-            "created_at": created_at,
-            "updated_at": created_at,
-        },
-    ]
+    activities = build_starter_activity_payloads(user_id)
+    for activity in activities:
+        activity.update({"created_at": created_at, "updated_at": created_at})
+    return activities
+
+
+def starter_categories(user_id: str) -> List[Dict[str, Any]]:
+    """Build the canonical starter category documents for one MongoDB user.
+
+    Args:
+        user_id (str): Authenticated owner id added to every document.
+
+    Returns:
+        List[Dict[str, Any]]: Fresh category documents with provider-formatted
+        timestamps.
+
+    Side Effects:
+        Reads the current time once for consistent creation/update timestamps.
+    """
+    now = iso_utc(now_utc())
+    categories = build_starter_category_payloads(user_id)
+    for category in categories:
+        category.update({"created_at": now, "updated_at": now})
+    return categories
 
 
 def looks_like_legacy_seed_checkins(checkin_docs: List[Dict[str, Any]]) -> bool:
@@ -244,19 +203,3 @@ def build_weekly_trend(trend_records: Iterable[Dict[str, Any]]) -> List[Dict[str
         value = round(sum(mood_values) / len(mood_values), 1) if mood_values else None
         weekly_trend.append({"day_key": WEEKDAY_KEYS[target_day.weekday()], "value": value})
     return weekly_trend
-
-
-def build_activity_categories(activities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Build the category summary payload for the activity list."""
-    categories: List[Dict[str, Any]] = []
-    for category_key, definition in CATEGORY_DEFINITIONS.items():
-        count = sum(1 for item in activities if category_key in item.get("category_keys", []))
-        categories.append(
-            {
-                "key": category_key,
-                "title_key": definition["title_key"],
-                "description_key": definition["description_key"],
-                "item_count": count,
-            }
-        )
-    return categories

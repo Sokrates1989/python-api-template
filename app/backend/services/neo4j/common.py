@@ -10,21 +10,12 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
+from backend.services.wellness_starter_catalog import (
+    build_starter_activity_payloads,
+    build_starter_category_payloads,
+)
+
 WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
-CATEGORY_DEFINITIONS = {
-    "calm": {
-        "title_key": "app_shell.activities.category_calm",
-        "description_key": "app_shell.activities.category_calm_desc",
-    },
-    "focus": {
-        "title_key": "app_shell.activities.category_focus",
-        "description_key": "app_shell.activities.category_focus_desc",
-    },
-    "energy": {
-        "title_key": "app_shell.activities.category_energy",
-        "description_key": "app_shell.activities.category_energy_desc",
-    },
-}
 
 
 def now_utc() -> datetime:
@@ -195,41 +186,44 @@ def normalize_record(record: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any
 
 
 def starter_activities(user_id: str) -> List[Dict[str, Any]]:
-    """Build the shared starter activity catalog for a user.
+    """Build the canonical starter activity nodes for one Neo4j user.
 
     Args:
-        user_id (str): Authenticated user identifier.
+        user_id (str): Authenticated owner id added to every node payload.
 
     Returns:
-        List[Dict[str, Any]]: Seed activity payloads ready for Neo4j insertion.
+        List[Dict[str, Any]]: Fresh activity properties with shared catalog
+        fields and provider-formatted timestamps.
+
+    Side Effects:
+        Reads the current time once for consistent creation/update timestamps.
     """
     now = now_utc().replace(hour=9, minute=0, second=0, microsecond=0)
     created_at = iso_utc(now)
-    payloads = [
-        {"id": "breathe-reset", "icon_key": "air", "title_key": "app_shell.activities.seed_breathe_title", "summary_key": "app_shell.activities.seed_breathe_summary", "duration_minutes": 1, "favorite": True, "category_keys": ["calm", "focus"], "energy_impact": "reset"},
-        {"id": "clarity-journal", "icon_key": "book", "title_key": "app_shell.activities.seed_journal_title", "summary_key": "app_shell.activities.seed_journal_summary", "duration_minutes": 8, "favorite": True, "category_keys": ["focus"], "energy_impact": "grounding"},
-        {"id": "soft-stretch", "icon_key": "self_improvement", "title_key": "app_shell.activities.seed_stretch_title", "summary_key": "app_shell.activities.seed_stretch_summary", "duration_minutes": 6, "favorite": False, "category_keys": ["energy", "calm"], "energy_impact": "lift"},
-        {"id": "focus-walk", "icon_key": "directions_walk", "title_key": "app_shell.activities.seed_walk_title", "summary_key": "app_shell.activities.seed_walk_summary", "duration_minutes": 12, "favorite": False, "category_keys": ["energy", "focus"], "energy_impact": "lift"},
-        {"id": "pause-and-tea", "icon_key": "local_cafe", "title_key": "app_shell.activities.seed_tea_title", "summary_key": "app_shell.activities.seed_tea_summary", "duration_minutes": 10, "favorite": False, "category_keys": ["calm"], "energy_impact": "ease"},
-    ]
-    return [
-        {
-            "id": item["id"],
-            "user_id": user_id,
-            "icon_key": item["icon_key"],
-            "title_key": item["title_key"],
-            "title": None,
-            "summary_key": item["summary_key"],
-            "summary": None,
-            "duration_minutes": item["duration_minutes"],
-            "favorite": item["favorite"],
-            "category_keys": list(item["category_keys"]),
-            "energy_impact": item["energy_impact"],
-            "created_at": created_at,
-            "updated_at": created_at,
-        }
-        for item in payloads
-    ]
+    activities = build_starter_activity_payloads(user_id)
+    for activity in activities:
+        activity.update({"created_at": created_at, "updated_at": created_at})
+    return activities
+
+
+def starter_categories(user_id: str) -> List[Dict[str, Any]]:
+    """Build the canonical starter category nodes for one Neo4j user.
+
+    Args:
+        user_id (str): Authenticated owner id added to every node payload.
+
+    Returns:
+        List[Dict[str, Any]]: Fresh category properties with provider-formatted
+        timestamps.
+
+    Side Effects:
+        Reads the current time once for consistent creation/update timestamps.
+    """
+    now = iso_utc(now_utc())
+    categories = build_starter_category_payloads(user_id)
+    for category in categories:
+        category.update({"created_at": now, "updated_at": now})
+    return categories
 
 
 
@@ -285,25 +279,3 @@ def build_latest_checkin_payload(checkin: Optional[Dict[str, Any]]) -> Optional[
         "energy": {"state_key": metric_state_key("energy", energy_score), "score": energy_score},
         "note": checkin.get("note"),
     }
-
-
-
-def build_activity_categories(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Build the activity category summary for the wellness catalog response.
-
-    Args:
-        items (List[Dict[str, Any]]): Activity payloads returned for a user.
-
-    Returns:
-        List[Dict[str, Any]]: Category metadata plus item counts.
-    """
-    categories: List[Dict[str, Any]] = []
-    for category_key, definition in CATEGORY_DEFINITIONS.items():
-        count = sum(1 for item in items if category_key in item.get("category_keys", []))
-        categories.append({
-            "key": category_key,
-            "title_key": definition["title_key"],
-            "description_key": definition["description_key"],
-            "item_count": count,
-        })
-    return categories

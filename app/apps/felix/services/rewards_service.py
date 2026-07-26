@@ -14,6 +14,11 @@ from typing import Any, Dict, Mapping, Optional
 from sqlalchemy import text
 
 from apps.felix.services.rewards_state import normalize_rewards_patch, normalize_rewards_state
+from apps.felix.services.sql_user_provisioning import (
+    SQLUserNotProvisionedError,
+    ensure_sql_user_provisioned,
+    sql_user_not_found_result,
+)
 from backend.database import get_database_handler
 
 
@@ -57,6 +62,8 @@ class FelixRewardsService:
             else:
                 return {"status": "error", "message": "Unsupported database type for Felix rewards", "data": None}
             return {"status": "success", "data": state}
+        except SQLUserNotProvisionedError:
+            return sql_user_not_found_result()
         except Exception as exc:
             return {"status": "error", "message": f"Error loading Felix rewards: {str(exc)}", "data": None}
 
@@ -88,6 +95,8 @@ class FelixRewardsService:
             else:
                 return {"status": "error", "message": "Unsupported database type for Felix rewards", "data": None}
             return {"status": "success", "message": "Felix rewards updated successfully", "data": state}
+        except SQLUserNotProvisionedError:
+            return sql_user_not_found_result()
         except Exception as exc:
             return {"status": "error", "message": f"Error updating Felix rewards: {str(exc)}", "data": None}
 
@@ -207,9 +216,15 @@ class FelixRewardsService:
             Dict[str, Any]: Canonical rewards-state dictionary.
 
         Side Effects:
-            Inserts a default SQL row when absent.
+            Verifies the parent application user and inserts a default SQL row
+            when rewards state is absent.
+
+        Raises:
+            SQLUserNotProvisionedError: When the parent application user row
+            does not exist yet.
         """
         async with self.handler.AsyncSessionLocal() as session:
+            await ensure_sql_user_provisioned(session, user_id)
             result = await session.execute(
                 text(
                     """
@@ -242,10 +257,16 @@ class FelixRewardsService:
             Dict[str, Any]: Canonical state after persistence.
 
         Side Effects:
-            Inserts or updates the SQL rewards-state row.
+            Verifies the parent application user, then inserts or updates the
+            SQL rewards-state row.
+
+        Raises:
+            SQLUserNotProvisionedError: When the parent application user row
+            does not exist yet.
         """
         normalized = normalize_rewards_state(state)
         async with self.handler.AsyncSessionLocal() as session:
+            await ensure_sql_user_provisioned(session, user_id)
             result = await session.execute(
                 text("SELECT pk FROM felix_rewards_state WHERE user_id = :user_id"),
                 {"user_id": user_id},

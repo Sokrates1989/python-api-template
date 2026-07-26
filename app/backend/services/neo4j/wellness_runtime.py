@@ -13,7 +13,6 @@ from uuid import uuid4
 from backend.database import get_database_handler
 from backend.database.neo4j_handler import Neo4jHandler
 from backend.services.neo4j.common import (
-    build_activity_categories,
     build_latest_checkin_payload,
     build_weekly_trend,
     iso_utc,
@@ -22,8 +21,8 @@ from backend.services.neo4j.common import (
     normalize_tag_keys,
     now_utc,
     parse_iso,
-    starter_activities,
 )
+from backend.services.neo4j.wellness_catalog_seed import Neo4jWellnessCatalogSeeder
 from backend.services.neo4j.wellness_query_helpers import build_diary_item, build_sync_change, find_activity_doc
 
 
@@ -42,6 +41,7 @@ class WellnessService:
 
         self.handler = handler
         self.driver = handler.driver
+        self.catalog_seeder = Neo4jWellnessCatalogSeeder(self.driver)
         self._indexes_initialized = False
 
     async def _ensure_indexes(self) -> None:
@@ -89,30 +89,23 @@ class WellnessService:
             session.run("MERGE (t:WellnessSyncTombstone {user_id: $user_id, entity_type: $entity_type, entity_id: $entity_id}) SET t.deleted_at = $deleted_at", user_id=user_id, entity_type=entity_type, entity_id=entity_id, deleted_at=iso_utc(now_utc())).consume()
 
     async def _ensure_seed_data(self, user_id: str) -> None:
-        """Ensure starter activities exist for the requested user.
+        """Delegate Neo4j catalog initialization and exact legacy replacement.
 
         Args:
             user_id (str): Authenticated user identifier.
+
+        Returns:
+            None.
+
+        Raises:
+            ValueError: When the parent user node does not exist.
+            Neo4jError: When the managed seed transaction fails.
+
+        Side Effects:
+            May atomically seed or replace eligible catalog groups.
         """
         await self._ensure_indexes()
-        await self._ensure_user_exists(user_id)
-
-        with self.driver.session() as session:
-            check_result = session.run(
-                "MATCH (a:WellnessActivity {user_id: $user_id}) RETURN a.id AS id LIMIT 1",
-                user_id=user_id,
-            )
-            if check_result.single() is None:
-                for sort_order, item in enumerate(starter_activities(user_id)):
-                    item.update({"activity_reminder": None, "harmful": False, "tags": [], "sort_order": sort_order})
-                    session.run("CREATE (a:WellnessActivity) SET a = $props", props=item)
-            category_result = session.run("MATCH (c:WellnessActivityCategory {user_id: $user_id}) RETURN c.key AS key LIMIT 1", user_id=user_id)
-            if category_result.single() is None:
-                activities = [dict(record["item"]) for record in session.run("MATCH (a:WellnessActivity {user_id: $user_id}) RETURN properties(a) AS item", user_id=user_id)]
-                now = iso_utc(now_utc())
-                for sort_order, category in enumerate(build_activity_categories(activities)):
-                    props = {"user_id": user_id, **category, "title": None, "description": None, "icon_key": {"calm": "self_improvement", "focus": "center_focus_strong", "energy": "bolt"}.get(category["key"], "category"), "sort_order": sort_order, "created_at": now, "updated_at": now}
-                    session.run("CREATE (c:WellnessActivityCategory) SET c = $props", props=props)
+        await self.catalog_seeder.ensure(user_id)
 
     async def reset_user_data(self, user_id: str, *, keep_activity_catalog: bool = True) -> Dict[str, Any]:
         """Delete the user's wellness content and optionally restore starter activities.

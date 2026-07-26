@@ -1,4 +1,8 @@
-"""Runtime implementation of the MongoDB wellness service."""
+"""Runtime implementation of the MongoDB wellness service.
+
+Catalog initialization is delegated to ``MongoWellnessCatalogSeeder`` so the
+runtime remains focused on wellness queries, mutations, and response shaping.
+"""
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -7,7 +11,6 @@ from uuid import uuid4
 from backend.database import get_database_handler
 from backend.database.mongodb_handler import MongoDBHandler
 from backend.services.mongodb.common import (
-    build_activity_categories,
     build_latest_checkin_payload,
     build_weekly_trend,
     iso_utc,
@@ -18,9 +21,9 @@ from backend.services.mongodb.common import (
     normalize_tag_keys,
     now_utc,
     parse_iso,
-    starter_activities,
 )
 from backend.services.mongodb.query_helpers import build_diary_item, build_sync_change, find_activity_doc
+from backend.services.mongodb.wellness_catalog_seed import MongoWellnessCatalogSeeder
 
 
 class WellnessService:
@@ -39,16 +42,19 @@ class WellnessService:
         self.checkins_collection = handler.database["wellness_checkins"]
         self.operation_log_collection = handler.database["sync_operation_log"]
         self.conflict_log_collection = handler.database["sync_conflicts"]
+        self.catalog_seeder = MongoWellnessCatalogSeeder(
+            activities_collection=self.activities_collection,
+            categories_collection=self.categories_collection,
+            tombstones_collection=self.tombstones_collection,
+            seed_locks_collection=handler.database["wellness_catalog_seed_locks"],
+        )
         self._indexes_initialized = False
 
     async def _ensure_indexes(self) -> None:
         """Create the indexes used by the wellness reference slice."""
         if self._indexes_initialized:
             return
-        await self.activities_collection.create_index([("user_id", 1), ("id", 1)], unique=True, name="idx_wellness_activities_user_id_id")
-        await self.activities_collection.create_index([("user_id", 1), ("favorite", 1)], name="idx_wellness_activities_user_favorite")
-        await self.categories_collection.create_index([("user_id", 1), ("key", 1)], unique=True, name="idx_wellness_activity_categories_user_key")
-        await self.categories_collection.create_index([("user_id", 1), ("sort_order", 1)], name="idx_wellness_activity_categories_user_order")
+        await self.catalog_seeder.ensure_indexes()
         await self.tombstones_collection.create_index([("user_id", 1), ("entity_type", 1), ("entity_id", 1)], unique=True, name="idx_wellness_sync_tombstones_entity")
         await self.tombstones_collection.create_index([("user_id", 1), ("deleted_at", 1)], name="idx_wellness_sync_tombstones_user_deleted")
         await self.diary_collection.create_index([("user_id", 1), ("id", 1)], unique=True, name="idx_wellness_diary_user_id_id")
@@ -84,33 +90,25 @@ class WellnessService:
         )
 
     async def _ensure_seed_data(self, user_id: str) -> None:
-        """Ensure starter activities exist for the requested user."""
+        """Delegate catalog initialization after shared runtime preparation.
+
+        Args:
+            user_id (str): Authenticated owner identifier.
+
+        Returns:
+            None.
+
+        Raises:
+            PyMongoError: When index, cleanup, lookup, or non-duplicate write
+            operations fail.
+
+        Side Effects:
+            Removes obsolete diary/check-in demo data, then delegates safe
+            catalog initialization to ``MongoWellnessCatalogSeeder``.
+        """
         await self._ensure_indexes()
         await self._purge_legacy_seed_data(user_id)
-        if not await self.activities_collection.find_one({"user_id": user_id}, {"_id": 1}):
-            activities = starter_activities(user_id)
-            for sort_order, activity in enumerate(activities):
-                activity.setdefault("activity_reminder", None)
-                activity.setdefault("harmful", False)
-                activity.setdefault("tags", [])
-                activity.setdefault("sort_order", sort_order)
-            await self.activities_collection.insert_many(activities)
-        if not await self.categories_collection.find_one({"user_id": user_id}, {"_id": 1}):
-            now = iso_utc(now_utc())
-            categories = build_activity_categories([item async for item in self.activities_collection.find({"user_id": user_id}, {"_id": 0})])
-            await self.categories_collection.insert_many([
-                {
-                    "user_id": user_id,
-                    **category,
-                    "title": None,
-                    "description": None,
-                    "icon_key": {"calm": "self_improvement", "focus": "center_focus_strong", "energy": "bolt"}.get(category["key"], "category"),
-                    "sort_order": sort_order,
-                    "created_at": now,
-                    "updated_at": now,
-                }
-                for sort_order, category in enumerate(categories)
-            ])
+        await self.catalog_seeder.ensure(user_id)
 
     async def reset_user_data(self, user_id: str, *, keep_activity_catalog: bool = True) -> Dict[str, Any]:
         """Delete the user's wellness content and optionally restore starter activities."""
