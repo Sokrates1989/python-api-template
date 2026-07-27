@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+import tomllib
 from pathlib import Path
 
 
@@ -35,6 +36,30 @@ class ReleaseImageContractTests(unittest.TestCase):
         self.assertIn("org.opencontainers.image.revision", source)
         self.assertIn("com.fe-wi.dependency-lock-sha256", source)
         self.assertNotIn("chown -R api:api /app", source)
+
+    def test_felix_lock_meets_vulnerability_security_floors(self) -> None:
+        """Keep scanner-remediated dependency versions from regressing.
+
+        Returns:
+            None.
+        """
+        lock_path = REPOSITORY_ROOT / "app" / "apps" / "felix" / "pdm.lock"
+        lock_document = tomllib.loads(lock_path.read_text(encoding="utf-8"))
+        locked_versions = {
+            str(package["name"]): tuple(
+                int(part) for part in str(package["version"]).split(".")
+            )
+            for package in lock_document["package"]
+        }
+        security_floors = {
+            "cryptography": (48, 0, 1),
+            "pyasn1": (0, 6, 4),
+            "python-multipart": (0, 0, 30),
+            "starlette": (1, 3, 1),
+        }
+
+        for package_name, floor in security_floors.items():
+            self.assertGreaterEqual(locked_versions[package_name], floor)
 
     def test_selected_app_menu_separates_plan_build_and_publish(self) -> None:
         source = (
