@@ -6,8 +6,9 @@ private values through app routes or committed configuration.
 """
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import TYPE_CHECKING, Literal, Optional, Self
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 if TYPE_CHECKING:
@@ -38,6 +39,12 @@ class Settings(BaseSettings):
 
     # API Settings
     PORT: int = 8000
+    APP_ENVIRONMENT: Literal[
+        "development",
+        "test",
+        "staging",
+        "production",
+    ] = "development"
     # Comma-separated list of allowed CORS origins.
     # Defaults to common local dev ports (Flutter web, Vite, React, etc.).
     # Override via CORS_ORIGINS env var for staging and production.
@@ -86,6 +93,7 @@ class Settings(BaseSettings):
     AUTH_PROVIDER: str = "cognito"
 
     # App profile configuration
+    BACKEND_APP_ID: str = "demo_app"
     APP_PROFILE: str = "demo_app"
     APP_NAME: str = "Python API Template"
     APP_DESCRIPTION: str = (
@@ -134,6 +142,9 @@ class Settings(BaseSettings):
     KEYCLOAK_ISSUER_URL: Optional[str] = None
     KEYCLOAK_JWKS_URL: Optional[str] = None
     KEYCLOAK_ENFORCE_AUDIENCE: bool = False
+    KEYCLOAK_AUDIENCE: Optional[str] = None
+    KEYCLOAK_ADMIN_CLIENT_ID: Optional[str] = None
+    KEYCLOAK_ADMIN_CLIENT_SECRET_FILE: str = ""
 
     # AWS Cognito Configuration
     AWS_REGION: Optional[str] = None
@@ -171,6 +182,228 @@ class Settings(BaseSettings):
     DB_LOCK_FAIL_CLOSED: bool = True
 
     model_config = SettingsConfigDict(env_file=".env")
+
+    @model_validator(mode="after")
+    def validate_production_contract(self) -> Self:
+        """Reject unsafe Felix production configuration before startup.
+
+        Development, test, and staging retain the template's existing flexible
+        defaults. Only an explicit ``APP_ENVIRONMENT=production`` activates the
+        fixed Felix release contract.
+
+        Returns:
+            Self: The validated settings instance.
+
+        Raises:
+            ValueError: When production identity, provider, CORS, debug, or
+                secret-boundary requirements are incomplete.
+        """
+        if not self.is_production_environment():
+            return self
+
+        errors = [
+            *self._collect_production_identity_errors(),
+            *self._collect_production_debug_errors(),
+            *self._collect_production_keycloak_errors(),
+            *self._collect_direct_secret_errors(),
+            *self._collect_secret_file_errors(),
+        ]
+
+        if errors:
+            raise ValueError(
+                "Invalid Felix production configuration: " + "; ".join(errors)
+            )
+
+        return self
+
+    def _collect_production_identity_errors(self) -> list[str]:
+        """Collect Felix application, database, provider, and CORS violations.
+
+        Returns:
+            list[str]: Human-readable production-contract violations, or an
+                empty list when the public runtime identity is valid.
+        """
+        errors: list[str] = []
+        if (
+            self.normalized_app_profile() != "felix"
+            or self.BACKEND_APP_ID.strip().lower() != "felix"
+        ):
+            errors.append("BACKEND_APP_ID and APP_PROFILE must both be 'felix'")
+        if self.normalized_db_type() not in {"postgresql", "postgres"}:
+            errors.append("DB_TYPE must select PostgreSQL")
+        if self.get_auth_provider() != "keycloak":
+            errors.append("AUTH_PROVIDER must be 'keycloak'")
+        legacy_auth_values = {
+            "AWS_REGION": self.AWS_REGION,
+            "COGNITO_USER_POOL_ID": self.COGNITO_USER_POOL_ID,
+            "COGNITO_USER_POOL_ID_FILE": self.COGNITO_USER_POOL_ID_FILE,
+            "COGNITO_APP_CLIENT_ID": self.COGNITO_APP_CLIENT_ID,
+            "COGNITO_APP_CLIENT_ID_FILE": self.COGNITO_APP_CLIENT_ID_FILE,
+            "AWS_ACCESS_KEY_ID": self.AWS_ACCESS_KEY_ID,
+            "AWS_ACCESS_KEY_ID_FILE": self.AWS_ACCESS_KEY_ID_FILE,
+            "AWS_SECRET_ACCESS_KEY": self.AWS_SECRET_ACCESS_KEY,
+            "AWS_SECRET_ACCESS_KEY_FILE": self.AWS_SECRET_ACCESS_KEY_FILE,
+        }
+        configured_legacy_auth = [
+            name
+            for name, value in legacy_auth_values.items()
+            if str(value or "").strip()
+        ]
+        if configured_legacy_auth:
+            errors.append(
+                "Cognito/AWS authentication settings must be absent: "
+                + ", ".join(configured_legacy_auth)
+            )
+        if self.get_cors_origins() != ["https://felix-app.fe-wi.com"]:
+            errors.append(
+                "CORS_ORIGINS must contain only https://felix-app.fe-wi.com"
+            )
+        return errors
+
+    def _collect_production_debug_errors(self) -> list[str]:
+        """Collect enabled diagnostics that could expose production data.
+
+        Returns:
+            list[str]: Debug-policy violations, or an empty list when all
+                production diagnostics are safely disabled.
+        """
+        debug_flags = {
+            "DEBUG": self.DEBUG,
+            "DEBUG_ENABLED": self.DEBUG_ENABLED,
+            "SQL_ECHO_ENABLED": self.SQL_ECHO_ENABLED,
+            "ENABLE_HTTP_DEBUG_LOGGING": self.ENABLE_HTTP_DEBUG_LOGGING,
+            "LOG_REQUEST_HEADERS": self.LOG_REQUEST_HEADERS,
+            "LOG_REQUEST_BODY": self.LOG_REQUEST_BODY,
+            "LOG_RESPONSE_HEADERS": self.LOG_RESPONSE_HEADERS,
+            "LOG_RESPONSE_BODY": self.LOG_RESPONSE_BODY,
+            "AI_CHAT_DEBUG_ENABLED": self.AI_CHAT_DEBUG_ENABLED,
+            "AI_CHAT_DEBUG_INCLUDE_PROMPTS": self.AI_CHAT_DEBUG_INCLUDE_PROMPTS,
+        }
+        enabled_flags = [name for name, enabled in debug_flags.items() if enabled]
+        errors = []
+        if enabled_flags:
+            errors.append(
+                "production debug flags must be disabled: "
+                + ", ".join(enabled_flags)
+            )
+        if self.LOG_LEVEL.strip().upper() == "DEBUG":
+            errors.append("LOG_LEVEL must not be DEBUG")
+        return errors
+
+    def _collect_production_keycloak_errors(self) -> list[str]:
+        """Collect missing or drifting fixed Keycloak candidate settings.
+
+        Returns:
+            list[str]: Keycloak contract violations, or an empty list when the
+                issuer, realm, clients, and audience match the candidate realm.
+        """
+        required_values = {
+            "KEYCLOAK_SERVER_URL": self.KEYCLOAK_SERVER_URL,
+            "KEYCLOAK_REALM": self.KEYCLOAK_REALM,
+            "KEYCLOAK_CLIENT_ID": self.KEYCLOAK_CLIENT_ID,
+            "KEYCLOAK_AUDIENCE": self.KEYCLOAK_AUDIENCE,
+            "KEYCLOAK_ADMIN_CLIENT_ID": self.KEYCLOAK_ADMIN_CLIENT_ID,
+            "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE": (
+                self.KEYCLOAK_ADMIN_CLIENT_SECRET_FILE
+            ),
+        }
+        missing = [
+            name
+            for name, value in required_values.items()
+            if not str(value or "").strip()
+        ]
+        errors = (
+            ["missing production Keycloak settings: " + ", ".join(missing)]
+            if missing
+            else []
+        )
+        expected_values = {
+            "KEYCLOAK_SERVER_URL": "https://keycloak.fe-wi.com",
+            "KEYCLOAK_REALM": "felix-new",
+            "KEYCLOAK_CLIENT_ID": "felix-new-frontend",
+            "KEYCLOAK_AUDIENCE": "felix-new-backend",
+            "KEYCLOAK_ADMIN_CLIENT_ID": "felix-new-backend",
+        }
+        for setting_name, expected_value in expected_values.items():
+            actual_value = str(getattr(self, setting_name) or "").strip()
+            if actual_value and actual_value != expected_value:
+                errors.append(f"{setting_name} must be '{expected_value}'")
+        expected_issuer = "https://keycloak.fe-wi.com/realms/felix-new"
+        if self.get_keycloak_issuer_url() != expected_issuer:
+            errors.append(f"KEYCLOAK_ISSUER_URL must be {expected_issuer}")
+        if not self.KEYCLOAK_ENFORCE_AUDIENCE:
+            errors.append("KEYCLOAK_ENFORCE_AUDIENCE must be enabled")
+        return errors
+
+    def _collect_direct_secret_errors(self) -> list[str]:
+        """Collect secret values forbidden in the production environment.
+
+        Returns:
+            list[str]: One file-boundary violation listing populated direct
+                secret settings, or an empty list when none are present.
+        """
+        direct_values = {
+            "KEYCLOAK_CLIENT_SECRET": self.KEYCLOAK_CLIENT_SECRET,
+            "AI_CHAT_API_KEY": self.AI_CHAT_API_KEY,
+            "WEB_PUSH_VAPID_PRIVATE_KEY": self.WEB_PUSH_VAPID_PRIVATE_KEY,
+            "DB_PASSWORD": self.DB_PASSWORD,
+            "DATABASE_URL": self.DATABASE_URL,
+            "MONGODB_ROOT_PASSWORD": self.MONGODB_ROOT_PASSWORD,
+            "ADMIN_API_KEY": self.ADMIN_API_KEY,
+            "BACKUP_RESTORE_API_KEY": self.BACKUP_RESTORE_API_KEY,
+            "BACKUP_DELETE_API_KEY": self.BACKUP_DELETE_API_KEY,
+            "AWS_SECRET_ACCESS_KEY": self.AWS_SECRET_ACCESS_KEY,
+        }
+        populated = [
+            name
+            for name, value in direct_values.items()
+            if str(value or "").strip()
+        ]
+        if not populated:
+            return []
+        return ["production secrets must be file-backed: " + ", ".join(populated)]
+
+    def _collect_secret_file_errors(self) -> list[str]:
+        """Collect missing, unreadable, or empty mounted secret files.
+
+        Optional AI and Web Push files become mandatory only when their
+        corresponding production capability is enabled.
+
+        Returns:
+            list[str]: Mounted-secret violations, or an empty list when every
+                capability-selected file contains a value.
+        """
+        required_files = {
+            "DB_PASSWORD_FILE": self.DB_PASSWORD_FILE,
+            "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE": (
+                self.KEYCLOAK_ADMIN_CLIENT_SECRET_FILE
+            ),
+        }
+        if self.AI_CHAT_COMPLETIONS_ENDPOINT.strip():
+            required_files["AI_CHAT_API_KEY_FILE"] = self.AI_CHAT_API_KEY_FILE
+        if self.WEB_PUSH_DISPATCH_ENABLED:
+            required_files.update(
+                {
+                    "WEB_PUSH_VAPID_PUBLIC_KEY_FILE": (
+                        self.WEB_PUSH_VAPID_PUBLIC_KEY_FILE
+                    ),
+                    "WEB_PUSH_VAPID_PRIVATE_KEY_FILE": (
+                        self.WEB_PUSH_VAPID_PRIVATE_KEY_FILE
+                    ),
+                }
+            )
+        errors: list[str] = []
+        for setting_name, file_path in required_files.items():
+            normalized_path = str(file_path or "").strip()
+            if not normalized_path:
+                errors.append(f"{setting_name} is required")
+                continue
+            path = Path(normalized_path)
+            if not path.is_file():
+                errors.append(f"{setting_name} does not reference a readable file")
+            elif not path.read_text().strip():
+                errors.append(f"{setting_name} references an empty file")
+        return errors
 
     def get_admin_api_key(self) -> str:
         """Get admin API key from file or environment variable"""
@@ -250,6 +483,26 @@ class Settings(BaseSettings):
         """
         return self.read_env_or_file(self.AI_CHAT_API_KEY, self.AI_CHAT_API_KEY_FILE)
 
+    def get_keycloak_admin_client_secret(self) -> str:
+        """Return the dedicated Keycloak administration client secret.
+
+        The administration credential has no direct environment-value fallback.
+        It must be supplied through the configured mounted secret file.
+
+        Returns:
+            str: Non-empty client secret read from the mounted file.
+
+        Raises:
+            ValueError: When the secret path is absent, missing, or empty.
+        """
+        secret_file = self.KEYCLOAK_ADMIN_CLIENT_SECRET_FILE.strip()
+        if not secret_file:
+            raise ValueError("KEYCLOAK_ADMIN_CLIENT_SECRET_FILE is required")
+        secret = self.read_env_or_file("", secret_file).strip()
+        if not secret:
+            raise ValueError("KEYCLOAK_ADMIN_CLIENT_SECRET_FILE is empty")
+        return secret
+
     def get_web_push_vapid_public_key(self) -> str:
         """Return the browser-safe public VAPID application-server key.
 
@@ -317,6 +570,15 @@ class Settings(BaseSettings):
             return "cognito"
 
         return "none"
+
+    def is_production_environment(self) -> bool:
+        """Return whether the explicit production runtime contract is active.
+
+        Returns:
+            bool: True only for ``APP_ENVIRONMENT=production`` after
+                whitespace trimming and case normalization.
+        """
+        return self.APP_ENVIRONMENT.strip().lower() == "production"
 
     def is_cognito_configured(self) -> bool:
         """Return True when Cognito configuration values are present."""

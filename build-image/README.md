@@ -4,27 +4,32 @@ This directory contains everything needed to build production-ready Docker image
 
 ## 🚀 Quick Start
 
-### Local Build (Recommended)
+### Selected-App Release Flow (Recommended)
 
-Build and push an app-specific API image locally using the quick-start scripts:
+Use the selected-app quick-start menu and choose one explicit action:
+
+1. validate the image release plan;
+2. build locally without pushing; or
+3. Build & Push after a version increment and final confirmation.
 
 **Windows (PowerShell):**
 ```powershell
 .\quick-start.ps1
-# Select: Build & Push API Docker Image
+# Select: Validate, local build, or explicit Build & Push
 ```
 
 **Linux/macOS (Bash):**
 ```bash
 ./quick-start.sh
-# Select: Build & Push API Docker Image
+# Select: Validate, local build, or explicit Build & Push
 ```
 
 ### Direct Build
 
-You can also run the legacy containerized builder directly. The quick-start
-menu now uses an app-aware build/push flow instead, because it must derive the
-image name and version from the selected backend app.
+The containerized builder below is retained only for legacy compatibility. It
+loads and mutates root `.env`, has no selected-app evidence contract, and
+automatically publishes both tags. Do not use it for a production release.
+The quick-start menu delegates to `tools/release_api_image.py`.
 
 ```bash
 docker compose -f build-image/docker-compose.build.yml run --rm build-image
@@ -51,13 +56,21 @@ values. They are intentionally not used as the release version source of truth.
 
 ### 2. Build Process
 
-The build script will:
-1. Use the active backend app selected in quick-start
-2. Read the current version from that app's committed `pyproject.toml`
-3. Prompt for patch, minor, major, manual, or current version
-4. Build the API image for `linux/amd64` with the selected app build args
-5. Push `IMAGE_NAME:VERSION`
-6. Tag and push `IMAGE_NAME:latest`
+The release tool will:
+1. use the active backend app selected in quick-start;
+2. bind `BACKEND_APP_ID` and `APP_PROFILE` to that same app;
+3. read the committed version and exact app-owned `pdm.lock`;
+4. build for `linux/amd64` with pinned PDM and OCI revision/lock labels;
+5. inspect the non-root runtime and container healthcheck;
+6. generate dependency and full-image SPDX SBOM evidence;
+7. enforce the HIGH/CRITICAL vulnerability policy; and
+8. write a sanitized ignored receipt.
+
+Build-only stops there. Explicit Build & Push first creates a greater version
+commit locally, runs the build gates, pushes that proven source commit, then
+pushes `IMAGE_NAME:VERSION` and the `latest` convenience tag. Deployment
+evidence binds only the immutable version and registry digest; `latest` is
+never a deployment input.
 
 ## 🏗️ Build System Architecture
 

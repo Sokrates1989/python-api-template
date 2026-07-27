@@ -800,6 +800,59 @@ read_api_image_version_selection() {
     done
 }
 
+# Prompt for a strictly greater release version before external publication.
+#
+# Unlike the general version editor, Build & Push cannot republish the current
+# immutable version. It offers patch/minor/major or an explicit greater SemVer.
+read_api_publish_version_selection() {
+    local current_version="${1:-0.1.0}"
+    local patch_version
+    local minor_version
+    local major_version
+    local version_choice
+    local manual_version
+
+    patch_version="$(bump_semver "$current_version" "patch")"
+    minor_version="$(bump_semver "$current_version" "minor")"
+    major_version="$(bump_semver "$current_version" "major")"
+
+    echo "" >&2
+    echo "Release version options:" >&2
+    echo "  [1] Patch  (${current_version} -> ${patch_version})" >&2
+    echo "  [2] Minor  (${current_version} -> ${minor_version})" >&2
+    echo "  [3] Major  (${current_version} -> ${major_version})" >&2
+    echo "  [4] Enter a greater SemVer manually" >&2
+    echo "" >&2
+
+    while true; do
+        if [[ -r /dev/tty ]]; then
+            read -r -p "Choose release version [1]: " version_choice < /dev/tty
+        else
+            read -r -p "Choose release version [1]: " version_choice
+        fi
+        version_choice="${version_choice:-1}"
+
+        case "$version_choice" in
+            1) printf '%s\n' "$patch_version"; return 0 ;;
+            2) printf '%s\n' "$minor_version"; return 0 ;;
+            3) printf '%s\n' "$major_version"; return 0 ;;
+            4)
+                if [[ -r /dev/tty ]]; then
+                    read -r -p "Enter a greater release version: " manual_version < /dev/tty
+                else
+                    read -r -p "Enter a greater release version: " manual_version
+                fi
+                if [[ "$manual_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                    printf '%s\n' "$manual_version"
+                    return 0
+                fi
+                echo "Invalid SemVer value. Use x.y.z, for example 1.2.3." >&2
+                ;;
+            *) echo "Invalid option. Choose 1-4." >&2 ;;
+        esac
+    done
+}
+
 # Build the selected backend app API Docker image.
 #
 # Args:
@@ -886,63 +939,94 @@ push_docker_image_with_login_retry() {
     return 1
 }
 
-# Build and push the selected backend app API image.
+# Run the standard-library selected-app API release tool.
+#
+# Args:
+#   action and arguments: release_api_image.py CLI arguments.
+run_api_release_tool() {
+    local python_command=""
+
+    if command -v python3 >/dev/null 2>&1; then
+        python_command="python3"
+    elif command -v python >/dev/null 2>&1; then
+        python_command="python"
+    else
+        echo "[ERROR] Python 3 is required for API image release actions."
+        return 1
+    fi
+
+    "$python_command" "tools/release_api_image.py" "$@"
+}
+
+# Validate and preview the selected backend app image plan without side effects.
+handle_validate_production_image_plan() {
+    local app_id="${ACTIVE_BACKEND_APP_ID:-demo_app}"
+
+    echo ""
+    echo "Validate API Image Release Plan"
+    echo "==============================="
+    run_api_release_tool plan --app "$app_id"
+}
+
+# Build, inspect, inventory, scan, and receipt locally without registry effects.
+handle_build_production_image_local() {
+    local app_id="${ACTIVE_BACKEND_APP_ID:-demo_app}"
+
+    echo ""
+    echo "Build API Image Locally"
+    echo "======================="
+    echo "Selected app: ${app_id}"
+    echo "External effect: local Docker image and ignored build evidence only"
+    echo "Registry push: no"
+    echo "Deployment: no"
+    echo ""
+    run_api_release_tool build --app "$app_id"
+}
+
+# Commit/push a version bump, then publish immutable and latest image tags.
 #
 # Returns:
 #   0 when build and push succeed, non-zero otherwise.
 handle_build_production_image() {
     local app_id="${ACTIVE_BACKEND_APP_ID:-demo_app}"
-    local env_file
-    local image_name
     local current_version
     local tag_version
-    local python_version
-    local backend_data_profile
+    local confirmation
 
-    env_file="$(resolve_active_backend_env_path)"
-    image_name="$(get_active_backend_api_image_name "$app_id")"
     current_version="$(get_active_backend_package_version "$app_id" "0.1.0")"
-    python_version="$(read_env_variable "PYTHON_VERSION" "$env_file" "3.13-slim")"
-    backend_data_profile="$(read_env_variable "DB_TYPE" "$env_file" "")"
 
     echo ""
     echo "Docker Build & Push"
     echo "======================"
     echo ""
-    echo "Images to build:"
-    echo "  API:      ${image_name}"
-    echo "  (auto-detected from active backend app: ${app_id})"
+    echo "Selected app: ${app_id}"
+    echo "Current version: ${current_version}"
+    echo ""
+    echo "This explicit release action will:"
+    echo "  1. Increment and locally commit app/apps/${app_id}/pyproject.toml"
+    echo "  2. Build, inspect, create an image SPDX SBOM, and vulnerability-scan"
+    echo "  3. Push the proven version-bump commit"
+    echo "  4. Push the immutable version image"
+    echo "  5. Push latest as a convenience tag"
+    echo ""
+    echo "Deployment evidence binds only the immutable version and registry digest."
+    echo "This action never deploys and latest is never deployment evidence."
 
-    tag_version="$(read_api_image_version_selection "$current_version")" || return 1
+    tag_version="$(read_api_publish_version_selection "$current_version")" || return 1
 
-    if [ "$tag_version" != "$current_version" ]; then
-        set_active_backend_package_version "$app_id" "$tag_version" || return 1
+    echo ""
+    echo "Release version: ${current_version} -> ${tag_version}"
+    if [[ -r /dev/tty ]]; then
+        read -r -p "Commit/push the bump and publish both image tags? (y/N): " confirmation < /dev/tty
     else
-        echo "[OK] Keeping app package version ${tag_version}"
+        read -r -p "Commit/push the bump and publish both image tags? (y/N): " confirmation
+    fi
+    if [[ ! "$confirmation" =~ ^[Yy]$ ]]; then
+        echo "[INFO] Build & Push cancelled before Git or registry mutation."
+        return 0
     fi
 
-    if ! build_backend_api_docker_image "$image_name" "$tag_version" "$app_id" "$python_version" "$backend_data_profile"; then
-        echo "[ERROR] Docker build failed for ${image_name}:${tag_version}"
-        return 1
-    fi
-
-    echo ""
-    echo "[OK] Docker image built successfully: ${image_name}:${tag_version}"
-    echo ""
-
-    if ! push_docker_image_with_login_retry "${image_name}:${tag_version}"; then
-        echo "[ERROR] Push failed for ${image_name}:${tag_version}"
-        return 1
-    fi
-    echo "[OK] Image pushed successfully"
-
-    echo "Tagging and pushing as 'latest'..."
-    docker tag "${image_name}:${tag_version}" "${image_name}:latest" || return 1
-    if ! push_docker_image_with_login_retry "${image_name}:latest"; then
-        echo "[ERROR] Latest push failed for ${image_name}:latest"
-        return 1
-    fi
-    echo "[OK] Latest tag pushed"
+    run_api_release_tool publish --app "$app_id" --version "$tag_version"
 }
 
 handle_cicd_setup() {
@@ -990,6 +1074,8 @@ show_main_menu() {
         local MENU_MAINT_DIAGNOSTICS=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
         local MENU_MAINT_APP_FILES=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
 
+        local MENU_BUILD_API_PLAN=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_BUILD_API_LOCAL=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
         local MENU_BUILD_PROD_IMAGE=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
         local MENU_BUILD_CICD_SETUP=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
         local MENU_BUILD_BUMP_VERSION=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
@@ -1020,7 +1106,9 @@ show_main_menu() {
         echo "  ${MENU_MAINT_APP_FILES}) App-spezifische Dateien und Ordner öffnen"
         echo ""
         echo "Build / CI/CD:"
-        echo "  ${MENU_BUILD_PROD_IMAGE}) Build & Push API Docker Image (v${active_api_version})"
+        echo "  ${MENU_BUILD_API_PLAN}) Validate API Docker image release plan (v${active_api_version})"
+        echo "  ${MENU_BUILD_API_LOCAL}) Build API Docker image locally (no push)"
+        echo "  ${MENU_BUILD_PROD_IMAGE}) Build & Push API Docker Image (version bump + immutable + latest)"
         echo "  ${MENU_BUILD_CICD_SETUP}) CI/CD Pipeline einrichten"
         echo "  ${MENU_BUILD_BUMP_VERSION}) Bump release version for docker image"
         echo ""
@@ -1095,6 +1183,24 @@ show_main_menu() {
                 summary_msg="Keycloak Realm Bootstrap ausgeführt"
             else
                 summary_msg="Keycloak Realm Bootstrap fehlgeschlagen"
+                exit_code=1
+            fi
+            break
+            ;;
+          ${MENU_BUILD_API_PLAN})
+            if handle_validate_production_image_plan; then
+                summary_msg="API Docker image release plan validated"
+            else
+                summary_msg="API Docker image release plan failed"
+                exit_code=1
+            fi
+            break
+            ;;
+          ${MENU_BUILD_API_LOCAL})
+            if handle_build_production_image_local; then
+                summary_msg="API Docker image built locally without push"
+            else
+                summary_msg="Local API Docker image build failed"
                 exit_code=1
             fi
             break

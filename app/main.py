@@ -184,6 +184,8 @@ def check_health():
         probe_status = "skipped"
 
     background_services = getattr(app.state, "background_services", ())
+    migration_status = getattr(app.state, "migration_status", "unknown")
+    startup_complete = bool(getattr(app.state, "startup_complete", False))
 
     # Background snapshots are contractually privacy-safe and app-owned.
     background_status = {
@@ -192,7 +194,10 @@ def check_health():
 
     return {
         "status": "OK",
+        "app_environment": settings.APP_ENVIRONMENT.strip().lower(),
         "app_profile": app_profile,
+        "backend_app_id": selected_backend_app.app_id,
+        "build_backend_app_id": settings.BACKEND_APP_ID.strip().lower(),
         "backend_app": selected_backend_app.display_name,
         "backend_data_profile": selected_backend_app.backend_data_profile,
         "database_type": database_type,
@@ -206,6 +211,16 @@ def check_health():
         "requires_redis": selected_backend_app.requires_redis,
         "include_shared_routes": selected_backend_app.include_shared_routes,
         "startup_probe_status": probe_status,
+        "startup_complete": startup_complete,
+        "migration_status": migration_status,
+        "auth_provider": settings.get_auth_provider(),
+        "keycloak": {
+            "configured": settings.is_keycloak_configured(),
+            "realm": str(settings.KEYCLOAK_REALM or "").strip(),
+            "issuer": settings.get_keycloak_issuer_url(),
+            "audience": str(settings.KEYCLOAK_AUDIENCE or "").strip(),
+            "audience_enforced": settings.KEYCLOAK_ENFORCE_AUDIENCE,
+        },
         "background_services": background_status,
     }
 

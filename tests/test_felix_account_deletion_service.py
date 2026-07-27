@@ -127,6 +127,7 @@ class _FakeRequestSession:
         """
         self.delete_status = delete_status
         self.deleted_urls: list[str] = []
+        self.token_request_data: dict[str, str] | None = None
 
     def post(self, url: str, *, data: dict, timeout: int) -> _FakeResponse:
         """Return a service-account access token.
@@ -139,7 +140,8 @@ class _FakeRequestSession:
         Returns:
             _FakeResponse: Successful token response.
         """
-        del url, data, timeout
+        del url, timeout
+        self.token_request_data = dict(data)
         return _FakeResponse(200, {"access_token": "test-token"})
 
     def delete(
@@ -174,8 +176,8 @@ def _keycloak_settings() -> SimpleNamespace:
         KEYCLOAK_INTERNAL_URL="http://keycloak:8080",
         KEYCLOAK_SERVER_URL="http://localhost:9090",
         KEYCLOAK_REALM="felix",
-        KEYCLOAK_CLIENT_ID="felix-backend",
-        KEYCLOAK_CLIENT_SECRET="secret",
+        KEYCLOAK_ADMIN_CLIENT_ID="felix-account-admin",
+        get_keycloak_admin_client_secret=lambda: "secret",
         get_auth_provider=lambda: "keycloak",
     )
 
@@ -231,6 +233,14 @@ class FelixAccountDeletionServiceTests(unittest.TestCase):
 
         self.assertEqual(len(request_session.deleted_urls), 1)
         self.assertTrue(request_session.deleted_urls[0].endswith("user%2Fwith%20space"))
+        self.assertEqual(
+            request_session.token_request_data,
+            {
+                "grant_type": "client_credentials",
+                "client_id": "felix-account-admin",
+                "client_secret": "secret",
+            },
+        )
 
     def test_missing_keycloak_secret_fails_before_mutation(self) -> None:
         """A missing confidential secret must fail closed during preflight.
@@ -239,7 +249,7 @@ class FelixAccountDeletionServiceTests(unittest.TestCase):
             None.
         """
         runtime_settings = _keycloak_settings()
-        runtime_settings.KEYCLOAK_CLIENT_SECRET = ""
+        runtime_settings.get_keycloak_admin_client_secret = lambda: ""
         gateway = KeycloakIdentityDeletionGateway(runtime_settings)
 
         with self.assertRaises(FelixAccountDeletionError) as context:

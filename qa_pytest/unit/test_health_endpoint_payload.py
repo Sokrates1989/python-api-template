@@ -70,20 +70,38 @@ def test_health_payload_uses_runtime_state_diagnostics() -> None:
     db_exists, db_value = _capture_state("database_type")
     probe_exists, probe_value = _capture_state("startup_probe")
     services_exists, services_value = _capture_state("background_services")
+    migration_exists, migration_value = _capture_state("migration_status")
+    startup_exists, startup_value = _capture_state("startup_complete")
     try:
         app.state.database_type = "neo4j"
         app.state.startup_probe = {"status": "success"}
         app.state.background_services = [_BackgroundService()]
+        app.state.migration_status = "success"
+        app.state.startup_complete = True
         payload = check_health()
     finally:
         _restore_state("database_type", db_exists, db_value)
         _restore_state("startup_probe", probe_exists, probe_value)
         _restore_state("background_services", services_exists, services_value)
+        _restore_state("migration_status", migration_exists, migration_value)
+        _restore_state("startup_complete", startup_exists, startup_value)
 
     assert payload["status"] == "OK"
     assert payload["database_type"] == "neo4j"
     assert payload["provider_profile"] == "neo4j"
     assert payload["startup_probe_status"] == "success"
+    assert payload["startup_complete"] is True
+    assert payload["migration_status"] == "success"
+    assert payload["app_environment"] == settings.APP_ENVIRONMENT.strip().lower()
+    assert payload["build_backend_app_id"] == settings.BACKEND_APP_ID.strip().lower()
+    assert payload["auth_provider"] == settings.get_auth_provider()
+    assert payload["keycloak"] == {
+        "configured": settings.is_keycloak_configured(),
+        "realm": str(settings.KEYCLOAK_REALM or "").strip(),
+        "issuer": settings.get_keycloak_issuer_url(),
+        "audience": str(settings.KEYCLOAK_AUDIENCE or "").strip(),
+        "audience_enforced": settings.KEYCLOAK_ENFORCE_AUDIENCE,
+    }
     assert payload["background_services"] == {
         "dispatch": {"enabled": True, "status": "running", "polls": 2}
     }
@@ -98,6 +116,8 @@ def test_health_payload_falls_back_when_state_is_missing() -> None:
     db_exists, db_value = _capture_state("database_type")
     probe_exists, probe_value = _capture_state("startup_probe")
     services_exists, services_value = _capture_state("background_services")
+    migration_exists, migration_value = _capture_state("migration_status")
+    startup_exists, startup_value = _capture_state("startup_complete")
     try:
         if hasattr(app.state, "database_type"):
             delattr(app.state, "database_type")
@@ -105,13 +125,21 @@ def test_health_payload_falls_back_when_state_is_missing() -> None:
             delattr(app.state, "startup_probe")
         if hasattr(app.state, "background_services"):
             delattr(app.state, "background_services")
+        if hasattr(app.state, "migration_status"):
+            delattr(app.state, "migration_status")
+        if hasattr(app.state, "startup_complete"):
+            delattr(app.state, "startup_complete")
         payload = check_health()
     finally:
         _restore_state("database_type", db_exists, db_value)
         _restore_state("startup_probe", probe_exists, probe_value)
         _restore_state("background_services", services_exists, services_value)
+        _restore_state("migration_status", migration_exists, migration_value)
+        _restore_state("startup_complete", startup_exists, startup_value)
 
     assert payload["status"] == "OK"
     assert payload["database_type"] == settings.normalized_db_type()
     assert payload["startup_probe_status"] == "unknown"
+    assert payload["startup_complete"] is False
+    assert payload["migration_status"] == "unknown"
     assert payload["background_services"] == {}

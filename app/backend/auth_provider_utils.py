@@ -266,10 +266,12 @@ def _verify_keycloak_token(token: str) -> Dict[str, Any]:
         raise RuntimeError("Keycloak configuration is missing")
 
     verify_audience = bool(getattr(settings, "KEYCLOAK_ENFORCE_AUDIENCE", False))
-    audience = (settings.KEYCLOAK_CLIENT_ID or "").strip() or None
+    audience = (settings.KEYCLOAK_AUDIENCE or "").strip() or None
 
     if verify_audience and not audience:
-        raise RuntimeError("Keycloak audience enforcement is enabled but KEYCLOAK_CLIENT_ID is missing")
+        raise RuntimeError(
+            "Keycloak audience enforcement is enabled but KEYCLOAK_AUDIENCE is missing"
+        )
 
     decode_kwargs = {
         "algorithms": ["RS256"],

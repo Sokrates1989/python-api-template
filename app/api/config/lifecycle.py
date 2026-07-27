@@ -119,6 +119,8 @@ def create_lifespan_handler():
         # Resolve selected backend app to determine infrastructure requirements.
         selected_app = get_backend_app_definition(settings.APP_PROFILE)
         background_services: list[BackgroundService] = []
+        app.state.startup_complete = False
+        app.state.migration_status = "pending"
 
         log_event(
             logger,
@@ -174,17 +176,23 @@ def create_lifespan_handler():
             if settings.is_sql_database():
                 from backend.database.migrations import run_migrations
 
-                run_migrations(fail_on_error=True)
+                migrations_succeeded = run_migrations(fail_on_error=True)
+                if not migrations_succeeded:
+                    raise RuntimeError("SQL migrations did not complete successfully")
+                app.state.migration_status = "success"
                 log_event(
                     logger,
                     logging.INFO,
                     "startup.migrations_ok",
                     db_type=settings.normalized_db_type(),
                 )
+            else:
+                app.state.migration_status = "not_required"
         else:
             # For no-database apps, mark startup probe as skipped.
             app.state.startup_probe = {"status": "skipped"}
             app.state.database_type = "none"
+            app.state.migration_status = "not_required"
             log_event(
                 logger,
                 logging.INFO,
@@ -195,6 +203,7 @@ def create_lifespan_handler():
         try:
             background_services = await _start_background_services(selected_app)
             app.state.background_services = background_services
+            app.state.startup_complete = True
             log_event(
                 logger,
                 logging.INFO,

@@ -185,8 +185,10 @@ class KeycloakIdentityDeletionGateway:
             token_url,
             data={
                 "grant_type": "client_credentials",
-                "client_id": str(self._settings.KEYCLOAK_CLIENT_ID).strip(),
-                "client_secret": str(self._settings.KEYCLOAK_CLIENT_SECRET).strip(),
+                "client_id": str(
+                    self._settings.KEYCLOAK_ADMIN_CLIENT_ID
+                ).strip(),
+                "client_secret": self._settings.get_keycloak_admin_client_secret(),
             },
             timeout=10,
         )
@@ -223,16 +225,21 @@ class KeycloakIdentityDeletionGateway:
         Returns:
             bool: True when URL, realm, client id, and secret are non-empty.
         """
-        return all(
+        public_values_complete = all(
             str(value or "").strip()
             for value in (
                 self._settings.KEYCLOAK_INTERNAL_URL
                 or self._settings.KEYCLOAK_SERVER_URL,
                 self._settings.KEYCLOAK_REALM,
-                self._settings.KEYCLOAK_CLIENT_ID,
-                self._settings.KEYCLOAK_CLIENT_SECRET,
+                self._settings.KEYCLOAK_ADMIN_CLIENT_ID,
             )
         )
+        if not public_values_complete:
+            return False
+        try:
+            return bool(self._settings.get_keycloak_admin_client_secret())
+        except ValueError:
+            return False
 
     def _keycloak_base_url(self) -> str:
         """Resolve the internal Keycloak base URL without a trailing slash.
