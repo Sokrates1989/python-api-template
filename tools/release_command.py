@@ -29,7 +29,10 @@ class CommandRunner:
         cwd: Path,
         check: bool = True,
     ) -> subprocess.CompletedProcess[str]:
-        """Run one argument-vector command.
+        """Run one argument-vector command with deterministic UTF-8 capture.
+
+        Undecodable scanner bytes are replaced so Windows locale differences
+        cannot crash the reader threads or bypass fail-closed policy handling.
 
         Args:
             command: Executable and arguments.
@@ -52,6 +55,8 @@ class CommandRunner:
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         if check and completed.returncode != 0:
             detail = safe_command_error(completed)

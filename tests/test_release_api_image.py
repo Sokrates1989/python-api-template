@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from tools.release_api_image import (
+    CommandRunner,
     ReleaseError,
     build_release_image,
     create_release_plan,
@@ -197,6 +199,27 @@ class ReleaseApiImageTests(unittest.TestCase):
         self.assertEqual(len(plan.dependency_lock_sha256), 64)
         self.assertEqual(plan.pdm_version, "2.27.0")
         self.assertEqual(plan.git_revision, REVISION)
+
+    def test_command_runner_replaces_non_utf8_scanner_bytes(self) -> None:
+        """Keep Windows locale decoding from crashing scanner capture.
+
+        Returns:
+            None.
+
+        Side Effects:
+            Starts a short-lived Python child process that emits one invalid
+            UTF-8 byte.
+        """
+        completed = CommandRunner().run(
+            (
+                sys.executable,
+                "-c",
+                "import sys; sys.stdout.buffer.write(bytes([0x81]))",
+            ),
+            cwd=self.repository,
+        )
+
+        self.assertEqual(completed.stdout, "\ufffd")
 
     def test_plan_rejects_missing_lock_before_docker(self) -> None:
         (self.app_root / "pdm.lock").unlink()
