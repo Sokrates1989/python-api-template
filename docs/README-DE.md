@@ -225,17 +225,12 @@ rm .setup-complete
 
 ## 🏗️ Docker Image Build & Deploy
 
-```bash
-# Image-Tag setzen
-export IMAGE_TAG=0.1.0
-
-# Docker Registry Login
-docker login registry.gitlab.com -u gitlab+deploy-token-XXXXXX -p YOUR_DEPLOY_TOKEN
-
-# Build & Push (Linux/amd64 für Azure)
-docker buildx build --platform linux/amd64 --build-arg IMAGE_TAG=$IMAGE_TAG \
-  -t registry.gitlab.com/speedie3/fastapi-redis-api-test:$IMAGE_TAG --push .
-```
+`quick-start.ps1` oder `quick-start.sh` starten, die ausgewählte Backend-App
+prüfen und **Build & Push API Docker Image (version bump + immutable +
+latest)** auswählen. Dies ist der einzige unterstützte Weg zur
+Image-Veröffentlichung. Keine direkten Docker-Befehle und keine CI/CD-Pipeline
+zum Veröffentlichen verwenden. Siehe
+[`PRODUCTION-IMAGE-BUILD.md`](PRODUCTION-IMAGE-BUILD.md).
 
 ## ✨ Vorteile
 

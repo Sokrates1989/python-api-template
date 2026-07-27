@@ -83,6 +83,16 @@ generator and must not create `app/apps/<app_id>` targets directly.
 
 ### Guided Setup (Recommended)
 
+Production image planning, local proof, and build-and-push are operator actions
+owned by this repository's quick-start menu. Select the active backend app,
+then use the **Build** actions **Validate API Docker image release plan**,
+**Build API Docker image locally**, or **Build & Push API Docker Image**.
+
+Do not use raw Docker commands, the Python release tool directly, or a CI/CD
+pipeline to publish an API image. Automated CI remains quality-only. See
+[`docs/PRODUCTION-IMAGE-BUILD.md`](docs/PRODUCTION-IMAGE-BUILD.md) for the
+authoritative workflow, evidence, and Swarm version hand-off.
+
 On first run, the quick-start scripts will launch an **interactive setup wizard** that helps you configure:
 - Docker image name and version
 - Python version
@@ -379,17 +389,11 @@ rm .setup-complete
 
 ## 🏗️ Docker Image Build & Deploy
 
-```bash
-# Set image tag
-export IMAGE_TAG=0.1.0
-
-# Docker Registry Login
-docker login registry.gitlab.com -u gitlab+deploy-token-XXXXXX -p YOUR_DEPLOY_TOKEN
-
-# Build & Push (Linux/amd64 for Azure)
-docker buildx build --platform linux/amd64 --build-arg IMAGE_TAG=$IMAGE_TAG \
-  -t registry.gitlab.com/speedie3/fastapi-redis-api-test:$IMAGE_TAG --push .
-```
+Launch `quick-start.ps1` or `quick-start.sh`, verify the selected backend app,
+and choose **Build & Push API Docker Image (version bump + immutable +
+latest)**. This is the only supported image publication path. Do not publish
+with raw Docker commands or CI/CD. See
+[`docs/PRODUCTION-IMAGE-BUILD.md`](docs/PRODUCTION-IMAGE-BUILD.md).
 
 ## ✨ Benefits
 

@@ -1,394 +1,161 @@
-# Production Image Build System
+# Production API image release
 
-This document describes the production image build system for the API template.
+This document defines the authoritative operator workflow for planning,
+building, and publishing selected-app API images.
 
-## 📋 Overview
+## Operator policy
 
-The production image build system allows you to create optimized Docker images for deployment to production servers. The system is designed to:
+All API image actions must be started from this repository's interactive
+quick-start menu.
 
-- Build production-optimized Docker images locally
-- Manage image versioning automatically
-- Support CI/CD pipelines (GitHub Actions, GitLab CI)
-- Avoid platform-specific scripts by using Docker for the build process
+- Use **Validate API Docker image release plan** to inspect the selected app,
+  version, image reference, source revision, and evidence paths.
+- Use **Build API Docker image locally (no push)** to run the complete local
+  build, runtime inspection, SBOM, and vulnerability gates without publishing.
+- Use **Build & Push API Docker Image (version bump + immutable + latest)** for
+  the only supported publication path.
 
-## 🏗️ Architecture
+Do not publish an API image by running `docker build`, `docker tag`,
+`docker push`, Docker Compose build helpers, or
+`tools/release_api_image.py` directly. Do not publish API images from GitHub
+Actions, GitLab CI/CD, or another automatic pipeline. CI is quality-only.
 
-### Directory Structure
+The terminal is used only to launch the quick-start menu. The menu owns the
+release sequence and its safety/evidence gates.
 
-```
-python-api-template/
-├── Dockerfile                            # Main Dockerfile (dev + production)
-├── build-image/                          # Production build directory
-│   ├── Dockerfile                        # Alpine + Docker CLI for build script
-│   ├── build-image.sh                    # Build script (runs in Docker)
-│   ├── docker-compose.build.yml          # Docker Compose for building
-│   └── README.md                         # Build documentation
-├── .ci.env.template                      # CI/CD configuration template
-├── .github/workflows/
-│   └── build-and-push.yml.example        # GitHub Actions workflow example
-└── .gitlab-ci.yml.example                # GitLab CI pipeline example
-```
+## Start the selected-app menu
 
-### Related Repository
+Windows PowerShell:
 
-For production deployment with Docker Swarm, see:
-- [swarm-python-api-template](https://github.com/Sokrates1989/swarm-python-api-template)
-
-### Key Components
-
-1. **Main Dockerfile** (`Dockerfile`)
-   - Single Dockerfile for both development and production
-   - Configurable via build arguments
-   - Ensures consistency between environments
-   - Production-ready by default
-
-2. **Build Environment** (`build-image/Dockerfile`)
-   - Alpine Linux + Docker CLI
-   - Provides platform-independent build environment
-   - Runs the build script in a container
-
-3. **Build Script** (`build-image/build-image.sh`)
-   - Runs inside Docker container (platform-independent)
-   - Prompts for image version
-   - Automatically updates `.env` file
-   - Builds and optionally pushes images
-
-4. **Docker Compose Build** (`build-image/docker-compose.build.yml`)
-   - Orchestrates the build process
-   - Mounts Docker socket for building
-   - Ensures consistent build environment
-
-## 🚀 Usage
-
-### Local Build
-
-#### Option 1: Using Quick Start Scripts (Recommended)
-
-**Windows:**
 ```powershell
+cd D:\Development\Code\python\python-api-template
 .\quick-start.ps1
-# Select: Build & Push API Docker Image
 ```
 
-**Linux/macOS:**
+Linux, macOS, or WSL:
+
 ```bash
+cd /path/to/python-api-template
 ./quick-start.sh
-# Select: Build & Push API Docker Image
 ```
 
-The quick-start flow builds only the selected backend app's API image. It reads
-and writes the selected semver in that app's committed `pyproject.toml`, using
-this format:
+Before continuing, verify that the menu reports the intended active backend
+app. For the Felix candidate release it must be `felix`; stop if another app
+is selected.
 
-```toml
-[project]
-name = "postgres_template"
-version = "1.0.0"
+Menu numbering may evolve, so select actions by their full labels rather than
+relying on a fixed number.
+
+## Recommended proof and publication sequence
+
+### 1. Validate the release plan
+
+Choose **Validate API Docker image release plan**.
+
+This action is read-only. Confirm that the output identifies:
+
+- app `felix`;
+- image repository `sokrates1989/python-api-felix`;
+- the expected current semantic version;
+- the expected source and dependency-lock inputs; and
+- ignored evidence paths below `build/release-evidence/api/felix/`.
+
+### 2. Prove the current image locally
+
+Choose **Build API Docker image locally (no push)**.
+
+The action builds the selected version and then:
+
+1. verifies the production/Felix OCI identity;
+2. verifies the non-root `linux/amd64` runtime contract;
+3. runs the applicable test and startup/health gates;
+4. creates dependency and full-image SPDX evidence;
+5. applies the fixable HIGH/CRITICAL vulnerability policy; and
+6. writes a sanitized local receipt.
+
+It does not change Git history, push source, push an image, update `latest`, or
+deploy anything.
+
+### 3. Publish through the menu
+
+Choose **Build & Push API Docker Image (version bump + immutable + latest)**.
+
+The publisher always requires a semantic version greater than the selected
+app's committed version. Choose the offered patch, minor, or major increment.
+After the explicit confirmation, the menu performs one ordered release:
+
+1. updates `app/apps/<app_id>/pyproject.toml`;
+2. creates the version-bump commit locally;
+3. rebuilds and repeats all image proof gates;
+4. pushes the proven source commit;
+5. pushes the immutable semantic-version image;
+6. records its registry digest; and
+7. pushes `latest` as a convenience tag.
+
+The operation never deploys the image. `latest` is never valid deployment
+evidence; Swarm must use the semantic version and resolved immutable digest.
+
+If any proof, source push, immutable-image push, or digest extraction fails,
+the publisher exits nonzero and does not report a completed publication.
+
+## Version hand-off to Swarm
+
+The version published by the menu must exactly match
+`site-configs/felix.json` in the Swarm deployment repository before preflight
+or deployment begins.
+
+For example, if the API repository currently contains `0.1.1`, the publication
+menu will offer `0.1.2` as the next patch version. In that case the Swarm Felix
+profile must be updated and committed to select `0.1.2`; do not deploy its
+older `0.1.1` selection and do not substitute `latest`.
+
+The registry digest printed by the publication receipt is the value that the
+strict Swarm preflight resolves and binds to deployment evidence.
+
+## Evidence
+
+Ignored release evidence is written below:
+
+```text
+build/release-evidence/api/<app_id>/
 ```
 
-The canonical image name is derived from the app id:
-`sokrates1989/python-api-<app-name>`.
-
-App `.env` files remain local runtime configuration for ports, database URLs,
-auth endpoints, and secrets. They are not the release version source of truth.
-
-#### Option 2: Direct Docker Compose
-
-```bash
-docker compose -f build-image/docker-compose.build.yml up
-```
-
-### Configuration
-
-1. **Edit the active app package version if needed:**
-
-```toml
-[project]
-name = "postgres_template"
-version = "1.0.0"
-```
-
-2. **Build Process:**
-   - Script uses the active backend app selected by quick-start
-   - Prompts you to bump or keep the app package version
-   - Updates `[project].version` in the active app `pyproject.toml`
-   - Builds `sokrates1989/python-api-<app-name>:VERSION`
-   - Pushes the versioned tag, then tags and pushes `latest`
-
-### Testing Production Image Locally
-
-```bash
-# Test the built image directly
-docker run -p 8000:8000 --env-file .env your-username/your-api-name:0.0.1
-
-# Or use development docker-compose
-docker compose -f local-deployment/docker-compose.yml up
-```
-
-### Testing with Docker Swarm
-
-For production-like testing with Docker Swarm, use the [swarm-python-api-template](https://github.com/Sokrates1989/swarm-python-api-template) repository.
-
-## 🔄 CI/CD Integration
-
-### GitHub Actions
-
-1. **Setup:**
-   ```bash
-   # Copy example workflow
-   cp .github/workflows/build-and-push.yml.example .github/workflows/build-and-push.yml
-   
-   # Create CI environment config
-   cp .ci.env.template .ci.env
-   ```
-
-2. **Configure GitHub Secrets:**
-   - Go to repository Settings → Secrets and variables → Actions
-   - Add secrets:
-     - `DOCKER_USERNAME`: Your Docker Hub username
-     - `DOCKER_PASSWORD`: Your Docker Hub password or access token
-
-3. **Edit `.ci.env`:**
-   ```env
-   IMAGE_NAME=your-username/your-api-name
-   IMAGE_VERSION=0.0.1
-   PYTHON_VERSION=3.13
-   DOCKERFILE_PATH=Dockerfile
-   ```
-
-4. **Trigger Build:**
-   - Push to `main` branch
-   - Create a git tag: `git tag v0.0.1 && git push --tags`
-   - Manual workflow dispatch from GitHub Actions UI
-
-### GitLab CI
-
-1. **Setup:**
-   ```bash
-   # Copy example pipeline
-   cp .gitlab-ci.yml.example .gitlab-ci.yml
-   
-   # Create CI environment config
-   cp .ci.env.template .ci.env
-   ```
-
-2. **Configure GitLab CI/CD Variables:**
-   - Go to Settings → CI/CD → Variables
-   - Add variables:
-     - `DOCKER_USERNAME`: Your Docker Hub username
-     - `DOCKER_PASSWORD`: Your Docker Hub password or access token
-
-3. **Edit `.ci.env`:**
-   ```env
-   IMAGE_NAME=your-username/your-api-name
-   IMAGE_VERSION=0.0.1
-   PYTHON_VERSION=3.13
-   DOCKERFILE_PATH=Dockerfile
-   ```
-
-4. **Trigger Build:**
-   - Push to `main` or `master` branch
-   - Create a git tag: `git tag v1.0.0 && git push --tags`
-
-## 🐳 Container Registries
-
-### Docker Hub
-
-```bash
-# Login
-docker login
-
-# Build and push (via script)
-docker compose -f build-image/docker-compose.build.yml up
-```
-
-### GitHub Container Registry (ghcr.io)
-
-```bash
-# Login
-echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
-
-# App-aware quick-start builds use:
-# sokrates1989/python-api-<app-name>
-#
-# The legacy direct builder can still read custom registry names from .env.
-```
-
-### GitLab Container Registry
-
-```bash
-# Login
-docker login registry.gitlab.com
-
-# App-aware quick-start builds use:
-# sokrates1989/python-api-<app-name>
-#
-# The legacy direct builder can still read custom registry names from .env.
-```
-
-## 📦 Deployment
-
-### Docker Compose (Production Server)
-
-Create `docker-compose.prod.yml` on your server:
-
-```yaml
-version: '3.8'
-
-services:
-  app:
-    image: your-username/your-api-name:1.0.0
-    ports:
-      - "8000:8000"
-    environment:
-      - DATABASE_URL=postgresql://user:pass@db:5432/dbname
-      - REDIS_URL=redis://redis:6379
-      - DEBUG=false
-    restart: unless-stopped
-    
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: secure-password
-      POSTGRES_DB: apidb
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    restart: unless-stopped
-    
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-
-volumes:
-  postgres-data:
-```
-
-Deploy:
-```bash
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
-```
-
-### Cloud Platforms
-
-- **AWS ECS/Fargate**: Use the image in task definitions
-- **Google Cloud Run**: Deploy directly from container registry
-- **Azure Container Instances**: Deploy the image
-- **DigitalOcean App Platform**: Deploy from Docker Hub
-- **Kubernetes**: Use in deployment manifests
-
-## 🔒 Security Best Practices
-
-1. **Non-root User**: Production image runs as non-root user (UID 1000)
-2. **Secrets Management**: Never commit `.env` or `.ci.env` to version control
-3. **Registry Credentials**: Use CI/CD secrets, not hardcoded values
-4. **Image Scanning**: Consider adding vulnerability scanning to CI/CD
-5. **Minimal Base Image**: Uses Python slim images to reduce attack surface
-
-## 📊 Build Configuration
-
-The root `Dockerfile` is used for both development and production. Configuration is controlled via:
-
-| Aspect | Development | Production |
-|--------|-------------|------------|
-| **Dockerfile** | `Dockerfile` | `Dockerfile` (same file) |
-| **Build Args** | `IMAGE_TAG=local_docker` | `IMAGE_TAG=0.0.1` |
-| **Dependencies** | `pdm install --prod` | `pdm install --prod` |
-| **Code Mounting** | Volume mounted (docker-compose) | Copied into image (build) |
-| **CMD** | `--reload` flag | No reload flag |
-
-**Key Benefit**: Same Dockerfile ensures what you test locally is what runs in production.
-
-## 🔧 Advanced Configuration
-
-### Custom Python Version
-
-```env
-PYTHON_VERSION=3.12
-```
-
-### Multi-platform Builds
-
-```bash
-docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  --build-arg PYTHON_VERSION=3.13-slim \
-  -t your-username/your-api-name:1.0.0 \
-  -f build-image/Dockerfile \
-  --push \
-  .
-```
-
-### Build Arguments
-
-The Dockerfile supports these build arguments:
-
-- `PYTHON_VERSION`: Python base image version (default: 3.13-slim)
-- `IMAGE_TAG`: Tag to bake into the image for traceability
-
-## 🆘 Troubleshooting
-
-### Legacy builder: "IMAGE_NAME not set in .env"
-
-The app-aware quick-start build derives the image name from the selected app.
-Only the legacy direct builder requires `IMAGE_NAME` in `.env`.
-
-### "Docker login failed"
-
-**Solution:** Verify credentials and ensure you're logged in:
-```bash
-docker login
-```
-
-### "Permission denied" on Linux
-
-**Solution:** Make script executable:
-```bash
-chmod +x build-image/build-image.sh
-```
-
-### Image Size Too Large
-
-**Solutions:**
-- Verify using `-slim` Python base image
-- Check that dev dependencies aren't installed
-- Use `.dockerignore` to exclude unnecessary files
-- Consider multi-stage builds for additional optimization
-
-### Build Fails in CI/CD
-
-**Solutions:**
-- Verify CI/CD secrets are set correctly
-- Check `.ci.env` configuration
-- Ensure Docker registry credentials are valid
-- Review CI/CD logs for specific errors
-
-## 📚 Additional Resources
-
-- [Build Image README](../build-image/README.md)
-- [Docker Best Practices](https://docs.docker.com/develop/dev-best-practices/)
-- [Docker Security](https://docs.docker.com/engine/security/)
-- [GitHub Actions Documentation](https://docs.github.com/en/actions)
-- [GitLab CI/CD Documentation](https://docs.gitlab.com/ee/ci/)
-
-## 🎯 Quick Reference
-
-```bash
-# Build production image
-docker compose -f build-image/docker-compose.build.yml run --rm build-image
-
-# Test production image locally
-docker run -p 8000:8000 --env-file .env your-username/your-api-name:0.0.1
-
-# Push to registry manually
-docker push your-username/your-api-name:0.0.1
-docker push your-username/your-api-name:latest
-
-# Pull and run on production server
-docker pull your-username/your-api-name:0.0.1
-docker run -p 8000:8000 --env-file .env your-username/your-api-name:0.0.1
-
-# Deploy with Docker Swarm
-# See: https://github.com/Sokrates1989/swarm-python-api-template
-```
+For a successful publication, the receipt must report:
+
+- state `published`;
+- the selected app and semantic version;
+- the exact source revision and dependency-lock checksum;
+- the immutable image reference and registry digest;
+- successful runtime, SBOM, and vulnerability gates;
+- immutable-tag publication;
+- `latest` publication as convenience only; and
+- deployment authorization as false.
+
+Evidence may contain public identifiers, revisions, checksums, image IDs, and
+registry digests. It must never contain registry credentials, application
+secrets, `.env` content, or unredacted logs.
+
+## CI/CD boundary
+
+Repository CI may validate source, tests, contracts, and release-tool
+behavior. It must not:
+
+- bump the application version;
+- commit or push release source;
+- build or publish a release image;
+- update `latest`; or
+- deploy to Docker Swarm.
+
+Files under `ci-cd/` and historical pipeline templates are retained only as
+legacy reference material. They are not an authorized Felix image release
+path.
+
+## Deployment
+
+After the semantic version is published and the matching Swarm profile is
+available on the server, use the Swarm repository's own `./quick-start.sh`.
+Select the exact Felix candidate profile and then use
+**Felix strict deploy / health / rollback**.
+
+Image publication and Swarm deployment remain two separate, explicit menu
+operations in their owning repositories.
