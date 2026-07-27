@@ -40,8 +40,8 @@ try:
         ensure_release_branch as _ensure_release_branch,
         extract_push_digest as _extract_push_digest,
         git_output as _git_output,
-        update_project_version as _update_project_version,
-        version_tuple as _version_tuple,
+        prepare_release_source as _prepare_release_source,
+        validate_version_transition as _validate_version_transition,
     )
 except ModuleNotFoundError:
     from release_command import CommandRunner, ReleaseError  # type: ignore[no-redef]
@@ -51,8 +51,8 @@ except ModuleNotFoundError:
         ensure_release_branch as _ensure_release_branch,
         extract_push_digest as _extract_push_digest,
         git_output as _git_output,
-        update_project_version as _update_project_version,
-        version_tuple as _version_tuple,
+        prepare_release_source as _prepare_release_source,
+        validate_version_transition as _validate_version_transition,
     )
 
 
@@ -515,9 +515,10 @@ def publish_release_image(
     python_version: str = DEFAULT_PYTHON_VERSION,
     pdm_version: str = DEFAULT_PDM_VERSION,
     scanner: str = "auto",
+    allow_current_version: bool = False,
     runner: CommandRunner | None = None,
 ) -> dict[str, Any]:
-    """Prove and publish a greater selected-app version.
+    """Prove and publish the current or a greater selected-app version.
 
     Args:
         repository_root: Canonical API repository.
@@ -527,19 +528,22 @@ def publish_release_image(
         python_version: Python base image tag.
         pdm_version: Exact PDM build-tool version.
         scanner: Image SBOM and vulnerability scanner.
+        allow_current_version: Explicitly permits the exact committed version
+            when its immutable registry tag can be proven absent.
         runner: Optional injectable command runner.
 
     Returns:
         dict[str, Any]: Receipt bound to the immutable registry digest.
 
     Side Effects:
-        Updates and commits the app version, builds/scans the image, pushes the
-        source commit, and pushes immutable plus ``latest`` image tags. It never
-        deploys.
+        Optionally updates and commits the app version, builds/scans the image,
+        pushes proven source, and pushes immutable plus ``latest`` image tags.
+        It never deploys.
 
     Raises:
-        ReleaseError: If preflight, commit, build evidence, Git push, immutable
-            image push, digest extraction, or convenience-tag push fails.
+        ReleaseError: If version selection, immutable-tag absence, preflight,
+            commit, build evidence, Git push, image push, digest extraction, or
+            convenience-tag push fails.
     """
 
     runner = runner or CommandRunner()
@@ -547,13 +551,12 @@ def publish_release_image(
     _ensure_clean_worktree(repository_root, runner)
     _ensure_release_branch(repository_root, runner)
     manifest_path = repository_root / "app" / "apps" / app_id / "pyproject.toml"
-    manifest_argument = manifest_path.relative_to(repository_root).as_posix()
     _, current_version = _read_project_manifest(manifest_path)
-    if _version_tuple(target_version) <= _version_tuple(current_version):
-        raise ReleaseError(
-            "Build & Push requires a version greater than the current app version "
-            f"({current_version})."
-        )
+    reuse_current = _validate_version_transition(
+        current_version,
+        target_version,
+        allow_current_version=allow_current_version,
+    )
 
     target_image_name = (
         image_name
@@ -565,20 +568,14 @@ def publish_release_image(
         runner,
     )
 
-    _update_project_version(manifest_path, current_version, target_version)
-    runner.run(
-        ("git", "diff", "--check", "--", manifest_argument),
-        cwd=repository_root,
-    )
-    runner.run(("git", "add", "--", manifest_argument), cwd=repository_root)
-    runner.run(
-        (
-            "git",
-            "commit",
-            "-m",
-            f"[Release] {app_id} API {target_version}",
-        ),
-        cwd=repository_root,
+    _prepare_release_source(
+        repository_root,
+        manifest_path,
+        app_id,
+        current_version,
+        target_version,
+        reuse_current_version=reuse_current,
+        runner=runner,
     )
 
     plan = create_release_plan(
@@ -596,9 +593,14 @@ def publish_release_image(
         runner=runner,
         scanner=scanner,
     )
+    receipt["sourcePublication"] = {
+        "currentVersionReused": reuse_current,
+        "versionBumpCommitCreated": not reuse_current,
+    }
+    _write_json_atomic(repository_root / plan.receipt_path, receipt)
 
-    # The local release commit is now proven by the build/inspect/SBOM/scan
-    # gates. Push source before publishing the image that names its revision.
+    # The selected HEAD is now proven by build/inspect/SBOM/scan gates. Push
+    # source before publishing the image that names its exact revision.
     runner.run(("git", "push"), cwd=repository_root)
 
     immutable_push = runner.run(
@@ -705,10 +707,21 @@ def _build_parser() -> argparse.ArgumentParser:
 
     publish_parser = subparsers.add_parser(
         "publish",
-        help="Commit/push a version bump, then push immutable and latest images.",
+        help=(
+            "Prove/push current source or commit a version bump, then publish "
+            "immutable and latest images."
+        ),
     )
     add_common(publish_parser)
     publish_parser.add_argument("--version", required=True)
+    publish_parser.add_argument(
+        "--allow-current-version",
+        action="store_true",
+        help=(
+            "Publish the exact committed version without a bump only when its "
+            "immutable registry tag is absent."
+        ),
+    )
     publish_parser.add_argument(
         "--scanner",
         choices=("auto", "trivy", "docker-scout"),
@@ -736,9 +749,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if arguments.action == "publish":
             print("Build & Push performs these explicit external effects:")
-            print("  1. Commit the selected app version bump locally")
+            if arguments.allow_current_version:
+                print("  1. Reuse the exact committed app version without a bump")
+            else:
+                print("  1. Commit the selected app version bump locally")
             print("  2. Build, inspect, inventory, and vulnerability-scan the image")
-            print("  3. Push the proven source commit")
+            print("  3. Push the proven prepared source")
             print("  4. Push the immutable version tag and latest convenience tag")
             print("  5. Never deploy an image or authorize latest for deployment")
             receipt = publish_release_image(
@@ -749,6 +765,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 python_version=arguments.python_version,
                 pdm_version=arguments.pdm_version,
                 scanner=arguments.scanner,
+                allow_current_version=arguments.allow_current_version,
             )
             plan = ReleasePlan(**receipt["plan"])
             _print_plan(plan, "published")

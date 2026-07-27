@@ -347,6 +347,8 @@ class ReleaseApiImageTests(unittest.TestCase):
         )
 
     def test_publish_commits_and_pushes_bump_before_images_then_latest(self) -> None:
+        """Commit a greater version before proving and publishing its image."""
+
         original_plan = self._plan()
         del original_plan
         # publish_release_image creates its plan after the release commit. Build
@@ -408,7 +410,62 @@ class ReleaseApiImageTests(unittest.TestCase):
             1,
         )
 
+    def test_publish_reuses_current_version_without_source_mutation(self) -> None:
+        """Publish an absent current tag while retaining the manifest and HEAD."""
+
+        plan = self._plan()
+        self._set_valid_inspection(plan)
+
+        receipt = publish_release_image(
+            self.repository,
+            "felix",
+            "1.2.3",
+            allow_current_version=True,
+            runner=self.runner,
+        )
+
+        commands = self.runner.commands
+        build_index = next(
+            index
+            for index, command in enumerate(commands)
+            if command[:3] == ("docker", "buildx", "build")
+        )
+        source_push_index = next(
+            index
+            for index, command in enumerate(commands)
+            if command == ("git", "push")
+        )
+        immutable_push_index = next(
+            index
+            for index, command in enumerate(commands)
+            if command
+            == ("docker", "push", "sokrates1989/python-api-felix:1.2.3")
+        )
+
+        self.assertFalse(
+            any(command[:2] == ("git", "commit") for command in commands)
+        )
+        self.assertFalse(any(command[:2] == ("git", "add") for command in commands))
+        self.assertLess(build_index, source_push_index)
+        self.assertLess(source_push_index, immutable_push_index)
+        self.assertEqual(receipt["plan"]["git_revision"], REVISION)
+        self.assertEqual(
+            receipt["sourcePublication"],
+            {
+                "currentVersionReused": True,
+                "versionBumpCommitCreated": False,
+            },
+        )
+        self.assertEqual(
+            (self.app_root / "pyproject.toml").read_text(encoding="utf-8").count(
+                'version = "1.2.3"'
+            ),
+            1,
+        )
+
     def test_publish_rejects_non_increment_before_git_or_docker_mutation(self) -> None:
+        """Reject current-version publication without explicit authorization."""
+
         with self.assertRaisesRegex(ReleaseError, "greater than"):
             publish_release_image(
                 self.repository,

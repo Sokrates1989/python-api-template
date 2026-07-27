@@ -69,13 +69,18 @@ class ReleaseImageContractTests(unittest.TestCase):
         self.assertIn("Validate API Docker image release plan", source)
         self.assertIn("Build API Docker image locally (no push)", source)
         self.assertIn(
-            "Build & Push API Docker Image (version bump + immutable + latest)",
+            "Build & Push API Docker Image (current or bump + immutable + latest)",
+            source,
+        )
+        self.assertIn(
+            "Keep current (${current_version}; registry tag must be absent)",
             source,
         )
         self.assertIn("run_api_release_tool plan --app", source)
         self.assertIn("run_api_release_tool build --app", source)
-        self.assertIn("run_api_release_tool publish --app", source)
-        self.assertIn("Commit/push the bump and publish both image tags?", source)
+        self.assertIn('publish_arguments=(publish --app "$app_id"', source)
+        self.assertIn("publish_arguments+=(--allow-current-version)", source)
+        self.assertIn("Push proven source and publish both image tags?", source)
         self.assertIn("This action never deploys", source)
 
     def test_build_only_handler_contains_no_push_or_latest_command(self) -> None:
@@ -84,7 +89,7 @@ class ReleaseImageContractTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         start = source.index("handle_build_production_image_local()")
         end = source.index(
-            "# Commit/push a version bump",
+            "# Prove/push current source",
             start,
         )
         handler = source[start:end]

@@ -226,7 +226,7 @@ rm .setup-complete
 ## 🏗️ Docker Image Build & Deploy
 
 `quick-start.ps1` oder `quick-start.sh` starten, die ausgewählte Backend-App
-prüfen und **Build & Push API Docker Image (version bump + immutable +
+prüfen und **Build & Push API Docker Image (current or bump + immutable +
 latest)** auswählen. Dies ist der einzige unterstützte Weg zur
 Image-Veröffentlichung. Keine direkten Docker-Befehle und keine CI/CD-Pipeline
 zum Veröffentlichen verwenden. Siehe

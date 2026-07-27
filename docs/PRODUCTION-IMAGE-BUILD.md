@@ -12,8 +12,8 @@ quick-start menu.
   version, image reference, source revision, and evidence paths.
 - Use **Build API Docker image locally (no push)** to run the complete local
   build, runtime inspection, SBOM, and vulnerability gates without publishing.
-- Use **Build & Push API Docker Image (version bump + immutable + latest)** for
-  the only supported publication path.
+- Use **Build & Push API Docker Image (current or bump + immutable + latest)**
+  for the only supported publication path.
 
 Do not publish an API image by running `docker build`, `docker tag`,
 `docker push`, Docker Compose build helpers, or
@@ -78,16 +78,19 @@ deploy anything.
 
 ### 3. Publish through the menu
 
-Choose **Build & Push API Docker Image (version bump + immutable + latest)**.
+Choose **Build & Push API Docker Image (current or bump + immutable + latest)**.
 
-The publisher always requires a semantic version greater than the selected
-app's committed version. Choose the offered patch, minor, or major increment.
+The publisher offers the exact committed version plus patch, minor, major, and
+manual greater-version choices. **Keep current** is allowed only when the
+immutable registry tag can be proven absent; it can never overwrite an
+existing semantic-version tag.
+
 After the explicit confirmation, the menu performs one ordered release:
 
-1. updates `app/apps/<app_id>/pyproject.toml`;
-2. creates the version-bump commit locally;
-3. rebuilds and repeats all image proof gates;
-4. pushes the proven source commit;
+1. keeps the current manifest unchanged or updates it to the chosen increment;
+2. creates a version-bump commit only for an incremented version;
+3. rebuilds and repeats all image proof gates against the exact selected HEAD;
+4. pushes the proven prepared source;
 5. pushes the immutable semantic-version image;
 6. records its registry digest; and
 7. pushes `latest` as a convenience tag.
@@ -104,10 +107,11 @@ The version published by the menu must exactly match
 `site-configs/felix.json` in the Swarm deployment repository before preflight
 or deployment begins.
 
-For example, if the API repository currently contains `0.1.1`, the publication
-menu will offer `0.1.2` as the next patch version. In that case the Swarm Felix
-profile must be updated and committed to select `0.1.2`; do not deploy its
-older `0.1.1` selection and do not substitute `latest`.
+For example, if the API repository currently contains `0.1.1`, choosing
+**Keep current** publishes `0.1.1` without another version commit, provided
+that registry tag does not exist. The Swarm Felix profile must then select
+`0.1.1`. If the operator instead chooses the next patch `0.1.2`, the Swarm
+profile must be committed at `0.1.2`. Never substitute `latest`.
 
 The registry digest printed by the publication receipt is the value that the
 strict Swarm preflight resolves and binds to deployment evidence.

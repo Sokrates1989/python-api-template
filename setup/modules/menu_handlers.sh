@@ -800,10 +800,10 @@ read_api_image_version_selection() {
     done
 }
 
-# Prompt for a strictly greater release version before external publication.
+# Prompt for the current or a greater release version before publication.
 #
-# Unlike the general version editor, Build & Push cannot republish the current
-# immutable version. It offers patch/minor/major or an explicit greater SemVer.
+# The current version remains eligible only when its immutable registry tag is
+# absent. The Python publisher proves absence before any Git or registry write.
 read_api_publish_version_selection() {
     local current_version="${1:-0.1.0}"
     local patch_version
@@ -822,6 +822,7 @@ read_api_publish_version_selection() {
     echo "  [2] Minor  (${current_version} -> ${minor_version})" >&2
     echo "  [3] Major  (${current_version} -> ${major_version})" >&2
     echo "  [4] Enter a greater SemVer manually" >&2
+    echo "  [5] Keep current (${current_version}; registry tag must be absent)" >&2
     echo "" >&2
 
     while true; do
@@ -848,7 +849,8 @@ read_api_publish_version_selection() {
                 fi
                 echo "Invalid SemVer value. Use x.y.z, for example 1.2.3." >&2
                 ;;
-            *) echo "Invalid option. Choose 1-4." >&2 ;;
+            5) printf '%s\n' "$current_version"; return 0 ;;
+            *) echo "Invalid option. Choose 1-5." >&2 ;;
         esac
     done
 }
@@ -983,7 +985,7 @@ handle_build_production_image_local() {
     run_api_release_tool build --app "$app_id"
 }
 
-# Commit/push a version bump, then publish immutable and latest image tags.
+# Prove/push current source or commit a bump, then publish both image tags.
 #
 # Returns:
 #   0 when build and push succeed, non-zero otherwise.
@@ -992,6 +994,7 @@ handle_build_production_image() {
     local current_version
     local tag_version
     local confirmation
+    local -a publish_arguments
 
     current_version="$(get_active_backend_package_version "$app_id" "0.1.0")"
 
@@ -1003,9 +1006,9 @@ handle_build_production_image() {
     echo "Current version: ${current_version}"
     echo ""
     echo "This explicit release action will:"
-    echo "  1. Increment and locally commit app/apps/${app_id}/pyproject.toml"
+    echo "  1. Keep the current version or increment and commit pyproject.toml"
     echo "  2. Build, inspect, create an image SPDX SBOM, and vulnerability-scan"
-    echo "  3. Push the proven version-bump commit"
+    echo "  3. Push the proven prepared source"
     echo "  4. Push the immutable version image"
     echo "  5. Push latest as a convenience tag"
     echo ""
@@ -1015,18 +1018,27 @@ handle_build_production_image() {
     tag_version="$(read_api_publish_version_selection "$current_version")" || return 1
 
     echo ""
-    echo "Release version: ${current_version} -> ${tag_version}"
-    if [[ -r /dev/tty ]]; then
-        read -r -p "Commit/push the bump and publish both image tags? (y/N): " confirmation < /dev/tty
+    publish_arguments=(publish --app "$app_id" --version "$tag_version")
+    if [ "$tag_version" = "$current_version" ]; then
+        echo "Release version: ${current_version} (keep current)"
+        echo "Source action: no version-file change or version-bump commit"
+        echo "Registry guard: publication stops if ${tag_version} already exists"
+        publish_arguments+=(--allow-current-version)
     else
-        read -r -p "Commit/push the bump and publish both image tags? (y/N): " confirmation
+        echo "Release version: ${current_version} -> ${tag_version}"
+        echo "Source action: create and prove the version-bump commit"
+    fi
+    if [[ -r /dev/tty ]]; then
+        read -r -p "Push proven source and publish both image tags? (y/N): " confirmation < /dev/tty
+    else
+        read -r -p "Push proven source and publish both image tags? (y/N): " confirmation
     fi
     if [[ ! "$confirmation" =~ ^[Yy]$ ]]; then
         echo "[INFO] Build & Push cancelled before Git or registry mutation."
         return 0
     fi
 
-    run_api_release_tool publish --app "$app_id" --version "$tag_version"
+    run_api_release_tool "${publish_arguments[@]}"
 }
 
 handle_cicd_setup() {
@@ -1108,7 +1120,7 @@ show_main_menu() {
         echo "Build:"
         echo "  ${MENU_BUILD_API_PLAN}) Validate API Docker image release plan (v${active_api_version})"
         echo "  ${MENU_BUILD_API_LOCAL}) Build API Docker image locally (no push)"
-        echo "  ${MENU_BUILD_PROD_IMAGE}) Build & Push API Docker Image (version bump + immutable + latest)"
+        echo "  ${MENU_BUILD_PROD_IMAGE}) Build & Push API Docker Image (current or bump + immutable + latest)"
         echo "  ${MENU_BUILD_BUMP_VERSION}) Bump release version for docker image"
         echo ""
         echo "Legacy (not a release path):"

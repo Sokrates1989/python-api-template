@@ -182,6 +182,45 @@ def version_tuple(version: str) -> tuple[int, int, int]:
     return tuple(int(item) for item in match.groups())  # type: ignore[return-value]
 
 
+def validate_version_transition(
+    current_version: str,
+    target_version: str,
+    *,
+    allow_current_version: bool,
+) -> bool:
+    """Validate a publication version and identify exact-current reuse.
+
+    Args:
+        current_version: Version currently committed in the selected manifest.
+        target_version: Operator-selected publication version.
+        allow_current_version: Whether exact current-version reuse was
+            explicitly selected by the quick-start menu.
+
+    Returns:
+        bool: ``True`` when the current version should be published without a
+        version-file change; ``False`` for a greater-version release.
+
+    Raises:
+        ReleaseError: If the target is older, or equals the current version
+            without explicit current-version authorization.
+    """
+
+    current = version_tuple(current_version)
+    target = version_tuple(target_version)
+    if target < current:
+        raise ReleaseError(
+            "Build & Push cannot publish a version older than the current app "
+            f"version ({current_version})."
+        )
+    if target == current and not allow_current_version:
+        raise ReleaseError(
+            "Build & Push requires a version greater than the current app "
+            f"version ({current_version}) unless current-version publication "
+            "is explicitly selected."
+        )
+    return target == current
+
+
 def update_project_version(path: Path, current: str, target: str) -> None:
     """Replace only the selected app project version.
 
@@ -220,6 +259,59 @@ def update_project_version(path: Path, current: str, target: str) -> None:
         + updated_section
         + source[section_match.end() :],
         encoding="utf-8",
+    )
+
+
+def prepare_release_source(
+    repository_root: Path,
+    manifest_path: Path,
+    app_id: str,
+    current_version: str,
+    target_version: str,
+    *,
+    reuse_current_version: bool,
+    runner: PublicationCommandRunner,
+) -> None:
+    """Keep current source or create the selected version-bump commit.
+
+    Args:
+        repository_root: Canonical API repository.
+        manifest_path: Selected app's committed package manifest.
+        app_id: Selected backend app identifier.
+        current_version: Exact manifest version before publication.
+        target_version: Validated publication version.
+        reuse_current_version: Whether to leave the manifest and HEAD intact.
+        runner: Shell-free command runner.
+
+    Returns:
+        None.
+
+    Side Effects:
+        For a greater version, rewrites, stages, and commits only the selected
+        app manifest. Current-version publication has no source mutation.
+
+    Raises:
+        ReleaseError: Through manifest validation or command failures.
+    """
+
+    if reuse_current_version:
+        return
+
+    manifest_argument = manifest_path.relative_to(repository_root).as_posix()
+    update_project_version(manifest_path, current_version, target_version)
+    runner.run(
+        ("git", "diff", "--check", "--", manifest_argument),
+        cwd=repository_root,
+    )
+    runner.run(("git", "add", "--", manifest_argument), cwd=repository_root)
+    runner.run(
+        (
+            "git",
+            "commit",
+            "-m",
+            f"[Release] {app_id} API {target_version}",
+        ),
+        cwd=repository_root,
     )
 
 
