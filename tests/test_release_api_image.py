@@ -34,6 +34,7 @@ class FakeRunner:
         self.worktree_status = ""
         self.manifest_exists = False
         self.vulnerability_failure = False
+        self.trivy_available = True
 
     def run(
         self,
@@ -74,6 +75,15 @@ class FakeRunner:
             ":latest"
         ):
             stdout = f"digest: {REGISTRY_DIGEST} size: 1234\n"
+        elif normalized[:3] == ("docker", "scout", "sbom"):
+            stdout = json.dumps(
+                {
+                    "spdxVersion": "SPDX-2.3",
+                    "SPDXID": "SPDXRef-DOCUMENT",
+                    "name": "image-sbom",
+                    "packages": [],
+                }
+            )
         elif normalized[:2] == ("trivy", "image") and "--output" in normalized:
             output_path = Path(normalized[normalized.index("--output") + 1])
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -101,7 +111,7 @@ class FakeRunner:
         return subprocess.CompletedProcess(normalized, 0, stdout=stdout, stderr="")
 
     def which(self, executable: str) -> str | None:
-        if executable == "trivy":
+        if executable == "trivy" and self.trivy_available:
             return "/usr/bin/trivy"
         return None
 
@@ -312,6 +322,29 @@ class ReleaseApiImageTests(unittest.TestCase):
             build_release_image(self.repository, plan, runner=self.runner)
 
         self.assertFalse((self.repository / plan.receipt_path).exists())
+
+    def test_scout_fallback_rejects_only_fixable_high_critical_findings(self) -> None:
+        """Keep Docker Scout aligned with Trivy's ignore-unfixed policy."""
+
+        plan = self._plan()
+        self._set_valid_inspection(plan)
+        self.runner.trivy_available = False
+
+        receipt = build_release_image(self.repository, plan, runner=self.runner)
+
+        scout_command = next(
+            command
+            for command in self.runner.commands
+            if command[:3] == ("docker", "scout", "cves")
+        )
+        self.assertIn("--only-fixed", scout_command)
+        self.assertEqual(
+            receipt["vulnerabilityPolicy"]["policy"]["rejectedSeverities"],
+            ["HIGH", "CRITICAL"],
+        )
+        self.assertTrue(
+            receipt["vulnerabilityPolicy"]["policy"]["ignoreUnfixed"]
+        )
 
     def test_publish_commits_and_pushes_bump_before_images_then_latest(self) -> None:
         original_plan = self._plan()

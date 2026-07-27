@@ -374,7 +374,7 @@ def run_vulnerability_scan(
     runner: EvidenceCommandRunner,
     selected_scanner: str,
 ) -> dict[str, Any]:
-    """Apply the bounded HIGH/CRITICAL image vulnerability policy.
+    """Reject fixable HIGH/CRITICAL image vulnerabilities.
 
     Args:
         repository_root: Working directory for scanner commands.
@@ -389,7 +389,9 @@ def run_vulnerability_scan(
         Runs an image scan and creates only an ephemeral raw report.
 
     Raises:
-        ImageEvidenceError: If policy findings or scanner errors return nonzero.
+        ImageEvidenceError: If fixable policy findings or scanner errors return
+            nonzero. Unfixed findings remain in the SBOM/scanner data but do
+            not block because neither supported scanner can remediate them.
     """
 
     if selected_scanner == "trivy":
@@ -426,6 +428,7 @@ def run_vulnerability_scan(
                 "docker",
                 "scout",
                 "cves",
+                "--only-fixed",
                 "--only-severity",
                 "high,critical",
                 "--exit-code",
@@ -436,8 +439,8 @@ def run_vulnerability_scan(
         )
         if completed.returncode != 0:
             raise ImageEvidenceError(
-                "Vulnerability policy failed: HIGH or CRITICAL findings, "
-                "or a Docker Scout operational error, blocked the image."
+                "Vulnerability policy failed: fixable HIGH or CRITICAL "
+                "findings, or a Docker Scout operational error, blocked the image."
             )
         scanner_name = "docker-scout"
     else:
@@ -449,7 +452,7 @@ def run_vulnerability_scan(
         "scanner": scanner_name,
         "policy": {
             "rejectedSeverities": ["HIGH", "CRITICAL"],
-            "ignoreUnfixed": selected_scanner == "trivy",
+            "ignoreUnfixed": True,
         },
         "result": "passed",
     }
