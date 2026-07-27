@@ -802,8 +802,8 @@ read_api_image_version_selection() {
 
 # Prompt for the current or a greater release version before publication.
 #
-# The current version remains eligible only when its immutable registry tag is
-# absent. The Python publisher proves absence before any Git or registry write.
+# Current-version publication may intentionally replace the registry tag. Every
+# successful receipt records the resulting digest used by deployment preflight.
 read_api_publish_version_selection() {
     local current_version="${1:-0.1.0}"
     local patch_version
@@ -822,7 +822,7 @@ read_api_publish_version_selection() {
     echo "  [2] Minor  (${current_version} -> ${minor_version})" >&2
     echo "  [3] Major  (${current_version} -> ${major_version})" >&2
     echo "  [4] Enter a greater SemVer manually" >&2
-    echo "  [5] Keep current (${current_version}; registry tag must be absent)" >&2
+    echo "  [5] Keep current (${current_version}; republish allowed)" >&2
     echo "" >&2
 
     while true; do
@@ -853,92 +853,6 @@ read_api_publish_version_selection() {
             *) echo "Invalid option. Choose 1-5." >&2 ;;
         esac
     done
-}
-
-# Build the selected backend app API Docker image.
-#
-# Args:
-#   image_name: Docker image name without tag.
-#   tag_version: Version tag to build.
-#   app_id: Selected backend app id baked into the image.
-#   python_version: Python base image version.
-#   backend_data_profile: Database/backend profile.
-#
-# Returns:
-#   0 when Docker build succeeds, non-zero otherwise.
-build_backend_api_docker_image() {
-    local image_name="$1"
-    local tag_version="$2"
-    local app_id="$3"
-    local python_version="$4"
-    local backend_data_profile="$5"
-    local build_args=(
-        --build-arg "PYTHON_VERSION=${python_version}"
-        --build-arg "IMAGE_TAG=${tag_version}"
-        --build-arg "BACKEND_APP_ID=${app_id}"
-    )
-
-    if [ -n "$backend_data_profile" ]; then
-        build_args+=(--build-arg "BACKEND_DATA_PROFILE=${backend_data_profile}")
-    fi
-
-    echo ""
-    echo "Building Docker image: ${image_name}:${tag_version}"
-    echo ""
-    echo "Building Docker image: ${image_name}:${tag_version}"
-    echo "  Dockerfile: Dockerfile"
-    echo "  Context: ."
-    echo "  Platform: linux/amd64 (for Swarm compatibility)"
-    echo "  Backend app: ${app_id}"
-    echo ""
-
-    if docker buildx version >/dev/null 2>&1; then
-        echo "Using docker buildx for platform linux/amd64..."
-        docker buildx build --platform "linux/amd64" -t "${image_name}:${tag_version}" -f "Dockerfile" "${build_args[@]}" "." --load
-    else
-        echo "docker buildx not found, falling back to docker build (host architecture)..."
-        docker build -t "${image_name}:${tag_version}" -f "Dockerfile" "${build_args[@]}" "."
-    fi
-}
-
-# Push a Docker image and retry once after docker login on auth failures.
-#
-# Args:
-#   image_ref: Full Docker image reference including tag.
-#
-# Returns:
-#   0 when push succeeds, non-zero otherwise.
-push_docker_image_with_login_retry() {
-    local image_ref="$1"
-    local push_output
-    local login_choice
-
-    echo "Pushing image: ${image_ref}"
-    if push_output="$(docker push "$image_ref" 2>&1)"; then
-        printf '%s\n' "$push_output"
-        return 0
-    fi
-
-    printf '%s\n' "$push_output"
-    if printf '%s\n' "$push_output" | grep -qiE 'insufficient_scope|unauthorized|authentication required|no basic auth credentials|requested access'; then
-        echo ""
-        echo "Docker registry login may be required."
-        if [[ -r /dev/tty ]]; then
-            read -r -p "Run docker login and retry? (Y/n): " login_choice < /dev/tty
-        else
-            read -r -p "Run docker login and retry? (Y/n): " login_choice
-        fi
-
-        if [[ ! "$login_choice" =~ ^[Nn]$ ]]; then
-            docker login || return 1
-            echo ""
-            echo "Retrying push: ${image_ref}"
-            docker push "$image_ref"
-            return $?
-        fi
-    fi
-
-    return 1
 }
 
 # Run the standard-library selected-app API release tool.
@@ -985,7 +899,7 @@ handle_build_production_image_local() {
     run_api_release_tool build --app "$app_id"
 }
 
-# Prove/push current source or commit a bump, then publish both image tags.
+# Prove current source or commit a bump, then publish both image tags.
 #
 # Returns:
 #   0 when build and push succeed, non-zero otherwise.
@@ -1008,12 +922,12 @@ handle_build_production_image() {
     echo "This explicit release action will:"
     echo "  1. Keep the current version or increment and commit pyproject.toml"
     echo "  2. Build, inspect, create an image SPDX SBOM, and vulnerability-scan"
-    echo "  3. Push the proven prepared source"
-    echo "  4. Push the immutable version image"
-    echo "  5. Push latest as a convenience tag"
+    echo "  3. Push or republish the selected version image"
+    echo "  4. Push latest as a convenience tag"
+    echo "  5. Leave Git source local for you to push separately"
     echo ""
-    echo "Deployment evidence binds only the immutable version and registry digest."
-    echo "This action never deploys and latest is never deployment evidence."
+    echo "Deployment evidence binds the resulting registry digest."
+    echo "This action never deploys, never pushes Git, and never deploys latest."
 
     tag_version="$(read_api_publish_version_selection "$current_version")" || return 1
 
@@ -1022,19 +936,19 @@ handle_build_production_image() {
     if [ "$tag_version" = "$current_version" ]; then
         echo "Release version: ${current_version} (keep current)"
         echo "Source action: no version-file change or version-bump commit"
-        echo "Registry guard: publication stops if ${tag_version} already exists"
+        echo "Registry action: ${tag_version} may be created or replaced"
         publish_arguments+=(--allow-current-version)
     else
         echo "Release version: ${current_version} -> ${tag_version}"
         echo "Source action: create and prove the version-bump commit"
     fi
     if [[ -r /dev/tty ]]; then
-        read -r -p "Push proven source and publish both image tags? (y/N): " confirmation < /dev/tty
+        read -r -p "Build and publish both image tags? (Y/n): " confirmation < /dev/tty
     else
-        read -r -p "Push proven source and publish both image tags? (y/N): " confirmation
+        read -r -p "Build and publish both image tags? (Y/n): " confirmation
     fi
-    if [[ ! "$confirmation" =~ ^[Yy]$ ]]; then
-        echo "[INFO] Build & Push cancelled before Git or registry mutation."
+    if [[ "$confirmation" =~ ^[Nn]$ ]]; then
+        echo "[INFO] Build & Push cancelled before build or registry mutation."
         return 0
     fi
 
@@ -1120,7 +1034,7 @@ show_main_menu() {
         echo "Build:"
         echo "  ${MENU_BUILD_API_PLAN}) Validate API Docker image release plan (v${active_api_version})"
         echo "  ${MENU_BUILD_API_LOCAL}) Build API Docker image locally (no push)"
-        echo "  ${MENU_BUILD_PROD_IMAGE}) Build & Push API Docker Image (current or bump + immutable + latest)"
+        echo "  ${MENU_BUILD_PROD_IMAGE}) Build & Push API Docker Image (current or bump + version + latest)"
         echo "  ${MENU_BUILD_BUMP_VERSION}) Bump release version for docker image"
         echo ""
         echo "Legacy (not a release path):"

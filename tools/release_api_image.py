@@ -34,9 +34,12 @@ except ModuleNotFoundError:
     )
 try:
     from tools.release_command import CommandRunner, ReleaseError
+    from tools.release_registry_publication import (
+        push_image_with_auth_retry as _push_image_with_auth_retry,
+        run_visible as _run_visible,
+    )
     from tools.release_source_publication import (
         ensure_clean_worktree as _ensure_clean_worktree,
-        ensure_immutable_tag_absent as _ensure_immutable_tag_absent,
         ensure_release_branch as _ensure_release_branch,
         extract_push_digest as _extract_push_digest,
         git_output as _git_output,
@@ -45,9 +48,12 @@ try:
     )
 except ModuleNotFoundError:
     from release_command import CommandRunner, ReleaseError  # type: ignore[no-redef]
+    from release_registry_publication import (  # type: ignore[no-redef]
+        push_image_with_auth_retry as _push_image_with_auth_retry,
+        run_visible as _run_visible,
+    )
     from release_source_publication import (  # type: ignore[no-redef]
         ensure_clean_worktree as _ensure_clean_worktree,
-        ensure_immutable_tag_absent as _ensure_immutable_tag_absent,
         ensure_release_branch as _ensure_release_branch,
         extract_push_digest as _extract_push_digest,
         git_output as _git_output,
@@ -78,8 +84,8 @@ class ReleasePlan:
         app_id: Selected backend build app.
         app_profile: Bound runtime composition profile.
         image_name: Registry repository without tag.
-        image_tag: Strict immutable semantic version.
-        image_ref: Repository plus immutable tag.
+        image_tag: Strict semantic version selected for publication.
+        image_ref: Repository plus selected version tag.
         package_name: App manifest package name.
         package_version: App manifest package version.
         python_version: Selected Python base tag.
@@ -240,7 +246,7 @@ def create_release_plan(
     selected_version = version or package_version
     if not SEMVER_PATTERN.fullmatch(selected_version):
         raise ReleaseError(
-            f"Image tag must be strict immutable SemVer x.y.z: {selected_version!r}"
+            f"Image tag must be strict SemVer x.y.z: {selected_version!r}"
         )
     if selected_version != package_version:
         raise ReleaseError(
@@ -435,6 +441,22 @@ def _inspect_image(
     }
 
 
+def _print_status(message: str) -> None:
+    """Write one immediately visible operator progress line.
+
+    Args:
+        message: Secret-free status text.
+
+    Returns:
+        None.
+
+    Side Effects:
+        Flushes one line to standard output.
+    """
+
+    print(message, flush=True)
+
+
 def build_release_image(
     repository_root: Path,
     plan: ReleasePlan,
@@ -462,9 +484,17 @@ def build_release_image(
     """
 
     runner = runner or CommandRunner()
+    _print_status("[CHECK] Verifying clean selected-app source...")
     _ensure_clean_worktree(repository_root, runner)
+    _print_status("[CHECK] Verifying Docker Buildx...")
     runner.run(("docker", "buildx", "version"), cwd=repository_root)
-    runner.run(_docker_build_command(plan), cwd=repository_root)
+    _print_status(f"[BUILD] Building Docker image: {plan.image_ref}")
+    _run_visible(
+        runner,
+        _docker_build_command(plan),
+        cwd=repository_root,
+    )
+    _print_status("[VERIFY] Inspecting runtime user, labels, and healthcheck...")
     inspection = _inspect_image(repository_root, plan, runner)
     evidence_request = ImageEvidenceRequest(
         app_id=plan.app_id,
@@ -483,6 +513,7 @@ def build_release_image(
             evidence_request,
             runner,
             scanner,
+            progress=_print_status,
         )
     except ImageEvidenceError as exc:
         raise ReleaseError(str(exc)) from exc
@@ -496,13 +527,16 @@ def build_release_image(
         "image": inspection,
         **evidence,
         "publication": {
-            "immutableTagPushed": False,
-            "immutableDigest": None,
+            "versionTagPushed": False,
+            "versionTagRepublishAllowed": True,
+            "registryDigest": None,
             "latestConvenienceTagPushed": False,
             "latestAllowedForDeployment": False,
         },
     }
     _write_json_atomic(repository_root / plan.receipt_path, receipt)
+    _print_status(f"[OK] Local image proof complete: {plan.image_ref}")
+    _print_status(f"[OK] Evidence written: {plan.receipt_path}")
     return receipt
 
 
@@ -523,31 +557,31 @@ def publish_release_image(
     Args:
         repository_root: Canonical API repository.
         app_id: Explicit selected backend app.
-        target_version: Greater strict semantic version.
+        target_version: Current or greater strict semantic version.
         image_name: Optional registry repository override.
         python_version: Python base image tag.
         pdm_version: Exact PDM build-tool version.
         scanner: Image SBOM and vulnerability scanner.
         allow_current_version: Explicitly permits the exact committed version
-            when its immutable registry tag can be proven absent.
+            for initial publication or intentional republishing.
         runner: Optional injectable command runner.
 
     Returns:
-        dict[str, Any]: Receipt bound to the immutable registry digest.
+        dict[str, Any]: Receipt bound to the resulting registry digest.
 
     Side Effects:
         Optionally updates and commits the app version, builds/scans the image,
-        pushes proven source, and pushes immutable plus ``latest`` image tags.
-        It never deploys.
+        and pushes the selected version plus ``latest`` image tags. Source
+        remains local for the operator to push separately. It never deploys.
 
     Raises:
-        ReleaseError: If version selection, immutable-tag absence, preflight,
-            commit, build evidence, Git push, image push, digest extraction, or
-            convenience-tag push fails.
+        ReleaseError: If version selection, preflight, commit, build evidence,
+            image push, digest extraction, or convenience-tag push fails.
     """
 
     runner = runner or CommandRunner()
     repository_root = repository_root.resolve()
+    _print_status("[RELEASE] Validating source and selected version...")
     _ensure_clean_worktree(repository_root, runner)
     _ensure_release_branch(repository_root, runner)
     manifest_path = repository_root / "app" / "apps" / app_id / "pyproject.toml"
@@ -558,16 +592,16 @@ def publish_release_image(
         allow_current_version=allow_current_version,
     )
 
-    target_image_name = (
-        image_name
-        or f"{DEFAULT_IMAGE_NAMESPACE}/python-api-{_normalize_app_image_segment(app_id)}"
-    )
-    _ensure_immutable_tag_absent(
-        repository_root,
-        f"{target_image_name}:{target_version}",
-        runner,
-    )
-
+    if reuse_current:
+        _print_status(
+            f"[RELEASE] Reusing version {target_version}; an existing registry "
+            "tag may be replaced."
+        )
+    else:
+        _print_status(
+            f"[RELEASE] Creating local version commit: "
+            f"{current_version} -> {target_version}"
+        )
     _prepare_release_source(
         repository_root,
         manifest_path,
@@ -596,40 +630,48 @@ def publish_release_image(
     receipt["sourcePublication"] = {
         "currentVersionReused": reuse_current,
         "versionBumpCommitCreated": not reuse_current,
+        "gitPushPerformed": False,
+        "sourcePushOwnedByOperator": True,
     }
     _write_json_atomic(repository_root / plan.receipt_path, receipt)
 
-    # The selected HEAD is now proven by build/inspect/SBOM/scan gates. Push
-    # source before publishing the image that names its exact revision.
-    runner.run(("git", "push"), cwd=repository_root)
-
-    immutable_push = runner.run(
-        ("docker", "push", plan.image_ref),
-        cwd=repository_root,
+    _print_status(
+        "[PUSH] Publishing selected version tag; republishing is allowed..."
     )
-    immutable_digest = _extract_push_digest(
-        f"{immutable_push.stdout}\n{immutable_push.stderr}"
+    version_push = _push_image_with_auth_retry(
+        repository_root,
+        plan.image_ref,
+        runner,
     )
-    if immutable_digest is None:
+    registry_digest = _extract_push_digest(
+        f"{version_push.stdout}\n{version_push.stderr}"
+    )
+    if registry_digest is None:
         raise ReleaseError(
-            "Immutable image push succeeded without a registry digest; "
+            "Version image push succeeded without a registry digest; "
             "deployment evidence cannot be bound."
         )
 
     publication = receipt["publication"]
-    publication["immutableTagPushed"] = True
-    publication["immutableDigest"] = immutable_digest
-    receipt["state"] = "immutable-pushed"
+    publication["versionTagPushed"] = True
+    publication["versionTagRepublishAllowed"] = True
+    publication["registryDigest"] = registry_digest
+    receipt["state"] = "version-pushed"
     _write_json_atomic(repository_root / plan.receipt_path, receipt)
 
     latest_ref = f"{plan.image_name}:latest"
+    _print_status(f"[TAG] Tagging {plan.image_ref} as {latest_ref}")
     runner.run(("docker", "tag", plan.image_ref, latest_ref), cwd=repository_root)
-    runner.run(("docker", "push", latest_ref), cwd=repository_root)
+    _print_status("[PUSH] Publishing latest convenience tag...")
+    _push_image_with_auth_retry(repository_root, latest_ref, runner)
     publication["latestConvenienceTagPushed"] = True
     publication["latestAllowedForDeployment"] = False
     receipt["state"] = "published"
     receipt["publishedAt"] = _utc_timestamp()
     _write_json_atomic(repository_root / plan.receipt_path, receipt)
+    _print_status(f"[OK] Published version digest: {registry_digest}")
+    _print_status(f"[OK] Published latest: {latest_ref}")
+    _print_status("[INFO] Git source was not pushed; push it separately when ready.")
     return receipt
 
 
@@ -708,8 +750,8 @@ def _build_parser() -> argparse.ArgumentParser:
     publish_parser = subparsers.add_parser(
         "publish",
         help=(
-            "Prove/push current source or commit a version bump, then publish "
-            "immutable and latest images."
+            "Prove current source or commit a local version bump, then publish "
+            "the version and latest image tags."
         ),
     )
     add_common(publish_parser)
@@ -718,8 +760,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "--allow-current-version",
         action="store_true",
         help=(
-            "Publish the exact committed version without a bump only when its "
-            "immutable registry tag is absent."
+            "Publish or intentionally republish the exact committed version "
+            "without a bump."
         ),
     )
     publish_parser.add_argument(
@@ -741,22 +783,22 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     Side Effects:
         Depending on the selected action, prints a plan, builds local evidence,
-        or performs the explicitly confirmed Git and registry publication flow.
+        or performs the explicitly confirmed registry publication flow.
     """
 
     arguments = _build_parser().parse_args(argv)
     repository_root = arguments.repository_root.resolve()
     try:
         if arguments.action == "publish":
-            print("Build & Push performs these explicit external effects:")
+            print("Build & Push performs these explicit effects:", flush=True)
             if arguments.allow_current_version:
                 print("  1. Reuse the exact committed app version without a bump")
             else:
                 print("  1. Commit the selected app version bump locally")
             print("  2. Build, inspect, inventory, and vulnerability-scan the image")
-            print("  3. Push the proven prepared source")
-            print("  4. Push the immutable version tag and latest convenience tag")
-            print("  5. Never deploy an image or authorize latest for deployment")
+            print("  3. Push or republish the selected version image tag")
+            print("  4. Push latest as a convenience tag")
+            print("  5. Leave Git source local and never deploy an image", flush=True)
             receipt = publish_release_image(
                 repository_root,
                 arguments.app,
@@ -770,8 +812,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             plan = ReleasePlan(**receipt["plan"])
             _print_plan(plan, "published")
             print(
-                "Immutable digest: "
-                f"{receipt['publication']['immutableDigest']}"
+                "Registry digest: "
+                f"{receipt['publication']['registryDigest']}"
             )
             return 0
 

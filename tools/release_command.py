@@ -63,6 +63,64 @@ class CommandRunner:
             raise ReleaseError(f"Command failed: {' '.join(command)}\n{detail}")
         return completed
 
+    def run_streaming(
+        self,
+        command: Sequence[str],
+        *,
+        cwd: Path,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run a visible command while retaining its combined output.
+
+        This path is reserved for operator-facing Docker build, login, and
+        push operations. Standard input remains connected to the terminal so
+        an explicit Docker login can collect credentials without passing them
+        through arguments or retained evidence.
+
+        Args:
+            command: Executable and arguments.
+            cwd: Child-process working directory.
+            check: Whether nonzero exit status raises.
+
+        Returns:
+            subprocess.CompletedProcess[str]: Completed status and retained
+            combined standard output.
+
+        Side Effects:
+            Executes the command and streams its output to the terminal.
+
+        Raises:
+            ReleaseError: If ``check`` is true and the process fails.
+        """
+
+        process = subprocess.Popen(
+            list(command),
+            cwd=cwd,
+            stdin=None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+        output_lines: list[str] = []
+        if process.stdout is not None:
+            for line in process.stdout:
+                output_lines.append(line)
+                print(line, end="", flush=True)
+        return_code = process.wait()
+        completed = subprocess.CompletedProcess(
+            list(command),
+            return_code,
+            stdout="".join(output_lines),
+            stderr="",
+        )
+        if check and completed.returncode != 0:
+            detail = safe_command_error(completed)
+            raise ReleaseError(f"Command failed: {' '.join(command)}\n{detail}")
+        return completed
+
     def which(self, executable: str) -> str | None:
         """Locate an executable through the host path.
 

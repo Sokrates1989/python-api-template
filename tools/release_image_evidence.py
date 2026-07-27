@@ -18,7 +18,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Protocol, Sequence
+from typing import Any, Callable, Protocol, Sequence
 
 
 class ImageEvidenceError(RuntimeError):
@@ -463,6 +463,8 @@ def collect_image_evidence(
     request: ImageEvidenceRequest,
     runner: EvidenceCommandRunner,
     scanner: str,
+    *,
+    progress: Callable[[str], None] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Collect lock SBOM, full-image SBOM, and vulnerability evidence.
 
@@ -471,6 +473,7 @@ def collect_image_evidence(
         request: Exact image, source, lock, and evidence identity.
         runner: Injectable argument-vector command runner.
         scanner: Requested scanner or ``auto``.
+        progress: Optional operator-facing phase writer.
 
     Returns:
         dict[str, dict[str, Any]]: Sanitized dependency, image, and policy maps.
@@ -483,20 +486,35 @@ def collect_image_evidence(
         OSError: If evidence files cannot be written.
     """
 
+    if progress:
+        progress("[EVIDENCE] Writing dependency SPDX SBOM...")
     dependency_sbom_path = write_dependency_sbom(request)
+    if progress:
+        progress("[EVIDENCE] Selecting the image scanner...")
     selected_scanner = resolve_scanner(repository_root, runner, scanner)
+    if progress:
+        progress(
+            f"[EVIDENCE] Generating full-image SPDX SBOM with {selected_scanner}..."
+        )
     image_sbom_path = write_image_sbom(
         repository_root,
         request,
         runner,
         selected_scanner,
     )
+    if progress:
+        progress(
+            "[EVIDENCE] Scanning fixable HIGH/CRITICAL vulnerabilities with "
+            f"{selected_scanner}..."
+        )
     vulnerability = run_vulnerability_scan(
         repository_root,
         request,
         runner,
         selected_scanner,
     )
+    if progress:
+        progress("[EVIDENCE] SBOM and vulnerability gates passed.")
     return {
         "dependencyEvidence": {
             "lockSha256": request.dependency_lock_sha256,

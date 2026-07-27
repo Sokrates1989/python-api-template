@@ -1,4 +1,4 @@
-"""Git versioning and immutable-registry guards for API image publication."""
+"""Git versioning helpers for API image publication."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ SEMVER_PATTERN = re.compile(
 
 
 class PublicationCommandRunner(Protocol):
-    """Command behavior required by source and registry publication guards."""
+    """Command behavior required by local source versioning safeguards."""
 
     def run(
         self,
@@ -118,49 +118,6 @@ def ensure_release_branch(
         raise ReleaseError(
             f"Build & Push is allowed only from main; current branch is {branch!r}."
         )
-
-
-def ensure_immutable_tag_absent(
-    repository_root: Path,
-    image_ref: str,
-    runner: PublicationCommandRunner,
-) -> None:
-    """Refuse to overwrite an immutable registry version.
-
-    Args:
-        repository_root: Docker command working directory.
-        image_ref: Proposed immutable registry reference.
-        runner: Injectable command runner.
-
-    Side Effects:
-        Reads registry manifest state.
-
-    Raises:
-        ReleaseError: If the tag exists or absence cannot be proven.
-    """
-
-    completed = runner.run(
-        ("docker", "manifest", "inspect", image_ref),
-        cwd=repository_root,
-        check=False,
-    )
-    if completed.returncode == 0:
-        raise ReleaseError(
-            f"Immutable registry tag already exists and cannot be replaced: {image_ref}"
-        )
-    detail = f"{completed.stdout}\n{completed.stderr}".lower()
-    if any(
-        marker in detail
-        for marker in ("manifest unknown", "no such manifest", "not found")
-    ):
-        return
-    if any(marker in detail for marker in ("unauthorized", "denied")):
-        raise ReleaseError(
-            f"Registry authentication is required to verify tag absence: {image_ref}"
-        )
-    raise ReleaseError(
-        f"Unable to prove that immutable registry tag is absent: {image_ref}"
-    )
 
 
 def version_tuple(version: str) -> tuple[int, int, int]:

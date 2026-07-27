@@ -390,7 +390,7 @@ rm .setup-complete
 ## 🏗️ Docker Image Build & Deploy
 
 Launch `quick-start.ps1` or `quick-start.sh`, verify the selected backend app,
-and choose **Build & Push API Docker Image (current or bump + immutable +
+and choose **Build & Push API Docker Image (current or bump + version +
 latest)**. This is the only supported image publication path. Do not publish
 with raw Docker commands or CI/CD. See
 [`docs/PRODUCTION-IMAGE-BUILD.md`](docs/PRODUCTION-IMAGE-BUILD.md).

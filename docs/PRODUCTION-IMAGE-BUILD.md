@@ -12,7 +12,7 @@ quick-start menu.
   version, image reference, source revision, and evidence paths.
 - Use **Build API Docker image locally (no push)** to run the complete local
   build, runtime inspection, SBOM, and vulnerability gates without publishing.
-- Use **Build & Push API Docker Image (current or bump + immutable + latest)**
+- Use **Build & Push API Docker Image (current or bump + version + latest)**
   for the only supported publication path.
 
 Do not publish an API image by running `docker build`, `docker tag`,
@@ -78,28 +78,35 @@ deploy anything.
 
 ### 3. Publish through the menu
 
-Choose **Build & Push API Docker Image (current or bump + immutable + latest)**.
+Choose **Build & Push API Docker Image (current or bump + version + latest)**.
 
 The publisher offers the exact committed version plus patch, minor, major, and
-manual greater-version choices. **Keep current** is allowed only when the
-immutable registry tag can be proven absent; it can never overwrite an
-existing semantic-version tag.
+manual greater-version choices. **Keep current** intentionally allows the
+selected semantic-version tag to be published for the first time or replaced.
+The resulting registry digest, rather than the movable tag alone, is the
+immutable deployment evidence.
 
-After the explicit confirmation, the menu performs one ordered release:
+Press Enter at the default-yes confirmation to continue, or enter `n` to
+cancel. The menu then performs one ordered release:
 
 1. keeps the current manifest unchanged or updates it to the chosen increment;
 2. creates a version-bump commit only for an incremented version;
 3. rebuilds and repeats all image proof gates against the exact selected HEAD;
-4. pushes the proven prepared source;
-5. pushes the immutable semantic-version image;
-6. records its registry digest; and
-7. pushes `latest` as a convenience tag.
+4. pushes or replaces the selected semantic-version image tag;
+5. records the registry-reported digest; and
+6. pushes `latest` as a convenience tag.
 
-The operation never deploys the image. `latest` is never valid deployment
-evidence; Swarm must use the semantic version and resolved immutable digest.
+Docker build and push output is streamed while the commands run. If a registry
+push fails, the menu offers an interactive Docker login and one retry; pressing
+Enter accepts that retry. Docker credentials remain owned by the Docker CLI.
 
-If any proof, source push, immutable-image push, or digest extraction fails,
-the publisher exits nonzero and does not report a completed publication.
+The operation does not push Git source and never deploys the image. Push the
+prepared source commit separately when ready. `latest` is never valid
+deployment evidence; Swarm must use the semantic version and resolved registry
+digest.
+
+If any proof, image push, or digest extraction fails, the publisher exits
+nonzero and does not report a completed publication.
 
 ## Version hand-off to Swarm
 
@@ -108,10 +115,10 @@ The version published by the menu must exactly match
 or deployment begins.
 
 For example, if the API repository currently contains `0.1.1`, choosing
-**Keep current** publishes `0.1.1` without another version commit, provided
-that registry tag does not exist. The Swarm Felix profile must then select
-`0.1.1`. If the operator instead chooses the next patch `0.1.2`, the Swarm
-profile must be committed at `0.1.2`. Never substitute `latest`.
+**Keep current** publishes or replaces `0.1.1` without another version commit.
+The Swarm Felix profile must then select `0.1.1`. If the operator instead
+chooses the next patch `0.1.2`, the Swarm profile must be committed at `0.1.2`.
+Never substitute `latest`.
 
 The registry digest printed by the publication receipt is the value that the
 strict Swarm preflight resolves and binds to deployment evidence.
@@ -129,10 +136,11 @@ For a successful publication, the receipt must report:
 - state `published`;
 - the selected app and semantic version;
 - the exact source revision and dependency-lock checksum;
-- the immutable image reference and registry digest;
+- the selected version image reference and registry digest;
 - successful runtime, SBOM, and vulnerability gates;
-- immutable-tag publication;
+- version-tag publication and explicit republishing allowance;
 - `latest` publication as convenience only; and
+- confirmation that Git source was left local for the operator; and
 - deployment authorization as false.
 
 Evidence may contain public identifiers, revisions, checksums, image IDs, and

@@ -69,19 +69,20 @@ class ReleaseImageContractTests(unittest.TestCase):
         self.assertIn("Validate API Docker image release plan", source)
         self.assertIn("Build API Docker image locally (no push)", source)
         self.assertIn(
-            "Build & Push API Docker Image (current or bump + immutable + latest)",
+            "Build & Push API Docker Image (current or bump + version + latest)",
             source,
         )
         self.assertIn(
-            "Keep current (${current_version}; registry tag must be absent)",
+            "Keep current (${current_version}; republish allowed)",
             source,
         )
         self.assertIn("run_api_release_tool plan --app", source)
         self.assertIn("run_api_release_tool build --app", source)
         self.assertIn('publish_arguments=(publish --app "$app_id"', source)
         self.assertIn("publish_arguments+=(--allow-current-version)", source)
-        self.assertIn("Push proven source and publish both image tags?", source)
-        self.assertIn("This action never deploys", source)
+        self.assertIn("Build and publish both image tags? (Y/n)", source)
+        self.assertIn('if [[ "$confirmation" =~ ^[Nn]$ ]]', source)
+        self.assertIn("never pushes Git", source)
 
     def test_build_only_handler_contains_no_push_or_latest_command(self) -> None:
         source = (
@@ -89,7 +90,7 @@ class ReleaseImageContractTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         start = source.index("handle_build_production_image_local()")
         end = source.index(
-            "# Prove/push current source",
+            "# Prove current source",
             start,
         )
         handler = source[start:end]
@@ -118,6 +119,7 @@ class ReleaseImageContractTests(unittest.TestCase):
             "tools/release_api_image.py",
             "tools/release_command.py",
             "tools/release_image_evidence.py",
+            "tools/release_registry_publication.py",
             "tools/release_source_publication.py",
         ):
             with self.subTest(relative_path=relative_path):

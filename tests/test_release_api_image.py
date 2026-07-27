@@ -268,7 +268,8 @@ class ReleaseApiImageTests(unittest.TestCase):
         self.assertNotIn("latest", " ".join(" ".join(command) for command in commands))
         self.assertEqual(receipt["state"], "built")
         self.assertFalse(receipt["deploymentAuthorized"])
-        self.assertFalse(receipt["publication"]["immutableTagPushed"])
+        self.assertFalse(receipt["publication"]["versionTagPushed"])
+        self.assertTrue(receipt["publication"]["versionTagRepublishAllowed"])
         self.assertFalse(receipt["publication"]["latestAllowedForDeployment"])
         image_sbom = json.loads(
             (self.repository / plan.sbom_path).read_text(encoding="utf-8")
@@ -346,13 +347,13 @@ class ReleaseApiImageTests(unittest.TestCase):
             receipt["vulnerabilityPolicy"]["policy"]["ignoreUnfixed"]
         )
 
-    def test_publish_commits_and_pushes_bump_before_images_then_latest(self) -> None:
+    def test_publish_commits_bump_then_pushes_version_and_latest(self) -> None:
         """Commit a greater version before proving and publishing its image."""
 
         original_plan = self._plan()
         del original_plan
-        # publish_release_image creates its plan after the release commit. Build
-        # inspection must therefore describe the pushed source revision.
+        # publish_release_image creates its plan after the local release commit.
+        # Build inspection must therefore describe that exact source revision.
         lock_sha = __import__("hashlib").sha256(
             (self.app_root / "pdm.lock").read_bytes()
         ).hexdigest()
@@ -383,9 +384,8 @@ class ReleaseApiImageTests(unittest.TestCase):
 
         commands = self.runner.commands
         commit_index = next(i for i, command in enumerate(commands) if command[:2] == ("git", "commit"))
-        git_push_index = next(i for i, command in enumerate(commands) if command == ("git", "push"))
         build_index = next(i for i, command in enumerate(commands) if command[:3] == ("docker", "buildx", "build"))
-        immutable_push_index = next(
+        version_push_index = next(
             i
             for i, command in enumerate(commands)
             if command == ("docker", "push", "sokrates1989/python-api-felix:1.2.4")
@@ -396,13 +396,15 @@ class ReleaseApiImageTests(unittest.TestCase):
             if command == ("docker", "push", "sokrates1989/python-api-felix:latest")
         )
         self.assertLess(commit_index, build_index)
-        self.assertLess(build_index, git_push_index)
-        self.assertLess(build_index, immutable_push_index)
-        self.assertLess(git_push_index, immutable_push_index)
-        self.assertLess(immutable_push_index, latest_push_index)
-        self.assertEqual(receipt["publication"]["immutableDigest"], REGISTRY_DIGEST)
+        self.assertLess(build_index, version_push_index)
+        self.assertLess(version_push_index, latest_push_index)
+        self.assertFalse(any(command == ("git", "push") for command in commands))
+        self.assertEqual(receipt["publication"]["registryDigest"], REGISTRY_DIGEST)
+        self.assertTrue(receipt["publication"]["versionTagPushed"])
+        self.assertTrue(receipt["publication"]["versionTagRepublishAllowed"])
         self.assertTrue(receipt["publication"]["latestConvenienceTagPushed"])
         self.assertFalse(receipt["publication"]["latestAllowedForDeployment"])
+        self.assertFalse(receipt["sourcePublication"]["gitPushPerformed"])
         self.assertEqual(
             (self.app_root / "pyproject.toml").read_text(encoding="utf-8").count(
                 'version = "1.2.4"'
@@ -411,7 +413,7 @@ class ReleaseApiImageTests(unittest.TestCase):
         )
 
     def test_publish_reuses_current_version_without_source_mutation(self) -> None:
-        """Publish an absent current tag while retaining the manifest and HEAD."""
+        """Publish or replace the current tag while retaining manifest and HEAD."""
 
         plan = self._plan()
         self._set_valid_inspection(plan)
@@ -430,12 +432,7 @@ class ReleaseApiImageTests(unittest.TestCase):
             for index, command in enumerate(commands)
             if command[:3] == ("docker", "buildx", "build")
         )
-        source_push_index = next(
-            index
-            for index, command in enumerate(commands)
-            if command == ("git", "push")
-        )
-        immutable_push_index = next(
+        version_push_index = next(
             index
             for index, command in enumerate(commands)
             if command
@@ -446,14 +443,16 @@ class ReleaseApiImageTests(unittest.TestCase):
             any(command[:2] == ("git", "commit") for command in commands)
         )
         self.assertFalse(any(command[:2] == ("git", "add") for command in commands))
-        self.assertLess(build_index, source_push_index)
-        self.assertLess(source_push_index, immutable_push_index)
+        self.assertFalse(any(command == ("git", "push") for command in commands))
+        self.assertLess(build_index, version_push_index)
         self.assertEqual(receipt["plan"]["git_revision"], REVISION)
         self.assertEqual(
             receipt["sourcePublication"],
             {
                 "currentVersionReused": True,
                 "versionBumpCommitCreated": False,
+                "gitPushPerformed": False,
+                "sourcePushOwnedByOperator": True,
             },
         )
         self.assertEqual(
@@ -477,20 +476,28 @@ class ReleaseApiImageTests(unittest.TestCase):
         self.assertFalse(any(command[:2] == ("git", "commit") for command in self.runner.commands))
         self.assertFalse(any(command[0] == "docker" for command in self.runner.commands))
 
-    def test_publish_refuses_to_overwrite_existing_immutable_tag(self) -> None:
+    def test_publish_does_not_block_or_probe_existing_version_tag(self) -> None:
+        """Permit version-tag replacement without a registry manifest precheck."""
+
+        plan = self._plan()
+        self._set_valid_inspection(plan)
         self.runner.manifest_exists = True
 
-        with self.assertRaisesRegex(ReleaseError, "already exists"):
-            publish_release_image(
-                self.repository,
-                "felix",
-                "1.2.4",
-                runner=self.runner,
-            )
+        receipt = publish_release_image(
+            self.repository,
+            "felix",
+            "1.2.3",
+            allow_current_version=True,
+            runner=self.runner,
+        )
 
         self.assertFalse(
-            any(command[:2] == ("git", "commit") for command in self.runner.commands)
+            any(
+                command[:3] == ("docker", "manifest", "inspect")
+                for command in self.runner.commands
+            )
         )
+        self.assertTrue(receipt["publication"]["versionTagRepublishAllowed"])
 
 
 if __name__ == "__main__":
