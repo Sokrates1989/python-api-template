@@ -33,5 +33,14 @@ Run `pdm lock --check --project app/apps/booking_service` and the Python API
 template's selected-app contract tests before deployment. Compare the public
 runtime example with deployment-owned configuration. Exercise health, auth
 configuration, and migration upgrade/downgrade through the BKG-004 quality
-entrypoint. Keep later service routes relative to the API host and free of a
-redundant `/api/` prefix.
+entrypoint:
+
+```powershell
+python tools/booking_service_quality.py run
+```
+
+The command builds the Python 3.13 app image, starts disposable PostgreSQL,
+Redis, and Keycloak fixtures, verifies four neutral role identities, runs the
+focused contracts and route guard, scans logs for invocation secrets, and
+removes its containers, network, volume, and locally built images. Keep later
+service routes relative to the API host and free of a redundant `/api/` prefix.

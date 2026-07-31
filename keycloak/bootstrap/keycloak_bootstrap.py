@@ -24,6 +24,8 @@ from typing import Iterable, Sequence
 
 import requests
 
+from bootstrap_safety import build_local_user_payload, build_sanitized_summary
+
 
 class KeycloakBootstrapError(RuntimeError):
     """Raised when Keycloak bootstrap operations fail."""
@@ -54,18 +56,20 @@ def parse_user_specs(raw_specs: Sequence[str]) -> list[dict[str, object]]:
         KeycloakBootstrapError: When a specification is invalid.
     """
     users: list[dict[str, object]] = []
-    for spec in raw_specs:
+    for index, spec in enumerate(raw_specs, start=1):
         parts = spec.split(":")
         if len(parts) < 3:
             raise KeycloakBootstrapError(
-                f"Invalid user spec '{spec}'. Use username:password:role1,role2"
+                f"Invalid user specification #{index}. "
+                "Use username:password:role1,role2."
             )
         username, password = parts[0], parts[1]
         roles_raw = ":".join(parts[2:])
         roles = [role.strip() for role in roles_raw.split(",") if role.strip()]
         if not username or not password or not roles:
             raise KeycloakBootstrapError(
-                f"Invalid user spec '{spec}'. Username, password, and roles are required."
+                f"Invalid user specification #{index}. "
+                "Username, password, and roles are required."
             )
         users.append({"username": username, "password": password, "roles": roles})
     return users
@@ -326,7 +330,7 @@ def ensure_user(base_url: str, token: str, realm: str, username: str) -> str:
     if response.status_code == 200 and response.json():
         return response.json()[0].get("id")
 
-    payload = {"username": username, "enabled": True, "emailVerified": True}
+    payload = build_local_user_payload(username)
     create_response = request_with_token(
         "POST",
         base_url,
@@ -597,14 +601,7 @@ def run_bootstrap(args: argparse.Namespace) -> None:
             args.assign_service_account_role,
         )
 
-    summary = {
-        "realm": args.realm,
-        "frontend_client_id": args.frontend_client_id,
-        "backend_client_id": args.backend_client_id,
-        "backend_client_secret": backend_secret,
-        "roles": roles,
-        "users": users,
-    }
+    summary = build_sanitized_summary(args, roles, users, backend_secret)
     print("\nBootstrap completed. Summary:")
     print(json.dumps(summary, indent=2))
 

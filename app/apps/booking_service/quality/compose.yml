@@ -1,0 +1,145 @@
+# Disposable Booking Service runtime used by the repository quality runner.
+# All secret-bearing substitutions are supplied in-memory by the runner or by
+# an operator's environment; this file contains no credentials.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: booking_quality
+      POSTGRES_USER: booking_quality
+      POSTGRES_PASSWORD: ${BOOKING_QUALITY_DB_PASSWORD:?database password is required}
+    ports:
+      - "${BOOKING_QUALITY_POSTGRES_PORT:-5544}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U booking_quality -d booking_quality"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${BOOKING_QUALITY_REDIS_PORT:-6384}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--http-port=8080"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: booking-quality-admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${BOOKING_QUALITY_KEYCLOAK_ADMIN_PASSWORD:?Keycloak admin password is required}
+      KC_HOSTNAME: http://localhost:${BOOKING_QUALITY_KEYCLOAK_PORT:-9094}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "${BOOKING_QUALITY_KEYCLOAK_PORT:-9094}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080'"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+      start_period: 5s
+
+  keycloak-bootstrap:
+    build:
+      context: ../../../../keycloak/bootstrap
+      dockerfile: Dockerfile
+      args:
+        BASE_IMAGE: python:3.13-alpine
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_ADMIN: booking-quality-admin
+      KEYCLOAK_ADMIN_PASSWORD: ${BOOKING_QUALITY_KEYCLOAK_ADMIN_PASSWORD:?Keycloak admin password is required}
+      KEYCLOAK_REALM: booking-service-example
+      KEYCLOAK_FRONTEND_CLIENT_ID: keycloak
+      KEYCLOAK_BACKEND_CLIENT_ID: booking-service-backend
+      KEYCLOAK_FRONTEND_ROOT_URL: http://localhost:3000
+      KEYCLOAK_API_ROOT_URL: http://localhost:${BOOKING_QUALITY_API_PORT:-8084}
+      KEYCLOAK_ROLES: platform_admin;organization_admin;worker;customer
+      KEYCLOAK_USERS: ${BOOKING_QUALITY_PLATFORM_ADMIN_USER}:${BOOKING_QUALITY_PLATFORM_ADMIN_PASSWORD}:platform_admin;${BOOKING_QUALITY_ORGANIZATION_ADMIN_USER}:${BOOKING_QUALITY_ORGANIZATION_ADMIN_PASSWORD}:organization_admin;${BOOKING_QUALITY_WORKER_USER}:${BOOKING_QUALITY_WORKER_PASSWORD}:worker;${BOOKING_QUALITY_CUSTOMER_USER}:${BOOKING_QUALITY_CUSTOMER_PASSWORD}:customer
+      KEYCLOAK_SERVICE_ACCOUNT_ROLE: platform_admin
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: ../../../..
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: 3.13-slim
+        BACKEND_APP_ID: booking_service
+        APP_PROFILE: booking_service
+        BACKEND_DATA_PROFILE: postgresql
+    environment:
+      PORT: "8000"
+      APP_ENVIRONMENT: test
+      APP_PROFILE: booking_service
+      BACKEND_APP_ID: booking_service
+      DB_TYPE: postgresql
+      DB_MODE: local
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: booking_quality
+      DB_USER: booking_quality
+      DB_PASSWORD: ${BOOKING_QUALITY_DB_PASSWORD:?database password is required}
+      DATABASE_URL: postgresql://booking_quality:${BOOKING_QUALITY_DB_PASSWORD}@postgres:5432/booking_quality
+      REDIS_URL: redis://redis:6379
+      AUTH_PROVIDER: keycloak
+      KEYCLOAK_SERVER_URL: http://localhost:${BOOKING_QUALITY_KEYCLOAK_PORT:-9094}
+      KEYCLOAK_INTERNAL_URL: http://keycloak:8080
+      KEYCLOAK_REALM: booking-service-example
+      KEYCLOAK_CLIENT_ID: keycloak
+      KEYCLOAK_AUDIENCE: keycloak
+      KEYCLOAK_ISSUER_URL: http://localhost:${BOOKING_QUALITY_KEYCLOAK_PORT:-9094}/realms/booking-service-example
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/booking-service-example/protocol/openid-connect/certs
+      KEYCLOAK_ENFORCE_AUDIENCE: "true"
+      ADMIN_API_KEY: ${BOOKING_QUALITY_ADMIN_API_KEY:?admin API key is required}
+      BACKUP_RESTORE_API_KEY: ${BOOKING_QUALITY_RESTORE_API_KEY:?restore API key is required}
+      BACKUP_DELETE_API_KEY: ${BOOKING_QUALITY_DELETE_API_KEY:?delete API key is required}
+      DEBUG: "false"
+      DEBUG_ENABLED: "false"
+      SQL_ECHO_ENABLED: "false"
+      ENABLE_HTTP_DEBUG_LOGGING: "false"
+      LOG_REQUEST_HEADERS: "false"
+      LOG_REQUEST_BODY: "false"
+      LOG_RESPONSE_HEADERS: "false"
+      LOG_RESPONSE_BODY: "false"
+    ports:
+      - "${BOOKING_QUALITY_API_PORT:-8084}:8000"
+    volumes:
+      - ../../../../tools:/app/tools:ro
+      - ../../../../tests:/app/tests:ro
+      - ../../../../keycloak:/app/keycloak:ro
+      - ../../../../template_v2:/app/template_v2:ro
+      - ../../../booking_service_contract:/app/app/booking_service_contract:ro
+      - ../../../api/settings.py:/app/app/api/settings.py:ro
+      - ../../contracts.py:/app/app/apps/contracts.py:ro
+      - ../../registry.py:/app/app/apps/registry.py:ro
+      - ../../mongodb_template/pdm.lock:/app/app/apps/mongodb_template/pdm.lock:ro
+      - ../../mongodb_template/pyproject.toml:/app/app/apps/mongodb_template/pyproject.toml:ro
+      - ../../postgres_template/pdm.lock:/app/app/apps/postgres_template/pdm.lock:ro
+      - ../../postgres_template/pyproject.toml:/app/app/apps/postgres_template/pyproject.toml:ro
+      - ../../../backend/auth_provider_utils.py:/app/app/backend/auth_provider_utils.py:ro
+      - ../../../backend/database/migrations.py:/app/app/backend/database/migrations.py:ro
+      - ../../../../Dockerfile:/app/Dockerfile:ro
+      - ../../../../local-deployment/base:/app/local-deployment/base:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      keycloak-bootstrap:
+        condition: service_completed_successfully
+
+volumes:
+  postgres_data:
