@@ -1,1 +1,0 @@
-"""Generated records repository package."""

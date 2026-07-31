@@ -1,4 +1,6 @@
-"""Generated backend profile package for Booking Service.
+"""Booking Service backend profile package.
 
-The package owns app metadata, PostgreSQL composition, and the authenticated neutral records starter.
+The package establishes the selected-app metadata and runtime composition for
+the product. Booking domain routes, persistence models, and migrations are
+introduced by later focused slices rather than inherited from a neutral demo.
 """

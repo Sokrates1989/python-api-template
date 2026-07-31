@@ -10,22 +10,22 @@
     },
     {
       "bytes": 827,
-      "classification": "generated",
-      "detached": false,
+      "classification": "handwritten",
+      "detached": true,
       "path": ".template_v2/public_runtime.json",
       "sha256": "7b1012c21f0203fd7d60ec8ca24a66f78bc3a4d5411bfbe3f12c7d0fed73e389"
     },
     {
       "bytes": 172,
-      "classification": "generated",
-      "detached": false,
+      "classification": "handwritten",
+      "detached": true,
       "path": ".template_v2/records_starter.json",
       "sha256": "7c218940bfe6fc947a2a338a9163778cce57187fd96dc855b6d45272e263a125"
     },
     {
       "bytes": 165,
-      "classification": "generated",
-      "detached": false,
+      "classification": "handwritten",
+      "detached": true,
       "path": "__init__.py",
       "sha256": "3c3761b78a6c72cb530adbed29cb6436d872e4a84b3149455627c9595be55c8e"
     },
@@ -52,8 +52,8 @@
     },
     {
       "bytes": 1191,
-      "classification": "generated",
-      "detached": false,
+      "classification": "handwritten",
+      "detached": true,
       "path": "definition.py",
       "sha256": "b94cdfcbe56f40a7c7da906e1e1d4a31ed05aa1393b3f7d55bb9801851b11cbe"
     },
@@ -87,29 +87,29 @@
     },
     {
       "bytes": 263,
-      "classification": "generated",
-      "detached": false,
+      "classification": "handwritten",
+      "detached": true,
       "path": "migrations/README.md",
       "sha256": "52ca2fd252c49c1bff60120b4e78b16ad19173cfc4b7c167b3964bcaa35c5c70"
     },
     {
       "bytes": 1776,
-      "classification": "generated",
-      "detached": false,
+      "classification": "handwritten",
+      "detached": true,
       "path": "migrations/versions/booking_service_001_records.py",
       "sha256": "a8adadad1e4e106c56822a2e15b0411ca96b1673edf1551fd202b23fd63dc329"
     },
     {
       "bytes": 43,
-      "classification": "generated",
-      "detached": false,
+      "classification": "handwritten",
+      "detached": true,
       "path": "models/__init__.py",
       "sha256": "d2086d7af6676fcd6e050427c9b6579f35b53426e7571afdf5e0e1f4be874ead"
     },
     {
       "bytes": 1497,
-      "classification": "generated",
-      "detached": false,
+      "classification": "handwritten",
+      "detached": true,
       "path": "models/record.py",
       "sha256": "c7f5e02036a6df6483dee168f29513a61a7346152340370273579d96c3f24f92"
     },
@@ -129,64 +129,64 @@
     },
     {
       "bytes": 1090,
-      "classification": "generated",
-      "detached": false,
+      "classification": "handwritten",
+      "detached": true,
       "path": "README.md",
       "sha256": "ffd0182048467c3455ea7fe0cc77946f9dd0209b6dab506a9dc64c75a19c16a6"
     },
     {
       "bytes": 44,
-      "classification": "generated",
-      "detached": false,
+      "classification": "handwritten",
+      "detached": true,
       "path": "repositories/__init__.py",
       "sha256": "55551321b7304aef1e40d9f9ba357c0872be48c5d594a887c0dcf37e47608f61"
     },
     {
       "bytes": 6082,
-      "classification": "generated",
-      "detached": false,
+      "classification": "handwritten",
+      "detached": true,
       "path": "repositories/records_repository.py",
       "sha256": "57e4009319573391ad20789311b982f76c7f3b6f951ef265c752c71e413edf5a"
     },
     {
       "bytes": 39,
-      "classification": "generated",
-      "detached": false,
+      "classification": "handwritten",
+      "detached": true,
       "path": "routes/__init__.py",
       "sha256": "7a64fdcae9b3589e6595b91843bfaf50d169be60cb6ec98cac672e7ca4b694f3"
     },
     {
       "bytes": 6342,
-      "classification": "generated",
-      "detached": false,
+      "classification": "handwritten",
+      "detached": true,
       "path": "routes/records.py",
       "sha256": "5c0440aeceaeb93937a411a03792b948aaaffc52b9dfc8b7fb10aed78fa53387"
     },
     {
       "bytes": 40,
-      "classification": "generated",
-      "detached": false,
+      "classification": "handwritten",
+      "detached": true,
       "path": "schemas/__init__.py",
       "sha256": "386130aa2d3ba201fde2a29d1812ef9900c1b3f7dd78b5e2027648add36a2ebe"
     },
     {
       "bytes": 2228,
-      "classification": "generated",
-      "detached": false,
+      "classification": "handwritten",
+      "detached": true,
       "path": "schemas/records.py",
       "sha256": "eaadd0c51d0e80d13132d2530e4746467dc840ff59ea09dc8e595d441a0ea554"
     },
     {
       "bytes": 41,
-      "classification": "generated",
-      "detached": false,
+      "classification": "handwritten",
+      "detached": true,
       "path": "services/__init__.py",
       "sha256": "cd72c329945f14984703e55ae384dec007e66d86599ba9b66f5074136efcfe63"
     },
     {
       "bytes": 3628,
-      "classification": "generated",
-      "detached": false,
+      "classification": "handwritten",
+      "detached": true,
       "path": "services/records_service.py",
       "sha256": "8c9b350c1db44278f63027636a0d3e5e4ab833ce7ff3efcb8a3f495af4e4f66a"
     }
