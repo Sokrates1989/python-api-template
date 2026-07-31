@@ -1,0 +1,32 @@
+{
+  "api_origin": "https://api.booking-service.example",
+  "app_id": "booking_service",
+  "auth": {
+    "client_id": "keycloak",
+    "issuer_url": "https://keycloak.fe-wi.com/realms/booking-service-example",
+    "provider": "keycloak",
+    "redirect_scheme": "bookingservice"
+  },
+  "backend_environment": {
+    "AUTH_PROVIDER": "keycloak",
+    "KEYCLOAK_CLIENT_ID": "keycloak",
+    "KEYCLOAK_ENFORCE_AUDIENCE": "true",
+    "KEYCLOAK_ISSUER_URL": "https://keycloak.fe-wi.com/realms/booking-service-example"
+  },
+  "backend_profile": "booking_service",
+  "recipe_versions": [
+    {
+      "recipe_id": "connected_api",
+      "version": "1.0.0"
+    },
+    {
+      "recipe_id": "keycloak_auth",
+      "version": "1.0.0"
+    },
+    {
+      "recipe_id": "records_starter",
+      "version": "1.0.0"
+    }
+  ],
+  "schema_version": 1
+}

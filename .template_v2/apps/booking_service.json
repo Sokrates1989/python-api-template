@@ -1,0 +1,13 @@
+{
+  "app_id": "booking_service",
+  "bundle_sha256": "962912df60383d8b4be29e3a313467e0e2847db9eaec431ebe9bca7564a8edde",
+  "file_count": 28,
+  "foundation": {
+    "contract_id": "template-v2-backend-foundation",
+    "contract_version": 1,
+    "foundation_revision": "1.0.0",
+    "source_sha256": "7e93e273d135313d4de477eca07468f416c77ead97f936b97cc56a12e9c85328"
+  },
+  "registration_schema_version": 1,
+  "target_directory": "app/apps/booking_service"
+}

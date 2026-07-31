@@ -1,0 +1,8 @@
+{
+  "contract_id": "template-v2-backend-foundation",
+  "contract_version": 1,
+  "foundation_revision": "1.0.0",
+  "manifest_sha256": "cc6d7b2fcc9ed86b86726dd4b2f59e72f981af09d482f24822d3322ebf2ff209",
+  "source_file_count": 14,
+  "source_sha256": "7e93e273d135313d4de477eca07468f416c77ead97f936b97cc56a12e9c85328"
+}

@@ -1,0 +1,16 @@
+# Generated public deployment selection for booking_service.
+# Credentials and endpoint policy remain runtime-owned.
+
+services:
+  api:
+    environment:
+      APP_PROFILE: booking_service
+      BACKEND_APP_ID: booking_service
+
+  postgres:
+    volumes:
+      - ${POSTGRES_DATA_ROOT}:/var/lib/postgresql/data
+
+  pgadmin:
+    volumes:
+      - ${PGADMIN_DATA_ROOT}:/var/lib/pgadmin
