@@ -1,0 +1,165 @@
+{
+  "contract_id": "booking-service-pair",
+  "contract_version": 1,
+  "contract_revision": "1.0.0",
+  "application": {
+    "app_id": "booking_service",
+    "backend_profile": "booking_service",
+    "dart_package": "booking_service",
+    "display_name": "Booking Service",
+    "organization_domain": "com.felicitaswisdom",
+    "android_application_id": "com.felicitaswisdom.booking_service"
+  },
+  "runtime": {
+    "deployment_topology": "shared_multi_tenant",
+    "platforms": [
+      "android",
+      "web"
+    ],
+    "python_requires": ">=3.13,<3.14",
+    "backend_data_profile": "postgresql",
+    "api_origin": "https://api.booking-service.example",
+    "authentication": {
+      "provider": "keycloak",
+      "issuer": "https://keycloak.fe-wi.com/realms/booking-service-example",
+      "client_id": "keycloak",
+      "audience": "keycloak",
+      "audience_required": true
+    }
+  },
+  "http": {
+    "product_route_prefix": "/v1",
+    "route_policy": {
+      "routes_relative_to_api_origin": true,
+      "forbid_api_service_prefix": true
+    },
+    "health": {
+      "route": "/health",
+      "contract_version_header": "X-Booking-Contract-Version"
+    },
+    "organization_context": {
+      "discovery_route": "/v1/me/context",
+      "selection_header": "X-Organization-Id",
+      "selection_is_authorization": false,
+      "identifier_format": "uuid"
+    },
+    "capability_discovery": {
+      "route": "/v1/capabilities",
+      "requires_authentication": true,
+      "response_fields": [
+        "contract_id",
+        "contract_version",
+        "contract_revision",
+        "implementation_version",
+        "capabilities"
+      ]
+    },
+    "headers": {
+      "authorization": "Authorization",
+      "contract_version": "X-Booking-Contract-Version",
+      "correlation": "X-Correlation-Id",
+      "idempotency": "Idempotency-Key",
+      "organization_context": "X-Organization-Id",
+      "idempotency_replayed": "X-Idempotency-Replayed"
+    },
+    "idempotency": {
+      "request_header": "Idempotency-Key",
+      "replay_header": "X-Idempotency-Replayed",
+      "conflict_code": "idempotency_conflict",
+      "scope": [
+        "organization_id",
+        "actor_subject",
+        "operation",
+        "idempotency_key"
+      ]
+    },
+    "errors": {
+      "content_type": "application/json",
+      "required_fields": [
+        "code",
+        "message",
+        "retryable",
+        "correlation_id"
+      ],
+      "optional_fields": [
+        "field_errors"
+      ],
+      "foreign_private_resource_status": 404,
+      "idempotency_conflict_status": 409
+    }
+  },
+  "time": {
+    "utc_instant": "rfc3339_utc_z",
+    "local_instant": "rfc3339_numeric_offset",
+    "local_date": "iso8601_date",
+    "local_time": "iso8601_time_seconds",
+    "timezone": "iana_tzdb_identifier",
+    "duration": "integer_minutes",
+    "appointment_instants_authoritative": "utc",
+    "schedule_intent_authoritative": "location_local_time"
+  },
+  "openapi": {
+    "info_extension": "x-booking-service-contract",
+    "identity_fields": [
+      "contract_id",
+      "contract_version",
+      "contract_revision",
+      "implementation_version"
+    ],
+    "bearer_scheme": "BookingBearer"
+  },
+  "ownership": {
+    "flutter_manifest_path": ".template_v2/ownership.json",
+    "backend_manifest_path": ".template_v2/ownership.json",
+    "backend_foundation_identity_path": ".template_v2/backend_foundation.json",
+    "generated_files_change_via": "managed_apply",
+    "unowned_files_default_to": "handwritten",
+    "detachment_required_before_manual_edit": true,
+    "upgrade_policy": "explicit_compatible_contract_revision",
+    "flutter_handwritten_roots": [
+      "lib/booking/",
+      "test/booking/",
+      "integration_test/booking/"
+    ],
+    "backend_handwritten_roots": [
+      "dependencies/",
+      "integrations/",
+      "models/",
+      "repositories/",
+      "routes/",
+      "schemas/",
+      "services/",
+      "migrations/versions/",
+      "tests/"
+    ]
+  },
+  "examples": {
+    "error": {
+      "code": "organization_access_denied",
+      "message": "The requested operation is not available.",
+      "retryable": false,
+      "correlation_id": "opaque-correlation-id"
+    },
+    "organization_request": {
+      "relative_route": "/v1/organizations/00000000-0000-0000-0000-000000000001/services",
+      "headers": {
+        "X-Booking-Contract-Version": "1",
+        "X-Organization-Id": "00000000-0000-0000-0000-000000000001",
+        "Idempotency-Key": "opaque-client-operation-id"
+      }
+    },
+    "capability_response": {
+      "contract_id": "booking-service-pair",
+      "contract_version": 1,
+      "contract_revision": "1.0.0",
+      "implementation_version": "0.1.0",
+      "capabilities": []
+    },
+    "time_values": {
+      "starts_at_utc": "2026-08-03T08:00:00Z",
+      "starts_at_local": "2026-08-03T10:00:00+02:00",
+      "timezone": "Europe/Berlin",
+      "duration_minutes": 60
+    }
+  }
+}
