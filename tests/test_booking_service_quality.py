@@ -51,7 +51,7 @@ class BookingServiceQualityTests(unittest.TestCase):
         """Reject interactive startup before Docker when a password is absent."""
         with self.assertRaises(BookingServiceQualityError):
             build_quality_runtime(
-                require_explicit_passwords=True,
+                require_explicit_secrets=True,
                 source_environment={},
             )
 
@@ -62,9 +62,14 @@ class BookingServiceQualityTests(unittest.TestCase):
             "BOOKING_QUALITY_ORGANIZATION_ADMIN_PASSWORD": "OrgSecret123!",
             "BOOKING_QUALITY_WORKER_PASSWORD": "WorkerSecret123!",
             "BOOKING_QUALITY_CUSTOMER_PASSWORD": "CustomerSecret123!",
+            "BOOKING_QUALITY_DB_PASSWORD": "DatabaseSecret123456",
+            "BOOKING_QUALITY_KEYCLOAK_ADMIN_PASSWORD": "KeycloakSecret123456",
+            "BOOKING_QUALITY_ADMIN_API_KEY": "AdminApiSecret123456",
+            "BOOKING_QUALITY_RESTORE_API_KEY": "RestoreApiSecret123456",
+            "BOOKING_QUALITY_DELETE_API_KEY": "DeleteApiSecret123456",
         }
         runtime = build_quality_runtime(
-            require_explicit_passwords=True,
+            require_explicit_secrets=True,
             source_environment=environment,
         )
         output = io.StringIO()

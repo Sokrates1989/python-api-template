@@ -219,11 +219,16 @@ def _populate_public_environment(
         environment[password_key] = identity.password
 
 
-def _populate_private_environment(environment: dict[str, str]) -> tuple[str, ...]:
+def _populate_private_environment(
+    environment: dict[str, str],
+    require_explicit_secrets: bool,
+) -> tuple[str, ...]:
     """Populate infrastructure secrets and return their variable names.
 
     Args:
         environment: Mutable subprocess environment.
+        require_explicit_secrets: Require every infrastructure secret to be
+            supplied by an interactive caller.
 
     Returns:
         tuple[str, ...]: Secret keys populated for Compose and log scanning.
@@ -239,6 +244,10 @@ def _populate_private_environment(environment: dict[str, str]) -> tuple[str, ...
         "BOOKING_QUALITY_DELETE_API_KEY",
     )
     for key in secret_keys:
+        if require_explicit_secrets and not environment.get(key, "").strip():
+            raise BookingServiceQualityError(
+                f"{key} is required for interactive up/verify operations."
+            )
         environment[key] = _secret_value(environment, key)
     database_password = environment["BOOKING_QUALITY_DB_PASSWORD"]
     if not re.fullmatch(r"[A-Za-z0-9_-]{16,}", database_password):
@@ -249,14 +258,15 @@ def _populate_private_environment(environment: dict[str, str]) -> tuple[str, ...
 
 
 def build_quality_runtime(
-    require_explicit_passwords: bool = False,
+    require_explicit_secrets: bool = False,
     source_environment: Mapping[str, str] | None = None,
 ) -> QualityRuntime:
     """Construct one secret-bearing in-memory Compose environment.
 
     Args:
-        require_explicit_passwords: Require proof passwords for interactive
-            commands. Automated ``run`` and cleanup generate them in memory.
+        require_explicit_secrets: Require proof passwords and infrastructure
+            secrets for interactive commands. Automated ``run`` and cleanup
+            generate them in memory.
         source_environment: Optional environment seam used by unit tests.
 
     Returns:
@@ -279,7 +289,7 @@ def build_quality_runtime(
     keycloak_port = _validated_port(source, "BOOKING_QUALITY_KEYCLOAK_PORT", 9094)
     postgres_port = _validated_port(source, "BOOKING_QUALITY_POSTGRES_PORT", 5544)
     redis_port = _validated_port(source, "BOOKING_QUALITY_REDIS_PORT", 6384)
-    identities = _build_identities(source, require_explicit_passwords)
+    identities = _build_identities(source, require_explicit_secrets)
     environment = dict(source)
     _populate_public_environment(
         environment,
@@ -289,7 +299,7 @@ def build_quality_runtime(
         postgres_port,
         redis_port,
     )
-    secret_keys = _populate_private_environment(environment)
+    secret_keys = _populate_private_environment(environment, require_explicit_secrets)
     sensitive_values = tuple(
         [identity.password for identity in identities]
         + [environment[key] for key in secret_keys]

@@ -36,13 +36,20 @@ port variables documented by `python tools/booking_service_quality.py --help`.
 ## Interactive development
 
 `up` and `verify` require the four proof-user passwords to exist only in the
-operator environment so a later command can authenticate the same identities:
+operator environment so a later command can authenticate the same identities.
+They also require the five infrastructure secrets so the later log scan checks
+the exact values used by the running services:
 
 ```powershell
 $env:BOOKING_QUALITY_PLATFORM_ADMIN_PASSWORD = '<local-only value>'
 $env:BOOKING_QUALITY_ORGANIZATION_ADMIN_PASSWORD = '<local-only value>'
 $env:BOOKING_QUALITY_WORKER_PASSWORD = '<local-only value>'
 $env:BOOKING_QUALITY_CUSTOMER_PASSWORD = '<local-only value>'
+$env:BOOKING_QUALITY_DB_PASSWORD = '<16+ URL-safe local-only value>'
+$env:BOOKING_QUALITY_KEYCLOAK_ADMIN_PASSWORD = '<local-only value>'
+$env:BOOKING_QUALITY_ADMIN_API_KEY = '<local-only value>'
+$env:BOOKING_QUALITY_RESTORE_API_KEY = '<local-only value>'
+$env:BOOKING_QUALITY_DELETE_API_KEY = '<local-only value>'
 python tools/booking_service_quality.py up
 python tools/booking_service_quality.py verify
 python tools/booking_service_quality.py down
