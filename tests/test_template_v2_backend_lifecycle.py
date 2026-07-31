@@ -31,13 +31,22 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 class BackendLifecycleTest(unittest.TestCase):
     """Verify read-only defaults, managed ownership, and exact rollback."""
 
-    def _write_bundle(self, root: Path, *, readme: str = "generated v1\n", route: str = "") -> Path:
+    def _write_bundle(
+        self,
+        root: Path,
+        *,
+        readme: str = "generated v1\n",
+        route: str = "",
+        blueprint_schema_version: int = 1,
+    ) -> Path:
         """Write one complete ownership-bearing desired backend bundle.
 
         Args:
             root: Temporary parent receiving the bundle directory.
             readme: Generated README content.
             route: Optional route module content.
+            blueprint_schema_version: Blueprint contract version recorded by
+                the generating Flutter Template V2 toolchain. Defaults to 1.
 
         Returns:
             Complete desired bundle root.
@@ -79,7 +88,7 @@ class BackendLifecycleTest(unittest.TestCase):
         ownership = {
             "generator_version": 1,
             "ownership_schema_version": 1,
-            "blueprint_schema_version": 1,
+            "blueprint_schema_version": blueprint_schema_version,
             "transaction_schema_version": 1,
             "recipes": [
                 {"recipe_id": "connected_api", "version": "1.0.0"},
@@ -90,6 +99,42 @@ class BackendLifecycleTest(unittest.TestCase):
         ownership_path = bundle / ".template_v2" / "ownership.json"
         ownership_path.write_text(json.dumps(ownership, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return bundle
+
+    def test_blueprint_schema_two_is_supported_without_weakening_other_versions(self) -> None:
+        """Accept schema 2 bundles while rejecting unknown ownership contracts."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repository = root / "backend"
+            (repository / "app" / "apps").mkdir(parents=True)
+            schema_two_bundle = self._write_bundle(root, blueprint_schema_version=2)
+
+            context = self._context(repository, schema_two_bundle)
+            plan = build_backend_lifecycle_plan(context, "plan")
+            self.assertEqual(plan.action, "create")
+            create_backend_target(
+                context,
+                plan,
+                expected_plan_sha256=plan.plan_sha256,
+                write_intent=CREATE_INTENT,
+            )
+            ownership_path = (
+                repository
+                / "app"
+                / "apps"
+                / "sample_connected"
+                / ".template_v2"
+                / "ownership.json"
+            )
+            ownership = json.loads(ownership_path.read_text(encoding="utf-8"))
+            self.assertEqual(ownership["blueprint_schema_version"], 2)
+
+            unsupported_bundle = self._write_bundle(
+                root / "unsupported",
+                blueprint_schema_version=3,
+            )
+            with self.assertRaisesRegex(BackendLifecycleError, "unsupported ownership contract"):
+                self._context(repository, unsupported_bundle)
 
     def _context(self, repository: Path, bundle: Path):
         """Load the standard sample target lifecycle context.

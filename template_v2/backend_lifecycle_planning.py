@@ -31,6 +31,9 @@ _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _ROUTE_METHODS = frozenset({"delete", "get", "head", "options", "patch", "post", "put"})
 _MAX_FILE_BYTES = 16 * 1024 * 1024
 
+# Blueprint evolution is independent from the stable generator and ownership contracts.
+_SUPPORTED_BLUEPRINT_SCHEMA_VERSIONS = frozenset({1, 2})
+
 
 @dataclass(frozen=True)
 class BundleFile:
@@ -224,13 +227,19 @@ def _ownership_files(document: dict[str, Any], label: str) -> tuple[LifecycleFil
         BackendLifecycleError: If versions or records are unsupported.
     """
 
-    versions = (
+    stable_versions = (
         document.get("generator_version"),
         document.get("ownership_schema_version"),
-        document.get("blueprint_schema_version"),
         document.get("transaction_schema_version"),
     )
-    if versions != (1, 1, 1, 1) or not isinstance(document.get("files"), list):
+    blueprint_schema_version = document.get("blueprint_schema_version")
+    unsupported_contract = (
+        stable_versions != (1, 1, 1)
+        or type(blueprint_schema_version) is not int
+        or blueprint_schema_version not in _SUPPORTED_BLUEPRINT_SCHEMA_VERSIONS
+        or not isinstance(document.get("files"), list)
+    )
+    if unsupported_contract:
         raise BackendLifecycleError([f"{label}: unsupported ownership contract"])
     records: list[LifecycleFile] = []
     issues: list[str] = []
