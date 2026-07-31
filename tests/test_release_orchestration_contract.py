@@ -40,13 +40,13 @@ class FelixApiReleaseContractTests(unittest.TestCase):
         self.assertEqual(self.contract["authProvider"], "keycloak")
 
     def test_candidate_keycloak_identity_is_isolated(self) -> None:
-        """The API expects the new realm/client rather than either legacy realm."""
+        """The API reuses realm Felix through its separate candidate client."""
 
         candidate = self.contract["candidate"]
 
-        self.assertEqual(candidate["realm"], "felix-new")
+        self.assertEqual(candidate["realm"], "felix")
         self.assertEqual(candidate["frontendClientId"], "felix-new-frontend")
-        self.assertTrue(candidate["issuerUrl"].endswith("/realms/felix-new"))
+        self.assertTrue(candidate["issuerUrl"].endswith("/realms/felix"))
 
     def test_api_service_routes_have_no_redundant_api_prefix(self) -> None:
         """No API-owned route uses the forbidden `/api` prefix."""

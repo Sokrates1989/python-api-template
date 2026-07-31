@@ -7,8 +7,8 @@
   "environment": "production",
   "authProvider": "keycloak",
   "candidate": {
-    "issuerUrl": "https://keycloak.fe-wi.com/realms/felix-new",
-    "realm": "felix-new",
+    "issuerUrl": "https://keycloak.fe-wi.com/realms/felix",
+    "realm": "felix",
     "frontendClientId": "felix-new-frontend"
   },
   "routePrefixes": [

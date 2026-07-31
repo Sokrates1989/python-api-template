@@ -319,7 +319,7 @@ class Settings(BaseSettings):
         )
         expected_values = {
             "KEYCLOAK_SERVER_URL": "https://keycloak.fe-wi.com",
-            "KEYCLOAK_REALM": "felix-new",
+            "KEYCLOAK_REALM": "felix",
             "KEYCLOAK_CLIENT_ID": "felix-new-frontend",
             "KEYCLOAK_AUDIENCE": "felix-new-backend",
             "KEYCLOAK_ADMIN_CLIENT_ID": "felix-new-backend",
@@ -328,7 +328,7 @@ class Settings(BaseSettings):
             actual_value = str(getattr(self, setting_name) or "").strip()
             if actual_value and actual_value != expected_value:
                 errors.append(f"{setting_name} must be '{expected_value}'")
-        expected_issuer = "https://keycloak.fe-wi.com/realms/felix-new"
+        expected_issuer = "https://keycloak.fe-wi.com/realms/felix"
         if self.get_keycloak_issuer_url() != expected_issuer:
             errors.append(f"KEYCLOAK_ISSUER_URL must be {expected_issuer}")
         if not self.KEYCLOAK_ENFORCE_AUDIENCE:

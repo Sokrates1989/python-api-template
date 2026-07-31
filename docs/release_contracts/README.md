@@ -15,7 +15,7 @@ this file but never updates it.
 
 - `schemaVersion`, `owner`, and `appId` identify the contract.
 - `appProfile` and `backendAppId` must both select `felix`.
-- `candidate` identifies realm `felix-new` and public client
+- `candidate` identifies realm `felix` and its isolated public client
   `felix-new-frontend`.
 - `routePrefixes` lists service-owned routes and must never use `/api/`.
 - `publicFieldMap` names non-secret runtime settings.
