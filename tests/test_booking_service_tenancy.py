@@ -97,6 +97,86 @@ class BookingTenancyPolicyTests(unittest.TestCase):
             ),
         )
 
+    def test_every_persona_receives_only_compatible_capabilities(self) -> None:
+        """Cover the complete BKG-102 coarse-role and membership matrix."""
+        cases = (
+            (
+                "platform-without-membership",
+                (BookingRole.PLATFORM_ADMIN,),
+                {MembershipRole.ORGANIZATION_ADMIN},
+                (),
+                (),
+            ),
+            (
+                "organization-admin",
+                (BookingRole.ORGANIZATION_ADMIN,),
+                {MembershipRole.ORGANIZATION_ADMIN},
+                (MembershipRole.ORGANIZATION_ADMIN,),
+                (
+                    BookingCapability.READ_ORGANIZATION,
+                    BookingCapability.MANAGE_ORGANIZATION,
+                ),
+            ),
+            (
+                "worker",
+                (BookingRole.WORKER,),
+                {MembershipRole.WORKER},
+                (MembershipRole.WORKER,),
+                (
+                    BookingCapability.READ_ORGANIZATION,
+                    BookingCapability.MANAGE_OWN_WORKER_SCHEDULE,
+                ),
+            ),
+            (
+                "customer",
+                (BookingRole.CUSTOMER,),
+                {MembershipRole.CUSTOMER},
+                (MembershipRole.CUSTOMER,),
+                (
+                    BookingCapability.READ_ORGANIZATION,
+                    BookingCapability.MANAGE_OWN_BOOKINGS,
+                ),
+            ),
+            (
+                "multi-role",
+                (
+                    BookingRole.ORGANIZATION_ADMIN,
+                    BookingRole.WORKER,
+                    BookingRole.CUSTOMER,
+                ),
+                {
+                    MembershipRole.ORGANIZATION_ADMIN,
+                    MembershipRole.WORKER,
+                    MembershipRole.CUSTOMER,
+                },
+                (
+                    MembershipRole.ORGANIZATION_ADMIN,
+                    MembershipRole.WORKER,
+                    MembershipRole.CUSTOMER,
+                ),
+                (
+                    BookingCapability.READ_ORGANIZATION,
+                    BookingCapability.MANAGE_ORGANIZATION,
+                    BookingCapability.MANAGE_OWN_WORKER_SCHEDULE,
+                    BookingCapability.MANAGE_OWN_BOOKINGS,
+                ),
+            ),
+        )
+        for (
+            name,
+            coarse,
+            stored,
+            expected_roles,
+            expected_capabilities,
+        ) in cases:
+            with self.subTest(persona=name):
+                effective_roles = compatible_membership_roles(coarse, stored)
+                self.assertEqual(effective_roles, expected_roles)
+                self.assertEqual(
+                    capabilities_for_membership_roles(effective_roles),
+                    expected_capabilities,
+                )
+
     def test_platform_capability_requires_both_authorization_gates(self) -> None:
         """Deny a coarse role or app grant in isolation and allow both together."""
         platform = BookingPrincipal("platform", (BookingRole.PLATFORM_ADMIN,))
