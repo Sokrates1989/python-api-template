@@ -8,6 +8,7 @@ own app slices.
 """
 
 import logging
+from importlib import import_module
 
 import uvicorn
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
@@ -25,10 +26,45 @@ logger = logging.getLogger("app.main")
 app_profile = settings.normalized_app_profile()
 selected_backend_app = settings.get_backend_app_definition()
 
-# Initialize FastAPI application with app-specific branding
+
+def _selected_openapi_identity() -> tuple[str, str]:
+    """
+    Resolve generated app branding without changing legacy app definitions.
+
+    The generic ``BACKEND_APP_CONFIG`` export is part of generated Template V2
+    apps. Older handwritten apps use their existing deployment-level settings
+    until they explicitly adopt the generated metadata contract.
+
+    Args:
+        None.
+
+    Returns:
+        tuple[str, str]: OpenAPI title and description in that order.
+
+    Raises:
+        ModuleNotFoundError: If the selected app's configuration package is
+            absent after registry selection.
+
+    Side Effects:
+        Imports the selected app's configuration package, which is normally
+        already cached after app-definition discovery.
+    """
+    config_module = import_module(f"apps.{selected_backend_app.app_id}.config")
+    generated_config = getattr(config_module, "BACKEND_APP_CONFIG", None)
+    raw_title = getattr(generated_config, "display_name", "")
+    raw_description = getattr(generated_config, "description", "")
+    title = raw_title.strip() if isinstance(raw_title, str) else ""
+    description = raw_description.strip() if isinstance(raw_description, str) else ""
+    if title and description:
+        return title, description
+    return settings.APP_NAME, settings.APP_DESCRIPTION
+
+
+# Initialize FastAPI with generated-app branding and legacy settings fallbacks.
+openapi_title, openapi_description = _selected_openapi_identity()
 app = FastAPI(
-    title=settings.APP_NAME,
-    description=settings.APP_DESCRIPTION,
+    title=openapi_title,
+    description=openapi_description,
     version=settings.IMAGE_TAG,
     lifespan=create_lifespan_handler(),
 )

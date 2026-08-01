@@ -16,6 +16,7 @@ from booking_quality.config import (
 )
 from booking_quality.runtime_checks import (
     assert_health_contract,
+    assert_openapi_contract,
     verify_keycloak,
     verify_tenancy,
     wait_for_health,
@@ -288,6 +289,7 @@ def verify_stack(runtime: QualityRuntime, timeout_seconds: float) -> None:
         Performs local HTTP requests, executes container checks, and reads logs.
     """
     assert_health_contract(wait_for_health(runtime, timeout_seconds), runtime)
+    assert_openapi_contract(runtime)
     subjects = verify_keycloak(runtime)
     _seed_tenancy(runtime, subjects)
     verify_tenancy(runtime)

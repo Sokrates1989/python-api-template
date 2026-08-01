@@ -24,7 +24,10 @@ from booking_quality.orchestration import (  # noqa: E402
     compose_command,
     print_summary,
 )
-from booking_quality.runtime_checks import wait_for_health  # noqa: E402
+from booking_quality.runtime_checks import (  # noqa: E402
+    assert_openapi_contract,
+    wait_for_health,
+)
 
 
 class BookingServiceQualityTests(unittest.TestCase):
@@ -116,6 +119,35 @@ class BookingServiceQualityTests(unittest.TestCase):
         ):
             observed = wait_for_health(runtime, timeout_seconds=1.0)
         self.assertEqual(observed, expected_health)
+
+    def test_openapi_contract_accepts_only_booking_service_branding(self) -> None:
+        """Accept exact Booking metadata and reject base-template branding."""
+        runtime = build_quality_runtime(source_environment={})
+        expected = {
+            "info": {
+                "title": "Booking Service",
+                "description": (
+                    "A neutral multi-tenant foundation for general service booking."
+                ),
+            }
+        }
+        with patch("booking_quality.runtime_checks.read_json", return_value=expected):
+            assert_openapi_contract(runtime)
+
+        generic = {
+            "info": {
+                "title": "Python API Template",
+                "description": "A flexible API template.",
+            }
+        }
+        with (
+            patch("booking_quality.runtime_checks.read_json", return_value=generic),
+            self.assertRaisesRegex(
+                BookingServiceQualityError,
+                "OpenAPI identity",
+            ),
+        ):
+            assert_openapi_contract(runtime)
 
 
 if __name__ == "__main__":

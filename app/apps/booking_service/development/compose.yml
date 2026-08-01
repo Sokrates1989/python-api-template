@@ -1,0 +1,94 @@
+# Persistent local-development runtime for Booking Service.
+#
+# Keycloak is intentionally absent. The API reuses the separately managed
+# loopback instance at localhost:9090 and reaches it from Docker through
+# host.docker.internal. Infrastructure secrets are required from an ignored
+# environment file and the existing reconciler-owned backend secret file.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: booking_local
+      POSTGRES_USER: booking_local
+      POSTGRES_PASSWORD: ${BOOKING_LOCAL_DB_PASSWORD:?database password is required}
+    ports:
+      - "127.0.0.1:${BOOKING_LOCAL_POSTGRES_PORT:-5544}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U booking_local -d booking_local"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:${BOOKING_LOCAL_REDIS_PORT:-6384}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build:
+      context: ../../../..
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: 3.13-slim
+        BACKEND_APP_ID: booking_service
+        APP_PROFILE: booking_service
+        BACKEND_DATA_PROFILE: postgresql
+    environment:
+      PORT: "8000"
+      APP_ENVIRONMENT: development
+      APP_PROFILE: booking_service
+      BACKEND_APP_ID: booking_service
+      DB_TYPE: postgresql
+      DB_MODE: local
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: booking_local
+      DB_USER: booking_local
+      DB_PASSWORD: ${BOOKING_LOCAL_DB_PASSWORD:?database password is required}
+      DATABASE_URL: postgresql://booking_local:${BOOKING_LOCAL_DB_PASSWORD}@postgres:5432/booking_local
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGINS: http://localhost:3000
+      AUTH_PROVIDER: keycloak
+      KEYCLOAK_SERVER_URL: http://localhost:9090
+      KEYCLOAK_INTERNAL_URL: http://host.docker.internal:9090
+      KEYCLOAK_REALM: booking-service-example
+      KEYCLOAK_CLIENT_ID: keycloak
+      KEYCLOAK_AUDIENCE: keycloak
+      KEYCLOAK_ISSUER_URL: http://localhost:9090/realms/booking-service-example
+      KEYCLOAK_JWKS_URL: http://host.docker.internal:9090/realms/booking-service-example/protocol/openid-connect/certs
+      KEYCLOAK_ENFORCE_AUDIENCE: "true"
+      KEYCLOAK_ADMIN_CLIENT_ID: booking-service-backend
+      KEYCLOAK_ADMIN_CLIENT_SECRET_FILE: /run/booking-local-secrets/identity-admin-client
+      ADMIN_API_KEY: ${BOOKING_LOCAL_ADMIN_API_KEY:?admin API key is required}
+      BACKUP_RESTORE_API_KEY: ${BOOKING_LOCAL_RESTORE_API_KEY:?restore API key is required}
+      BACKUP_DELETE_API_KEY: ${BOOKING_LOCAL_DELETE_API_KEY:?delete API key is required}
+      DEBUG: "false"
+      DEBUG_ENABLED: "false"
+      SQL_ECHO_ENABLED: "false"
+      ENABLE_HTTP_DEBUG_LOGGING: "false"
+      LOG_REQUEST_HEADERS: "false"
+      LOG_REQUEST_BODY: "false"
+      LOG_RESPONSE_HEADERS: "false"
+      LOG_RESPONSE_BODY: "false"
+    ports:
+      - "127.0.0.1:${BOOKING_LOCAL_API_PORT:-8084}:8000"
+    volumes:
+      - ${BOOKING_LOCAL_BACKEND_SECRET_PATH:?backend secret path is required}:/run/booking-local-secrets/identity-admin-client:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

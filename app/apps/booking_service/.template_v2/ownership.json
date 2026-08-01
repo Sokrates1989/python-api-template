@@ -37,11 +37,11 @@
       "sha256": "cfdd0de4daa1dabe6c52f5e38135c2bfc57bbc952177b0ac97aba2881448e282"
     },
     {
-      "bytes": 664,
+      "bytes": 829,
       "classification": "generated",
       "detached": false,
       "path": "config/app_metadata.py",
-      "sha256": "573fc819e7063e61e4822c829fb4c01fc1ab49661d182cf62f557af7b6f02efe"
+      "sha256": "f3e813c98a4781305e89e48cbda55a96a8f803a12d39bbc0d119fcf3466c54f9"
     },
     {
       "bytes": 997,
@@ -79,11 +79,11 @@
       "sha256": "c96f3b5442613adc9555e9e75430db3ad5057af9442a7e874405e6c9dbacbec6"
     },
     {
-      "bytes": 1287,
+      "bytes": 1557,
       "classification": "handwritten",
       "detached": true,
       "path": "deployment/README.md",
-      "sha256": "c22face85b938e77812175deb04cbdc976da2fbd419b97b238bbc4a790a35107"
+      "sha256": "69a0654ce454f5cf71486dbf6176177484c9bfb3b3704e89d91e9df476c2e369"
     },
     {
       "bytes": 1297,

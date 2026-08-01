@@ -9,6 +9,7 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 from apps.booking_service import definition
+from apps.booking_service.config import BACKEND_APP_CONFIG
 from apps.booking_service.dependencies import identity as identity_module
 from apps.booking_service.dependencies.identity import (
     BookingPrincipal,
@@ -34,6 +35,14 @@ def _verified_user_info(claims: object, provider: str = "keycloak") -> dict[str,
 
 class BookingIdentityTests(unittest.TestCase):
     """Prove client-role allowlisting and fail-closed subject projection."""
+
+    def test_generated_metadata_owns_public_api_branding(self) -> None:
+        """Keep Swagger identity aligned with the human-owned app blueprint."""
+        self.assertEqual(BACKEND_APP_CONFIG.display_name, "Booking Service")
+        self.assertEqual(
+            BACKEND_APP_CONFIG.description,
+            "A neutral multi-tenant foundation for general service booking.",
+        )
 
     def test_client_roles_are_allowlisted_deduplicated_and_ordered(self) -> None:
         """Ignore unknown roles and emit the fixed independent-role order."""

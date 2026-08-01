@@ -195,6 +195,38 @@ def assert_health_contract(
         raise BookingServiceQualityError("API Keycloak health configuration drifted.")
 
 
+def assert_openapi_contract(runtime: QualityRuntime) -> None:
+    """Validate the selected Booking Service OpenAPI identity.
+
+    Args:
+        runtime: Runtime containing the local API origin.
+
+    Returns:
+        None.
+
+    Raises:
+        BookingServiceQualityError: When the schema omits or misbrands its
+            public title or description.
+        HTTPError: When the API rejects the schema request.
+        URLError: When the API cannot be reached.
+
+    Side Effects:
+        Performs one loopback HTTP GET request to ``/openapi.json``.
+    """
+    payload = read_json(f"{runtime.api_origin}/openapi.json")
+    info = payload.get("info")
+    expected = {
+        "title": "Booking Service",
+        "description": (
+            "A neutral multi-tenant foundation for general service booking."
+        ),
+    }
+    if not isinstance(info, Mapping) or any(
+        info.get(field) != value for field, value in expected.items()
+    ):
+        raise BookingServiceQualityError("Booking OpenAPI identity drifted.")
+
+
 def _post_form_json(url: str, fields: Mapping[str, str]) -> dict[str, Any]:
     """Post URL-encoded fields and parse a JSON object response.
 

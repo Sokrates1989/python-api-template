@@ -26,3 +26,8 @@ Resolve the listed Compose files from the Python API template root, merge only
 the public example values into deployment-owned configuration, and inspect the
 result before starting services. Never add credentials to the generated public
 example.
+
+For persistent local development against the separately managed Keycloak on
+port `9090`, use [`../development/README.md`](../development/README.md). That
+profile owns only the API, PostgreSQL, and Redis; automated qualification keeps
+its disposable Keycloak on `9094`.
