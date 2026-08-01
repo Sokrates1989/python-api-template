@@ -3,9 +3,11 @@
 ## Purpose
 
 This selected app package owns the authenticated PostgreSQL backend for
-`booking_service`. BKG-100 introduces the first product route,
-`GET /v1/me/identity`, without adding a booking table or tenant state. Later
-domain models, migrations, and endpoints remain focused implementation slices.
+`booking_service`. BKG-100 introduced the authenticated coarse identity;
+BKG-101 adds app-owned subjects, organizations, memberships, tenant-bound
+membership roles, dual-gated platform access, and audited organization
+lifecycle. Booking, availability, payments, and notification delivery remain
+later focused slices.
 
 ## Ownership
 
@@ -28,6 +30,18 @@ reads the four independent roles exclusively from
 or unconfigured roles grant nothing. The response contains only `subject_id`
 and deterministic `roles`; it never returns raw claims or provider secrets.
 
+`GET /v1/me/context` creates only the app-owned subject primitive and returns
+active memberships whose PostgreSQL roles intersect the verified coarse roles.
+The client-provided organization selection is never an authorization input.
+Member reads require an explicit organization predicate, hide absent/foreign
+scope as `404`, and reject known suspended scope as `403`.
+
+Platform organization list/create/suspend/reactivate operations require both
+the `platform_admin` coarse role and active `booking_platform_access`. Lifecycle
+updates lock the organization, require an expected revision, preserve history,
+and write a sanitized audit event in the same transaction. Revision conflicts
+return retryable `409`. All routes are rooted at `/v1`; `/api` is forbidden.
+
 Every later route must belong to an approved booking slice and must never use
 a redundant `/api/` prefix. Keycloak administration and production realm
 bootstrap remain deployment-owned.
@@ -46,8 +60,11 @@ python tools/booking_service_quality.py run
 
 The command builds the Python 3.13 app image, starts disposable PostgreSQL,
 Redis, and Keycloak fixtures, creates matching frontend client roles, verifies
-issuer/audience plus four real `/v1/me/identity` projections, proves anonymous
-`401`, runs the focused contracts and route guard, scans logs for invocation
-secrets, and removes its containers, network, volume, and locally built images.
+issuer/audience plus four real `/v1/me/identity` projections, seeds two isolated
+organizations from the projected non-personal subjects, and proves active
+context, explicit multi-membership, dual platform access, foreign-scope `404`,
+suspension `403`, reactivation, and anonymous `401`. It also runs focused
+contracts and the route guard, scans logs for invocation secrets, and removes
+its containers, network, volume, and locally built images.
 Keep later service routes relative to the API host and free of a redundant
 `/api/` prefix.

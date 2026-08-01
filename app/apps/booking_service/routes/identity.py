@@ -11,7 +11,7 @@ from apps.booking_service.dependencies.identity import (
 from apps.booking_service.schemas.identity import EffectiveIdentityResponse
 
 
-router = APIRouter(prefix="/v1/me", tags=["booking-identity"])
+router = APIRouter(tags=["booking-identity"])
 
 
 @router.get("/identity", response_model=EffectiveIdentityResponse)

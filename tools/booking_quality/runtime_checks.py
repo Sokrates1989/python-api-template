@@ -5,13 +5,19 @@ from __future__ import annotations
 import base64
 import json
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from booking_quality.config import BookingServiceQualityError, QualityRuntime
+from booking_quality.config import (
+    QUALITY_ORGANIZATION_A_ID,
+    QUALITY_ORGANIZATION_B_ID,
+    BookingServiceQualityError,
+    QualityRuntime,
+    SeedIdentity,
+)
 
 
 def read_json(url: str, timeout_seconds: float = 5.0) -> dict[str, Any]:
@@ -63,12 +69,47 @@ def read_bearer_json(
     Side Effects:
         Performs one loopback HTTP GET request without logging the token.
     """
-    request = Request(url, headers={"Authorization": f"Bearer {access_token}"})
-    with urlopen(request, timeout=timeout_seconds) as response:
-        payload = json.loads(response.read().decode("utf-8"))
+    payload = _request_bearer_json(url, access_token, timeout_seconds=timeout_seconds)
     if not isinstance(payload, dict):
         raise BookingServiceQualityError("Identity endpoint returned a non-object payload.")
     return payload
+
+
+def _request_bearer_json(
+    url: str,
+    access_token: str,
+    *,
+    method: str = "GET",
+    payload: Mapping[str, Any] | None = None,
+    timeout_seconds: float = 5.0,
+) -> Any:
+    """Perform one authenticated JSON request without logging its token.
+
+    Args:
+        url: Loopback Booking API endpoint.
+        access_token: Short-lived fixture token retained only in request memory.
+        method: HTTP method; defaults to ``GET``.
+        payload: Optional JSON object encoded as the request body.
+        timeout_seconds: Per-request timeout; defaults to five seconds.
+
+    Returns:
+        Any: Parsed JSON response, which may be an object or list.
+
+    Raises:
+        HTTPError: When the API returns an error status.
+        URLError: When the local API cannot be reached.
+        JSONDecodeError: When the response is not valid JSON.
+
+    Side Effects:
+        Performs one loopback HTTP request with an in-memory bearer token.
+    """
+    body = None if payload is None else json.dumps(payload).encode("utf-8")
+    headers = {"Authorization": f"Bearer {access_token}"}
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+    request = Request(url, data=body, headers=headers, method=method)
+    with urlopen(request, timeout=timeout_seconds) as response:
+        return json.loads(response.read().decode("utf-8"))
 
 
 def wait_for_health(runtime: QualityRuntime, timeout_seconds: float) -> dict[str, Any]:
@@ -134,8 +175,13 @@ def assert_health_contract(
     keycloak = payload.get("keycloak")
     if drift or not isinstance(keycloak, Mapping):
         raise BookingServiceQualityError("API health identity or migration contract drifted.")
-    if payload.get("registered_route_prefixes") != ["/v1/me"]:
-        raise BookingServiceQualityError("Booking identity route registration drifted.")
+    expected_prefixes = [
+        "/v1/me",
+        "/v1/platform/organizations",
+        "/v1/organizations",
+    ]
+    if payload.get("registered_route_prefixes") != expected_prefixes:
+        raise BookingServiceQualityError("Booking route registration drifted.")
     if (
         keycloak.get("configured") is not True
         or keycloak.get("issuer") != runtime.issuer_url
@@ -298,14 +344,15 @@ def _verify_seeded_identity(
         raise BookingServiceQualityError("Booking identity role projection drifted.")
 
 
-def verify_keycloak(runtime: QualityRuntime) -> None:
+def verify_keycloak(runtime: QualityRuntime) -> dict[str, str]:
     """Verify discovery identity and each seeded role without retaining tokens.
 
     Args:
         runtime: Runtime containing issuer and private proof identities.
 
     Returns:
-        None.
+        dict[str, str]: Safe mapping from each seeded role to the real Keycloak
+        subject projected by the API. Tokens are not returned.
 
     Raises:
         BookingServiceQualityError: When issuer, token, or role seeding drifts.
@@ -314,7 +361,7 @@ def verify_keycloak(runtime: QualityRuntime) -> None:
         Fetches discovery and four short-lived local access tokens.
     """
     try:
-        _verify_keycloak_fixture(runtime)
+        return _verify_keycloak_fixture(runtime)
     except BookingServiceQualityError:
         raise
     except (HTTPError, URLError, OSError, json.JSONDecodeError) as error:
@@ -323,14 +370,14 @@ def verify_keycloak(runtime: QualityRuntime) -> None:
         ) from error
 
 
-def _verify_keycloak_fixture(runtime: QualityRuntime) -> None:
+def _verify_keycloak_fixture(runtime: QualityRuntime) -> dict[str, str]:
     """Execute discovery and role-token checks for a reachable fixture.
 
     Args:
         runtime: Runtime containing issuer and private proof identities.
 
     Returns:
-        None.
+        dict[str, str]: Safe role-to-subject mapping used by tenancy seeding.
 
     Raises:
         BookingServiceQualityError: When issuer, token, or role seeding drifts.
@@ -355,6 +402,7 @@ def _verify_keycloak_fixture(runtime: QualityRuntime) -> None:
             ) from error
     else:
         raise BookingServiceQualityError("Anonymous Booking identity request did not fail closed.")
+    subjects: dict[str, str] = {}
     for identity in runtime.identities:
         response = _post_form_json(
             token_endpoint,
@@ -369,3 +417,239 @@ def _verify_keycloak_fixture(runtime: QualityRuntime) -> None:
         if not isinstance(token, str):
             raise BookingServiceQualityError("Keycloak omitted a fixture access token.")
         _verify_seeded_identity(runtime, token, identity.role)
+        subject_id = _decode_token_payload(token).get("sub")
+        if not isinstance(subject_id, str) or not subject_id:
+            raise BookingServiceQualityError("Keycloak omitted a fixture subject.")
+        subjects[identity.role] = subject_id
+    return subjects
+
+
+def _access_token(runtime: QualityRuntime, identity: SeedIdentity) -> str:
+    """Obtain one short-lived fixture token for a bounded live proof.
+
+    Args:
+        runtime: Runtime containing the local issuer endpoint.
+        identity: Non-personal seeded identity and in-memory password.
+
+    Returns:
+        str: Short-lived access token retained only by the caller.
+
+    Raises:
+        BookingServiceQualityError: When Keycloak omits the token.
+
+    Side Effects:
+        Performs one local password-grant request to the disposable realm.
+    """
+    response = _post_form_json(
+        f"{runtime.issuer_url}/protocol/openid-connect/token",
+        {
+            "grant_type": "password",
+            "client_id": "keycloak",
+            "username": identity.username,
+            "password": identity.password,
+        },
+    )
+    token = response.get("access_token")
+    if not isinstance(token, str):
+        raise BookingServiceQualityError("Keycloak omitted a fixture access token.")
+    return token
+
+
+def _context(runtime: QualityRuntime, token: str) -> dict[str, Any]:
+    """Read one effective context through the real authenticated API.
+
+    Args:
+        runtime: Runtime containing the local API endpoint.
+        token: Short-lived fixture token retained only in request memory.
+
+    Returns:
+        dict[str, Any]: Parsed effective context response.
+    """
+    return read_bearer_json(f"{runtime.api_origin}/v1/me/context", token)
+
+
+def _assert_context_memberships(
+    runtime: QualityRuntime,
+    tokens: Mapping[str, str],
+) -> None:
+    """Prove platform dual-gating and active multi-tenant context projection.
+
+    Args:
+        runtime: Runtime containing the local API endpoint.
+        tokens: Role-keyed short-lived tokens retained only for this proof.
+
+    Returns:
+        None: Successful return means context projections match seed policy.
+
+    Raises:
+        BookingServiceQualityError: When capabilities or membership scopes drift.
+    """
+    platform = _context(runtime, tokens["platform_admin"])
+    if platform.get("platform_capabilities") != ["manage_platform_organizations"]:
+        raise BookingServiceQualityError("Platform dual-gate capability proof failed.")
+    expected_ids = {
+        "organization_admin": [QUALITY_ORGANIZATION_A_ID, QUALITY_ORGANIZATION_B_ID],
+        "worker": [QUALITY_ORGANIZATION_A_ID],
+        "customer": [],
+    }
+    for role, organization_ids in expected_ids.items():
+        projected = _context(runtime, tokens[role]).get("organizations")
+        if not isinstance(projected, list):
+            raise BookingServiceQualityError("Organization context shape drifted.")
+        observed = [item.get("organization", {}).get("organization_id") for item in projected]
+        if observed != organization_ids:
+            raise BookingServiceQualityError("Organization context isolation proof failed.")
+
+
+def _expect_http_status(
+    operation: Callable[[], object],
+    expected_status: int,
+    message: str,
+) -> None:
+    """Require a callable HTTP proof to fail with one exact status.
+
+    Args:
+        operation: Zero-argument callable performing the local HTTP operation.
+        expected_status: Exact safe response status required by the proof.
+        message: Sanitized failure message raised when the status drifts.
+
+    Returns:
+        None: Successful return means the expected HTTP error was observed.
+
+    Raises:
+        BookingServiceQualityError: When no error or a different status occurs.
+    """
+    try:
+        operation()
+    except HTTPError as error:
+        if error.code == expected_status:
+            return
+        raise BookingServiceQualityError(message) from error
+    raise BookingServiceQualityError(message)
+
+
+def _assert_member_isolation(runtime: QualityRuntime, worker_token: str) -> None:
+    """Prove scoped reads allow one tenant and hide a guessed foreign tenant.
+
+    Args:
+        runtime: Runtime containing the local API endpoint.
+        worker_token: Worker token with membership only in organization A.
+
+    Returns:
+        None: Successful return proves allowed and foreign read behavior.
+
+    Raises:
+        BookingServiceQualityError: When allowed read or safe 404 behavior drifts.
+    """
+    allowed = read_bearer_json(
+        f"{runtime.api_origin}/v1/organizations/{QUALITY_ORGANIZATION_A_ID}",
+        worker_token,
+    )
+    if allowed.get("organization_id") != QUALITY_ORGANIZATION_A_ID:
+        raise BookingServiceQualityError("Authorized organization read proof failed.")
+    _expect_http_status(
+        lambda: read_bearer_json(
+            f"{runtime.api_origin}/v1/organizations/{QUALITY_ORGANIZATION_B_ID}",
+            worker_token,
+        ),
+        404,
+        "Foreign organization lookup did not fail with safe not-found semantics.",
+    )
+
+
+def _assert_platform_lifecycle(
+    runtime: QualityRuntime,
+    platform_token: str,
+    worker_token: str,
+) -> None:
+    """Prove audited lifecycle, stale protection, suspension, and restoration.
+
+    Args:
+        runtime: Runtime containing the local API endpoint.
+        platform_token: Dual-authorized platform administrator token.
+        worker_token: Worker token scoped to organization A.
+
+    Returns:
+        None: Successful return proves the lifecycle behavior end to end.
+
+    Raises:
+        BookingServiceQualityError: When lifecycle or suspension semantics drift.
+    """
+    base_url = f"{runtime.api_origin}/v1/platform/organizations"
+    organizations = _request_bearer_json(base_url, platform_token)
+    if not isinstance(organizations, list):
+        raise BookingServiceQualityError("Platform organization list shape drifted.")
+    organization_a = next(
+        (item for item in organizations if item.get("organization_id") == QUALITY_ORGANIZATION_A_ID),
+        None,
+    )
+    if not isinstance(organization_a, dict):
+        raise BookingServiceQualityError("Seeded organization was not listed.")
+    created = _request_bearer_json(
+        base_url,
+        platform_token,
+        method="POST",
+        payload={"display_name": "Booking Quality Created"},
+    )
+    if not isinstance(created, dict) or created.get("status") != "active":
+        raise BookingServiceQualityError("Platform organization creation proof failed.")
+    suspended = _request_bearer_json(
+        f"{base_url}/{QUALITY_ORGANIZATION_A_ID}/suspend",
+        platform_token,
+        method="POST",
+        payload={"expected_revision": organization_a.get("revision")},
+    )
+    if not isinstance(suspended, dict) or suspended.get("status") != "suspended":
+        raise BookingServiceQualityError("Organization suspension proof failed.")
+    if _context(runtime, worker_token).get("organizations") != []:
+        raise BookingServiceQualityError("Suspended organization remained in context.")
+    _expect_http_status(
+        lambda: read_bearer_json(
+            f"{runtime.api_origin}/v1/organizations/{QUALITY_ORGANIZATION_A_ID}", worker_token
+        ),
+        403,
+        "Suspended organization operation did not fail closed.",
+    )
+    reactivated = _request_bearer_json(
+        f"{base_url}/{QUALITY_ORGANIZATION_A_ID}/reactivate",
+        platform_token,
+        method="POST",
+        payload={"expected_revision": suspended.get("revision")},
+    )
+    if not isinstance(reactivated, dict) or reactivated.get("status") != "active":
+        raise BookingServiceQualityError("Organization reactivation proof failed.")
+    if len(_context(runtime, worker_token).get("organizations", [])) != 1:
+        raise BookingServiceQualityError("Reactivated organization context was not restored.")
+
+
+def verify_tenancy(runtime: QualityRuntime) -> None:
+    """Run real Keycloak/API/PostgreSQL BKG-101 authorization proofs.
+
+    Args:
+        runtime: Running disposable quality stack.
+
+    Returns:
+        None: Tokens leave scope after all assertions complete.
+
+    Raises:
+        BookingServiceQualityError: When context, isolation, or lifecycle drifts.
+
+    Side Effects:
+        Obtains short-lived local tokens and performs bounded API operations.
+    """
+    _expect_http_status(
+        lambda: read_json(f"{runtime.api_origin}/v1/me/context"),
+        401,
+        "Anonymous Booking context request did not fail closed.",
+    )
+    tokens = {
+        identity.role: _access_token(runtime, identity)
+        for identity in runtime.identities
+    }
+    _assert_context_memberships(runtime, tokens)
+    _assert_member_isolation(runtime, tokens["worker"])
+    _assert_platform_lifecycle(
+        runtime,
+        tokens["platform_admin"],
+        tokens["worker"],
+    )

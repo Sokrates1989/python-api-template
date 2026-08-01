@@ -12,6 +12,11 @@ from dataclasses import dataclass
 PROJECT_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{2,62}$")
 DEFAULT_PROJECT_NAME = "booking-service-quality"
 DEFAULT_REALM = "booking-service-example"
+QUALITY_ORGANIZATION_A_ID = "11111111-1111-4111-8111-111111111111"
+QUALITY_ORGANIZATION_B_ID = "22222222-2222-4222-8222-222222222222"
+QUALITY_ORGANIZATION_A_NAME = "Booking Quality North"
+QUALITY_ORGANIZATION_B_NAME = "Booking Quality South"
+"""Stable non-secret tenant fixtures used by live isolation proofs."""
 DEFAULT_IDENTITY_SPECS = (
     (
         "BOOKING_QUALITY_PLATFORM_ADMIN_USER",

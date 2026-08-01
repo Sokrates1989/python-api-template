@@ -17,7 +17,8 @@ backups into the quality container.
 The Compose file owns service wiring only. `tools/booking_service_quality.py`
 is the stable command wrapper; the focused `tools/booking_quality/` modules own
 configuration, orchestration, health/auth assertions, seeded-role token checks,
-focused tests, route guards, log scanning, and guaranteed teardown.
+two-tenant context/isolation/lifecycle proofs, focused tests, route guards, log
+scanning, and guaranteed teardown.
 
 ## Automated run
 
@@ -65,6 +66,10 @@ ports, and counts only.
 
 - Keep all API routes service-root relative; `/api` and `/api/*` are forbidden.
 - Keep `/records` absent because it belongs only to the detached neutral proof.
+- Keep seed subjects derived only from real local identity projection; never
+  pass or persist a bearer token in the seed command.
+- Keep organization A/B identifiers neutral and prove foreign lookup, suspend,
+  context removal, reactivation, and context restoration in every live run.
 - Do not add provider credentials, passwords, tokens, or personal identities.
 - Pin image/runtime versions and update tests when service wiring changes.
 - Run `down` after interrupted interactive work; it is safe without passwords.

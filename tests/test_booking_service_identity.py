@@ -126,9 +126,16 @@ class BookingIdentityTests(unittest.TestCase):
         )
 
     def test_definition_registers_exact_bearer_protected_route(self) -> None:
-        """Publish one `/v1/me` route family with matching OpenAPI security."""
+        """Keep identity exact while BKG-101 adds protected route families."""
         backend = definition.BACKEND_APP_DEFINITION
-        self.assertEqual(backend.registered_route_prefixes(), ("/v1/me",))
+        self.assertEqual(
+            backend.registered_route_prefixes(),
+            (
+                "/v1/me",
+                "/v1/platform/organizations",
+                "/v1/organizations",
+            ),
+        )
         self.assertEqual(
             tuple(scheme.name for scheme in backend.openapi_security_schemes),
             ("BookingBearer",),
@@ -136,6 +143,8 @@ class BookingIdentityTests(unittest.TestCase):
         requirement = backend.openapi_route_security[0]
         self.assertTrue(requirement.matches_path("/v1/me/identity"))
         self.assertFalse(requirement.matches_path("/v1/me/context"))
+        context_requirement = backend.openapi_route_security[1]
+        self.assertTrue(context_requirement.matches_path("/v1/me/context"))
 
 
 if __name__ == "__main__":

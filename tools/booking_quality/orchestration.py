@@ -6,10 +6,18 @@ import json
 import subprocess
 from pathlib import Path
 
-from booking_quality.config import BookingServiceQualityError, QualityRuntime
+from booking_quality.config import (
+    QUALITY_ORGANIZATION_A_ID,
+    QUALITY_ORGANIZATION_A_NAME,
+    QUALITY_ORGANIZATION_B_ID,
+    QUALITY_ORGANIZATION_B_NAME,
+    BookingServiceQualityError,
+    QualityRuntime,
+)
 from booking_quality.runtime_checks import (
     assert_health_contract,
     verify_keycloak,
+    verify_tenancy,
     wait_for_health,
 )
 
@@ -29,6 +37,7 @@ FOCUSED_TEST_MODULES = (
     "tests.test_booking_service_pair_contract",
     "tests.test_booking_service_quality",
     "tests.test_booking_service_identity",
+    "tests.test_booking_service_tenancy",
     "tests.test_booking_service_jwt_contract",
     "tests.test_keycloak_bootstrap_redaction",
     "tests.test_selected_app_route_guard",
@@ -130,6 +139,49 @@ def _run_container_checks(runtime: QualityRuntime) -> None:
     )
 
 
+def _seed_tenancy(runtime: QualityRuntime, subjects: dict[str, str]) -> None:
+    """Seed non-secret tenant fixtures inside the selected API container.
+
+    Args:
+        runtime: Running Compose project.
+        subjects: Role-to-subject mapping returned by real identity projection.
+
+    Returns:
+        None: The standalone seed command commits its fixture transaction.
+
+    Raises:
+        subprocess.CalledProcessError: When the seed command fails.
+
+    Side Effects:
+        Executes the app-owned seed module inside the disposable API container.
+    """
+    run_compose(
+        runtime,
+        "exec",
+        "-T",
+        "api",
+        API_PYTHON,
+        "-m",
+        "apps.booking_service.quality.seed_tenancy",
+        "--platform-subject",
+        subjects["platform_admin"],
+        "--organization-admin-subject",
+        subjects["organization_admin"],
+        "--worker-subject",
+        subjects["worker"],
+        "--customer-subject",
+        subjects["customer"],
+        "--organization-a-id",
+        QUALITY_ORGANIZATION_A_ID,
+        "--organization-a-name",
+        QUALITY_ORGANIZATION_A_NAME,
+        "--organization-b-id",
+        QUALITY_ORGANIZATION_B_ID,
+        "--organization-b-name",
+        QUALITY_ORGANIZATION_B_NAME,
+    )
+
+
 def _assert_logs_redacted(runtime: QualityRuntime) -> None:
     """Fail when any invocation secret appears in retained service logs.
 
@@ -196,7 +248,9 @@ def verify_stack(runtime: QualityRuntime, timeout_seconds: float) -> None:
         Performs local HTTP requests, executes container checks, and reads logs.
     """
     assert_health_contract(wait_for_health(runtime, timeout_seconds), runtime)
-    verify_keycloak(runtime)
+    subjects = verify_keycloak(runtime)
+    _seed_tenancy(runtime, subjects)
+    verify_tenancy(runtime)
     _run_container_checks(runtime)
     _assert_logs_redacted(runtime)
 
