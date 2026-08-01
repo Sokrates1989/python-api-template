@@ -1,7 +1,7 @@
 {
   "app_id": "booking_service",
-  "bundle_sha256": "00dd190832889211a66c7978eae582ba2668f75ed91b3ec0e2ccbd61fc4fbd33",
-  "file_count": 18,
+  "bundle_sha256": "cca10911c67d01f1c48a49930b52be87bf0b8310e9248646f6f2777b46f51e33",
+  "file_count": 24,
   "foundation": {
     "contract_id": "template-v2-backend-foundation",
     "contract_version": 1,

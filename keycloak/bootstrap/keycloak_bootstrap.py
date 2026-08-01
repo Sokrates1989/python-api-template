@@ -212,6 +212,44 @@ def ensure_roles(base_url: str, token: str, realm: str, roles: Iterable[str]) ->
             )
 
 
+def ensure_client_roles(
+    base_url: str,
+    token: str,
+    realm: str,
+    client_uuid: str,
+    roles: Iterable[str],
+) -> None:
+    """Ensure roles exist under one Keycloak client.
+
+    Args:
+        base_url: Keycloak base URL.
+        token: Admin access token.
+        realm: Realm name.
+        client_uuid: Internal UUID of the role-owning client.
+        roles: Client-role names to create when absent.
+
+    Raises:
+        KeycloakBootstrapError: When lookup or creation fails unexpectedly.
+    """
+    for role in roles:
+        role_path = f"/admin/realms/{realm}/clients/{client_uuid}/roles/{role}"
+        response = request_with_token("GET", base_url, token, role_path)
+        if response.status_code == 200:
+            continue
+        create_response = request_with_token(
+            "POST",
+            base_url,
+            token,
+            f"/admin/realms/{realm}/clients/{client_uuid}/roles",
+            {"name": role, "description": f"Booking client role {role}"},
+        )
+        if create_response.status_code not in (201, 204):
+            raise KeycloakBootstrapError(
+                f"Failed to create client role '{role}': "
+                f"{create_response.status_code} {create_response.text}"
+            )
+
+
 def resolve_client_id(base_url: str, token: str, realm: str, client_id: str) -> str | None:
     """Resolve a client UUID by client ID.
 
@@ -470,6 +508,54 @@ def assign_realm_roles(
         )
 
 
+def assign_client_roles(
+    base_url: str,
+    token: str,
+    realm: str,
+    client_uuid: str,
+    user_id: str,
+    roles: Iterable[str],
+) -> None:
+    """Assign existing client roles to one user.
+
+    Args:
+        base_url: Keycloak base URL.
+        token: Admin access token.
+        realm: Realm name.
+        client_uuid: Internal UUID of the role-owning client.
+        user_id: Internal Keycloak user UUID.
+        roles: User role names to match against existing client roles. Names
+            that are not configured on the client are intentionally ignored.
+
+    Raises:
+        KeycloakBootstrapError: When Keycloak rejects the assignment.
+    """
+    representations: list[dict[str, object]] = []
+    for role in roles:
+        response = request_with_token(
+            "GET",
+            base_url,
+            token,
+            f"/admin/realms/{realm}/clients/{client_uuid}/roles/{role}",
+        )
+        if response.status_code != 200:
+            continue
+        representations.append(response.json())
+    if not representations:
+        return
+    response = request_with_token(
+        "POST",
+        base_url,
+        token,
+        f"/admin/realms/{realm}/users/{user_id}/role-mappings/clients/{client_uuid}",
+        representations,
+    )
+    if response.status_code != 204:
+        raise KeycloakBootstrapError(
+            f"Failed to assign client roles to user: {response.status_code} {response.text}"
+        )
+
+
 def assign_service_account_role(
     base_url: str,
     token: str,
@@ -536,6 +622,20 @@ def build_client_payloads(
         "redirectUris": [f"{frontend_root_url.rstrip('/')}/*"],
         "webOrigins": [frontend_root_url, api_root_url, "+"],
         "attributes": {"pkce.code.challenge.method": "S256"},
+        "protocolMappers": [
+            {
+                "name": f"{frontend_client_id}-access-token-audience",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-audience-mapper",
+                "consentRequired": False,
+                "config": {
+                    "included.client.audience": frontend_client_id,
+                    "id.token.claim": "false",
+                    "access.token.claim": "true",
+                    "introspection.token.claim": "true",
+                },
+            }
+        ],
     }
 
     backend_payload = {
@@ -565,6 +665,7 @@ def run_bootstrap(args: argparse.Namespace) -> None:
         KeycloakBootstrapError: On failure.
     """
     roles = args.role if args.role else []
+    client_roles = getattr(args, "client_role", None) or []
     users = parse_user_specs(args.user)
 
     token = get_admin_token(args.base_url, args.admin_user, args.admin_password)
@@ -580,9 +681,19 @@ def run_bootstrap(args: argparse.Namespace) -> None:
         args.frontend_root_url,
         args.api_root_url,
     )
-    ensure_client(args.base_url, token, args.realm, frontend_payload)
+    frontend_uuid = ensure_client(args.base_url, token, args.realm, frontend_payload)
     backend_uuid = ensure_client(args.base_url, token, args.realm, backend_payload)
     backend_secret = get_client_secret(args.base_url, token, args.realm, backend_uuid)
+
+    if client_roles:
+        print("\nEnsuring frontend client roles exist...")
+        ensure_client_roles(
+            args.base_url,
+            token,
+            args.realm,
+            frontend_uuid,
+            client_roles,
+        )
 
     print("\nCreating/updating users...")
     for user in users:
@@ -591,6 +702,15 @@ def run_bootstrap(args: argparse.Namespace) -> None:
         user_id = ensure_user(args.base_url, token, args.realm, username)
         set_user_password(args.base_url, token, args.realm, user_id, str(user["password"]))
         assign_realm_roles(args.base_url, token, args.realm, user_id, user["roles"], username)
+        if client_roles:
+            assign_client_roles(
+                args.base_url,
+                token,
+                args.realm,
+                frontend_uuid,
+                user_id,
+                user["roles"],
+            )
 
     if args.assign_service_account_role:
         assign_service_account_role(
@@ -654,6 +774,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
     default_roles = ["python-api-template-user", "python-api-template-admin"]
     roles_default = _split_env_list(roles_env) if roles_env else default_roles
     parser.add_argument("--role", action="append", default=roles_default, help="Realm role to create")
+
+    client_roles_env = os.getenv("KEYCLOAK_FRONTEND_CLIENT_ROLES")
+    client_roles_default = _split_env_list(client_roles_env) if client_roles_env else []
+    parser.add_argument(
+        "--client-role",
+        action="append",
+        default=client_roles_default,
+        help="Frontend client role to create and assign from matching user role specs",
+    )
 
     users_env = os.getenv("KEYCLOAK_USERS")
     default_users = ["demo:Demo123!:python-api-template-user"]

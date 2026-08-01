@@ -42,6 +42,21 @@ class KeycloakBootstrapRedactionTests(unittest.TestCase):
         self.assertTrue(str(payload["email"]).endswith("@local.invalid"))
         self.assertNotIn("password", payload)
 
+    def test_frontend_client_adds_only_its_access_token_audience(self) -> None:
+        """Configure audience verification without a frontend client secret."""
+        frontend, _ = keycloak_bootstrap.build_client_payloads(
+            "keycloak",
+            "booking-service-backend",
+            "http://localhost:3000",
+            "http://localhost:8084",
+        )
+        mapper = frontend["protocolMappers"][0]
+        self.assertEqual(mapper["protocolMapper"], "oidc-audience-mapper")
+        self.assertEqual(mapper["config"]["included.client.audience"], "keycloak")
+        self.assertEqual(mapper["config"]["access.token.claim"], "true")
+        self.assertTrue(frontend["publicClient"])
+        self.assertNotIn("secret", frontend)
+
     def test_bootstrap_summary_contains_only_public_identity(self) -> None:
         """Run the orchestration seam and scan captured output for secrets."""
         user_password = "NeverEchoUserPassword!"
@@ -56,6 +71,7 @@ class KeycloakBootstrapRedactionTests(unittest.TestCase):
             frontend_root_url="http://localhost:3000",
             api_root_url="http://localhost:8084",
             role=["customer"],
+            client_role=["customer"],
             user=[f"booking-customer:{user_password}:customer"],
             assign_service_account_role=None,
         )
@@ -69,6 +85,7 @@ class KeycloakBootstrapRedactionTests(unittest.TestCase):
                 "ensure_client",
                 side_effect=("frontend-uuid", "backend-uuid"),
             ),
+            patch.object(keycloak_bootstrap, "ensure_client_roles"),
             patch.object(
                 keycloak_bootstrap,
                 "get_client_secret",
@@ -77,6 +94,7 @@ class KeycloakBootstrapRedactionTests(unittest.TestCase):
             patch.object(keycloak_bootstrap, "ensure_user", return_value="user-uuid"),
             patch.object(keycloak_bootstrap, "set_user_password"),
             patch.object(keycloak_bootstrap, "assign_realm_roles"),
+            patch.object(keycloak_bootstrap, "assign_client_roles"),
             contextlib.redirect_stdout(output),
         ):
             keycloak_bootstrap.run_bootstrap(arguments)

@@ -2,11 +2,10 @@
 
 ## Purpose
 
-This selected app package establishes the authenticated PostgreSQL foundation
-for `booking_service` in the Python API template. Phase zero deliberately owns
-no product routes or tables. Booking domain models, migrations, and endpoints
-will be introduced by focused implementation slices after local and CI runtime
-qualification is deterministic.
+This selected app package owns the authenticated PostgreSQL backend for
+`booking_service`. BKG-100 introduces the first product route,
+`GET /v1/me/identity`, without adding a booking table or tenant state. Later
+domain models, migrations, and endpoints remain focused implementation slices.
 
 ## Ownership
 
@@ -21,11 +20,17 @@ deployment-owned.
 
 ## Product boundary
 
-The phase-zero definition keeps database, Redis, and app-owned migration
-requirements enabled while publishing no app-specific or shared routes. This
-makes accidental template-demo APIs visible during review: any route added to
-this profile must belong to an approved booking slice and must never use a
-redundant `/api/` prefix.
+The selected definition keeps database, Redis, and app-owned migration
+requirements enabled while publishing no shared routes. The BKG-100 principal
+accepts only verified Keycloak access tokens, requires a non-empty `sub`, and
+reads the four independent roles exclusively from
+`resource_access[KEYCLOAK_CLIENT_ID].roles`. Realm-only, unknown, malformed,
+or unconfigured roles grant nothing. The response contains only `subject_id`
+and deterministic `roles`; it never returns raw claims or provider secrets.
+
+Every later route must belong to an approved booking slice and must never use
+a redundant `/api/` prefix. Keycloak administration and production realm
+bootstrap remain deployment-owned.
 
 ## Verification
 
@@ -40,7 +45,9 @@ python tools/booking_service_quality.py run
 ```
 
 The command builds the Python 3.13 app image, starts disposable PostgreSQL,
-Redis, and Keycloak fixtures, verifies four neutral role identities, runs the
-focused contracts and route guard, scans logs for invocation secrets, and
-removes its containers, network, volume, and locally built images. Keep later
-service routes relative to the API host and free of a redundant `/api/` prefix.
+Redis, and Keycloak fixtures, creates matching frontend client roles, verifies
+issuer/audience plus four real `/v1/me/identity` projections, proves anonymous
+`401`, runs the focused contracts and route guard, scans logs for invocation
+secrets, and removes its containers, network, volume, and locally built images.
+Keep later service routes relative to the API host and free of a redundant
+`/api/` prefix.

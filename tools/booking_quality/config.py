@@ -51,7 +51,7 @@ class SeedIdentity:
     Attributes:
         username: Environment-owned neutral login name.
         password: Private password retained only in process memory.
-        role: Single booking realm role expected in the issued token.
+        role: Single booking client role expected in the issued token.
     """
 
     username: str

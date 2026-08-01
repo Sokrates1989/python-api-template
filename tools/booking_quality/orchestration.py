@@ -28,6 +28,8 @@ FOCUSED_TEST_MODULES = (
     "tests.test_template_v2_backend_lifecycle",
     "tests.test_booking_service_pair_contract",
     "tests.test_booking_service_quality",
+    "tests.test_booking_service_identity",
+    "tests.test_booking_service_jwt_contract",
     "tests.test_keycloak_bootstrap_redaction",
     "tests.test_selected_app_route_guard",
 )

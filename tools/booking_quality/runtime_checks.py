@@ -40,6 +40,37 @@ def read_json(url: str, timeout_seconds: float = 5.0) -> dict[str, Any]:
     return payload
 
 
+def read_bearer_json(
+    url: str,
+    access_token: str,
+    timeout_seconds: float = 5.0,
+) -> dict[str, Any]:
+    """Fetch one local JSON object with an in-memory bearer token.
+
+    Args:
+        url: Loopback Booking API endpoint.
+        access_token: Short-lived fixture token retained only in request memory.
+        timeout_seconds: Per-request timeout; defaults to five seconds.
+
+    Returns:
+        dict[str, Any]: Parsed JSON object.
+
+    Raises:
+        BookingServiceQualityError: When the response is not a JSON object.
+        HTTPError: When the API rejects the token or request.
+        URLError: When the API cannot be reached.
+
+    Side Effects:
+        Performs one loopback HTTP GET request without logging the token.
+    """
+    request = Request(url, headers={"Authorization": f"Bearer {access_token}"})
+    with urlopen(request, timeout=timeout_seconds) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise BookingServiceQualityError("Identity endpoint returned a non-object payload.")
+    return payload
+
+
 def wait_for_health(runtime: QualityRuntime, timeout_seconds: float) -> dict[str, Any]:
     """Wait through transient socket failures for the selected API health.
 
@@ -103,8 +134,8 @@ def assert_health_contract(
     keycloak = payload.get("keycloak")
     if drift or not isinstance(keycloak, Mapping):
         raise BookingServiceQualityError("API health identity or migration contract drifted.")
-    if payload.get("registered_route_prefixes") != []:
-        raise BookingServiceQualityError("Detached product route prefixes are still registered.")
+    if payload.get("registered_route_prefixes") != ["/v1/me"]:
+        raise BookingServiceQualityError("Booking identity route registration drifted.")
     if (
         keycloak.get("configured") is not True
         or keycloak.get("issuer") != runtime.issuer_url
@@ -165,14 +196,14 @@ def _post_form_json(url: str, fields: Mapping[str, str]) -> dict[str, Any]:
     return payload
 
 
-def _decode_realm_roles(access_token: str) -> tuple[str, ...]:
-    """Decode unverified roles solely to prove deterministic fixture seeding.
+def _decode_token_payload(access_token: str) -> dict[str, Any]:
+    """Decode one unverified fixture token solely for local seed assertions.
 
     Args:
         access_token: JWT issued directly by the isolated Keycloak fixture.
 
     Returns:
-        tuple[str, ...]: Sorted realm roles embedded in the token payload.
+        dict[str, Any]: Decoded local payload used only as expected test input.
 
     Raises:
         BookingServiceQualityError: When the local fixture token is malformed.
@@ -185,10 +216,86 @@ def _decode_realm_roles(access_token: str) -> tuple[str, ...]:
         encoded_payload = access_token.split(".")[1]
         padding = "=" * (-len(encoded_payload) % 4)
         payload = json.loads(base64.urlsafe_b64decode(encoded_payload + padding))
-        roles = payload["realm_access"]["roles"]
-    except (IndexError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+    except (IndexError, TypeError, ValueError, json.JSONDecodeError) as error:
         raise BookingServiceQualityError("Keycloak returned a malformed fixture token.") from error
+    if not isinstance(payload, dict):
+        raise BookingServiceQualityError("Keycloak returned a non-object fixture token.")
+    return payload
+
+
+def _decode_client_roles(access_token: str, client_id: str) -> tuple[str, ...]:
+    """Read sorted client roles from a local unverified fixture token.
+
+    Args:
+        access_token: JWT issued directly by the isolated Keycloak fixture.
+        client_id: Exact client role container expected in ``resource_access``.
+
+    Returns:
+        tuple[str, ...]: Sorted role strings from the configured client.
+
+    Raises:
+        BookingServiceQualityError: When the fixture token shape is malformed.
+
+    Note:
+        This helper is not authorization. The API independently verifies the
+        token before building its Booking principal.
+    """
+    try:
+        roles = _decode_token_payload(access_token)["resource_access"][client_id]["roles"]
+    except (KeyError, TypeError) as error:
+        raise BookingServiceQualityError("Keycloak omitted Booking client roles.") from error
+    if not isinstance(roles, list):
+        raise BookingServiceQualityError("Keycloak returned malformed Booking client roles.")
     return tuple(sorted(str(role) for role in roles))
+
+
+def _has_audience(payload: Mapping[str, Any], audience: str) -> bool:
+    """Return whether one decoded fixture payload contains an audience.
+
+    Args:
+        payload: Decoded local JWT payload used only for expected assertions.
+        audience: Exact audience required by the Booking API.
+
+    Returns:
+        bool: True for a matching string or list member; otherwise false.
+    """
+    raw_audience = payload.get("aud")
+    if isinstance(raw_audience, str):
+        return raw_audience == audience
+    return isinstance(raw_audience, list) and audience in raw_audience
+
+
+def _verify_seeded_identity(
+    runtime: QualityRuntime,
+    access_token: str,
+    expected_role: str,
+) -> None:
+    """Verify one seeded client role through the real Booking API.
+
+    Args:
+        runtime: Runtime containing the local API origin.
+        access_token: Short-lived Keycloak token retained only in memory.
+        expected_role: Sole booking client role expected for the proof user.
+
+    Raises:
+        BookingServiceQualityError: When audience, claims, or projection drift.
+
+    Side Effects:
+        Performs one authenticated loopback request to ``/v1/me/identity``.
+    """
+    payload = _decode_token_payload(access_token)
+    if expected_role not in _decode_client_roles(access_token, "keycloak"):
+        raise BookingServiceQualityError("Seeded Keycloak client-role proof failed.")
+    if not _has_audience(payload, "keycloak"):
+        raise BookingServiceQualityError("Seeded Keycloak audience proof failed.")
+    projection = read_bearer_json(
+        f"{runtime.api_origin}/v1/me/identity",
+        access_token,
+    )
+    if projection.get("subject_id") != payload.get("sub"):
+        raise BookingServiceQualityError("Booking identity subject projection drifted.")
+    if projection.get("roles") != [expected_role]:
+        raise BookingServiceQualityError("Booking identity role projection drifted.")
 
 
 def verify_keycloak(runtime: QualityRuntime) -> None:
@@ -239,6 +346,15 @@ def _verify_keycloak_fixture(runtime: QualityRuntime) -> None:
     token_endpoint = discovery.get("token_endpoint")
     if not isinstance(token_endpoint, str) or not token_endpoint:
         raise BookingServiceQualityError("Keycloak discovery omitted token_endpoint.")
+    try:
+        read_json(f"{runtime.api_origin}/v1/me/identity")
+    except HTTPError as error:
+        if error.code != 401:
+            raise BookingServiceQualityError(
+                "Anonymous Booking identity request returned an unexpected status."
+            ) from error
+    else:
+        raise BookingServiceQualityError("Anonymous Booking identity request did not fail closed.")
     for identity in runtime.identities:
         response = _post_form_json(
             token_endpoint,
@@ -250,5 +366,6 @@ def _verify_keycloak_fixture(runtime: QualityRuntime) -> None:
             },
         )
         token = response.get("access_token")
-        if not isinstance(token, str) or identity.role not in _decode_realm_roles(token):
-            raise BookingServiceQualityError("Seeded Keycloak role proof failed.")
+        if not isinstance(token, str):
+            raise BookingServiceQualityError("Keycloak omitted a fixture access token.")
+        _verify_seeded_identity(runtime, token, identity.role)
