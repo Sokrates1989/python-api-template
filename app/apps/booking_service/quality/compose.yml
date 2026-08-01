@@ -67,6 +67,11 @@ services:
       KEYCLOAK_FRONTEND_CLIENT_ROLES: platform_admin;organization_admin;worker;customer
       KEYCLOAK_USERS: ${BOOKING_QUALITY_PLATFORM_ADMIN_USER}:${BOOKING_QUALITY_PLATFORM_ADMIN_PASSWORD}:platform_admin;${BOOKING_QUALITY_ORGANIZATION_ADMIN_USER}:${BOOKING_QUALITY_ORGANIZATION_ADMIN_PASSWORD}:organization_admin;${BOOKING_QUALITY_WORKER_USER}:${BOOKING_QUALITY_WORKER_PASSWORD}:worker;${BOOKING_QUALITY_CUSTOMER_USER}:${BOOKING_QUALITY_CUSTOMER_PASSWORD}:customer
       KEYCLOAK_SERVICE_ACCOUNT_ROLE: platform_admin
+      KEYCLOAK_BACKEND_CLIENT_SECRET_FILE: /run/booking-quality-secrets/identity-admin-client
+      KEYCLOAK_SERVICE_ACCOUNT_ROLE_CLIENT_ID: realm-management
+      KEYCLOAK_SERVICE_ACCOUNT_CLIENT_ROLES: manage-users;query-clients;view-clients;view-users
+    volumes:
+      - identity_admin_secret:/run/booking-quality-secrets
     depends_on:
       keycloak:
         condition: service_healthy
@@ -104,6 +109,8 @@ services:
       KEYCLOAK_ISSUER_URL: http://localhost:${BOOKING_QUALITY_KEYCLOAK_PORT:-9094}/realms/booking-service-example
       KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/booking-service-example/protocol/openid-connect/certs
       KEYCLOAK_ENFORCE_AUDIENCE: "true"
+      KEYCLOAK_ADMIN_CLIENT_ID: booking-service-backend
+      KEYCLOAK_ADMIN_CLIENT_SECRET_FILE: /run/booking-quality-secrets/identity-admin-client
       ADMIN_API_KEY: ${BOOKING_QUALITY_ADMIN_API_KEY:?admin API key is required}
       BACKUP_RESTORE_API_KEY: ${BOOKING_QUALITY_RESTORE_API_KEY:?restore API key is required}
       BACKUP_DELETE_API_KEY: ${BOOKING_QUALITY_DELETE_API_KEY:?delete API key is required}
@@ -118,6 +125,7 @@ services:
     ports:
       - "${BOOKING_QUALITY_API_PORT:-8084}:8000"
     volumes:
+      - identity_admin_secret:/run/booking-quality-secrets:ro
       - ../../../../tools:/app/tools:ro
       - ../../../../tests:/app/tests:ro
       - ../../../../keycloak:/app/keycloak:ro
@@ -144,3 +152,4 @@ services:
 
 volumes:
   postgres_data:
+  identity_admin_secret:

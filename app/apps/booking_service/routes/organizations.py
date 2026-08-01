@@ -10,6 +10,7 @@ from apps.booking_service.dependencies.identity import (
 )
 from apps.booking_service.routes.context import get_tenancy_service
 from apps.booking_service.routes.errors import raise_tenancy_http
+from apps.booking_service.routes.memberships import router as membership_router
 from apps.booking_service.schemas.tenancy import (
     OrganizationCreateRequest,
     OrganizationLifecycleRequest,
@@ -26,6 +27,9 @@ organization_router = APIRouter(
     prefix="/v1/organizations",
     tags=["booking-organizations"],
 )
+
+# Membership endpoints share the registered organization boundary.
+organization_router.include_router(membership_router)
 
 
 @platform_router.get("", response_model=tuple[OrganizationSummaryResponse, ...])

@@ -4,9 +4,17 @@
 
 This directory defines the disposable BKG-004 runtime: the selected Python
 3.13 API image, PostgreSQL 16, Redis 7, Keycloak 26.0, and the credential-free
-Keycloak bootstrap summary. The stack uses a named Compose volume only for its
-temporary PostgreSQL data; the quality runner removes that volume, containers,
-network, and locally built images after an automated run.
+Keycloak bootstrap summary. The stack uses named Compose volumes for temporary
+PostgreSQL data and the generated BKG-103 identity-administration client secret;
+the quality runner removes both volumes, containers, network, and locally built
+images after an automated run.
+
+The bootstrap assigns the confidential `booking-service-backend` service
+account only the selected `realm-management` user/client lookup and role-mapping
+permissions. Its generated secret is written into the ephemeral secret volume,
+which the unprivileged API mounts read-only. The summary, process arguments,
+logs, and tracked files never contain that value. Production must use its
+deployment secret manager instead of this disposable handoff.
 
 Focused repository tests receive read-only mounts for `tests`, `tools`,
 `keycloak`, `template_v2`, the canonical booking pair contract, and the exact
@@ -17,8 +25,9 @@ backups into the quality container.
 The Compose file owns service wiring only. `tools/booking_service_quality.py`
 is the stable command wrapper; the focused `tools/booking_quality/` modules own
 configuration, orchestration, health/auth assertions, seeded-role token checks,
-two-tenant context/isolation/lifecycle proofs, focused tests, route guards, log
-scanning, and guaranteed teardown.
+two-tenant context/isolation/lifecycle proofs, scoped membership grants,
+last-admin lockout, missing-subject compensation, provider-backed role
+transitions, focused tests, route guards, log scanning, and guaranteed teardown.
 
 ## Automated run
 

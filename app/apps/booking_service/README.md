@@ -4,10 +4,10 @@
 
 This selected app package owns the authenticated PostgreSQL backend for
 `booking_service`. BKG-100 introduced the authenticated coarse identity;
-BKG-101 adds app-owned subjects, organizations, memberships, tenant-bound
-membership roles, dual-gated platform access, and audited organization
-lifecycle. Booking, availability, payments, and notification delivery remain
-later focused slices.
+BKG-101 added tenant ownership, and BKG-103 adds scoped membership commands,
+last-administrator protection, sanitized audit evidence, and a durable narrow
+identity-role delivery boundary. Booking, availability, payments, and
+notification delivery remain later focused slices.
 
 ## Ownership
 
@@ -42,9 +42,30 @@ updates lock the organization, require an expected revision, preserve history,
 and write a sanitized audit event in the same transaction. Revision conflicts
 return retryable `409`. All routes are rooted at `/v1`; `/api` is forbidden.
 
+Membership list/invite/update/retry operations share
+`/v1/organizations/{organization_id}/memberships`. Platform administrators
+require both platform gates and may manage all three organization roles.
+Organization administrators require an active same-tenant membership and may
+manage only `worker` and `customer`; they cannot manage another administrator
+or platform access. The final active organization administrator cannot be
+removed, suspended, or stripped of that role.
+
+Invitations accept only an immutable provider subject ID and app-owned roles.
+They commit the invitation, audit event, and opaque role-sync outbox before
+Keycloak delivery. Failure leaves visible `pending`, `failed`, or `cancelled`
+recovery state without storing passwords, tokens, email, username, or provider
+payloads. Database role removal is immediate and authoritative. The adapter
+grants only newly required client roles; it does not remove a coarse Keycloak
+role that another organization may still require.
+
 Every later route must belong to an approved booking slice and must never use
-a redundant `/api/` prefix. Keycloak administration and production realm
-bootstrap remain deployment-owned.
+a redundant `/api/` prefix. Production role delivery requires a dedicated
+confidential client configured by the deployment with
+`KEYCLOAK_ADMIN_CLIENT_ID` and a mounted
+`KEYCLOAK_ADMIN_CLIENT_SECRET_FILE`. That client receives only the Keycloak
+permissions needed to read the target subject/client roles and map roles; it
+must not receive unrestricted realm administration. Production realm bootstrap
+remains deployment-owned.
 
 ## Verification
 
@@ -63,8 +84,10 @@ Redis, and Keycloak fixtures, creates matching frontend client roles, verifies
 issuer/audience plus four real `/v1/me/identity` projections, seeds two isolated
 organizations from the projected non-personal subjects, and proves active
 context, explicit multi-membership, dual platform access, foreign-scope `404`,
-suspension `403`, reactivation, and anonymous `401`. It also runs focused
-contracts and the route guard, scans logs for invocation secrets, and removes
-its containers, network, volume, and locally built images.
+suspension `403`, reactivation, anonymous `401`, scoped membership denial,
+last-admin lockout, provider-failure persistence, worker/customer transition,
+and explicit compensation. It also runs focused contracts and the route guard,
+scans logs for invocation secrets, and removes its containers, network, volume,
+and locally built images.
 Keep later service routes relative to the API host and free of a redundant
 `/api/` prefix.

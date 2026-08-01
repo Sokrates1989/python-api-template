@@ -20,15 +20,21 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
 from typing import Iterable, Sequence
 
 import requests
 
+from bootstrap_errors import KeycloakBootstrapError
 from bootstrap_safety import build_local_user_payload, build_sanitized_summary
-
-
-class KeycloakBootstrapError(RuntimeError):
-    """Raised when Keycloak bootstrap operations fail."""
+from keycloak_admin_operations import (
+    assign_client_roles,
+    assign_realm_roles,
+    assign_service_account_client_roles,
+    assign_service_account_role,
+    request_with_token,
+    resolve_client_id,
+)
 
 
 def _split_env_list(value: str) -> list[str]:
@@ -108,39 +114,6 @@ def get_admin_token(base_url: str, username: str, password: str) -> str:
     if not token:
         raise KeycloakBootstrapError("Keycloak admin token response missing access_token")
     return token
-
-
-def request_with_token(
-    method: str,
-    base_url: str,
-    token: str,
-    path: str,
-    json_body: dict | list | None = None,
-    params: dict | None = None,
-) -> requests.Response:
-    """Send an authenticated request to the Keycloak admin API.
-
-    Args:
-        method: HTTP method.
-        base_url: Keycloak base URL.
-        token: Bearer token.
-        path: API path (e.g., /admin/realms).
-        json_body: Optional JSON body.
-        params: Optional query params.
-
-    Returns:
-        requests.Response: Response from Keycloak.
-    """
-    url = f"{base_url.rstrip('/')}{path}"
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    return requests.request(
-        method,
-        url,
-        headers=headers,
-        json=json_body,
-        params=params,
-        timeout=20,
-    )
 
 
 def ensure_realm(base_url: str, token: str, realm: str) -> None:
@@ -248,33 +221,6 @@ def ensure_client_roles(
                 f"Failed to create client role '{role}': "
                 f"{create_response.status_code} {create_response.text}"
             )
-
-
-def resolve_client_id(base_url: str, token: str, realm: str, client_id: str) -> str | None:
-    """Resolve a client UUID by client ID.
-
-    Args:
-        base_url: Keycloak base URL.
-        token: Admin access token.
-        realm: Realm name.
-        client_id: Client ID to search for.
-
-    Returns:
-        str | None: Client UUID if found.
-    """
-    response = request_with_token(
-        "GET",
-        base_url,
-        token,
-        f"/admin/realms/{realm}/clients",
-        params={"clientId": client_id},
-    )
-    if response.status_code != 200:
-        return None
-    results = response.json()
-    if not results:
-        return None
-    return results[0].get("id")
 
 
 def ensure_client(base_url: str, token: str, realm: str, client_payload: dict) -> str:
@@ -420,175 +366,33 @@ def set_user_password(base_url: str, token: str, realm: str, user_id: str, passw
         )
 
 
-def get_role_representations(
-    base_url: str,
-    token: str,
-    realm: str,
-    roles: Iterable[str],
-    skip_missing: bool = False,
-) -> tuple[list[dict[str, object]], list[str]]:
-    """Fetch role representations for assignment.
+def write_disposable_client_secret(secret: str, destination: str) -> None:
+    """Write a generated secret to an explicitly selected local proof volume.
+
+    This helper exists for disposable Compose qualification only. Production
+    deployments must inject the confidential client secret from their secret
+    manager instead of using the bootstrap container as a secret distributor.
 
     Args:
-        base_url: Keycloak base URL.
-        token: Admin access token.
-        realm: Realm name.
-        roles: Role names.
-        skip_missing: If True, skip missing roles instead of raising an error.
+        secret: Generated backend client secret, never printed by this helper.
+        destination: Explicit container-local file in an ephemeral shared volume.
 
     Returns:
-        tuple[list[dict[str, object]], list[str]]: Role representations and missing roles.
-    """
-    representations: list[dict[str, object]] = []
-    missing_roles: list[str] = []
-    for role in roles:
-        response = request_with_token(
-            "GET",
-            base_url,
-            token,
-            f"/admin/realms/{realm}/roles/{role}",
-        )
-        if response.status_code != 200:
-            if skip_missing:
-                missing_roles.append(role)
-                continue
-            raise KeycloakBootstrapError(
-                f"Failed to fetch role '{role}': {response.status_code} {response.text}"
-            )
-        representations.append(response.json())
-    return representations, missing_roles
-
-
-def assign_realm_roles(
-    base_url: str,
-    token: str,
-    realm: str,
-    user_id: str,
-    roles: Iterable[str],
-    username: str,
-) -> None:
-    """Assign realm roles to a user.
-
-    Args:
-        base_url: Keycloak base URL.
-        token: Admin access token.
-        realm: Realm name.
-        user_id: User UUID.
-        roles: Role names.
-        username: Username for logging.
+        None: The complete secret is written once with read-only permissions.
 
     Raises:
-        KeycloakBootstrapError: When role assignment fails.
+        KeycloakBootstrapError: When the destination is empty.
+
+    Side Effects:
+        Creates the parent directory and secret file inside the selected volume.
     """
-    roles_list = list(roles)
-    role_reps, missing_roles = get_role_representations(
-        base_url,
-        token,
-        realm,
-        roles_list,
-        skip_missing=True,
-    )
-    if missing_roles:
-        print(f"  ⚠ Skipping missing roles for '{username}': {', '.join(missing_roles)}")
-
-    if not role_reps:
-        print(f"  ⚠ No roles to assign for '{username}'")
-        return
-
-    response = request_with_token(
-        "POST",
-        base_url,
-        token,
-        f"/admin/realms/{realm}/users/{user_id}/role-mappings/realm",
-        role_reps,
-    )
-    if response.status_code not in (204,):
-        raise KeycloakBootstrapError(
-            f"Failed to assign roles to user: {response.status_code} {response.text}"
-        )
-
-
-def assign_client_roles(
-    base_url: str,
-    token: str,
-    realm: str,
-    client_uuid: str,
-    user_id: str,
-    roles: Iterable[str],
-) -> None:
-    """Assign existing client roles to one user.
-
-    Args:
-        base_url: Keycloak base URL.
-        token: Admin access token.
-        realm: Realm name.
-        client_uuid: Internal UUID of the role-owning client.
-        user_id: Internal Keycloak user UUID.
-        roles: User role names to match against existing client roles. Names
-            that are not configured on the client are intentionally ignored.
-
-    Raises:
-        KeycloakBootstrapError: When Keycloak rejects the assignment.
-    """
-    representations: list[dict[str, object]] = []
-    for role in roles:
-        response = request_with_token(
-            "GET",
-            base_url,
-            token,
-            f"/admin/realms/{realm}/clients/{client_uuid}/roles/{role}",
-        )
-        if response.status_code != 200:
-            continue
-        representations.append(response.json())
-    if not representations:
-        return
-    response = request_with_token(
-        "POST",
-        base_url,
-        token,
-        f"/admin/realms/{realm}/users/{user_id}/role-mappings/clients/{client_uuid}",
-        representations,
-    )
-    if response.status_code != 204:
-        raise KeycloakBootstrapError(
-            f"Failed to assign client roles to user: {response.status_code} {response.text}"
-        )
-
-
-def assign_service_account_role(
-    base_url: str,
-    token: str,
-    realm: str,
-    client_uuid: str,
-    role: str,
-) -> None:
-    """Assign a realm role to the backend service account.
-
-    Args:
-        base_url: Keycloak base URL.
-        token: Admin access token.
-        realm: Realm name.
-        client_uuid: Client UUID.
-        role: Role name.
-
-    Raises:
-        KeycloakBootstrapError: When role assignment fails.
-    """
-    response = request_with_token(
-        "GET",
-        base_url,
-        token,
-        f"/admin/realms/{realm}/clients/{client_uuid}/service-account-user",
-    )
-    if response.status_code != 200:
-        raise KeycloakBootstrapError(
-            f"Failed to fetch service account user: {response.status_code} {response.text}"
-        )
-    user_id = response.json().get("id")
-    if not user_id:
-        raise KeycloakBootstrapError("Service account user id missing")
-    assign_realm_roles(base_url, token, realm, user_id, [role], "service-account")
+    normalized = destination.strip()
+    if not normalized:
+        raise KeycloakBootstrapError("Backend client secret destination is empty")
+    path = Path(normalized)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(secret, encoding="utf-8")
+    path.chmod(0o444)
 
 
 def build_client_payloads(
@@ -675,15 +479,9 @@ def run_bootstrap(args: argparse.Namespace) -> None:
         print("\nEnsuring roles exist...")
         ensure_roles(args.base_url, token, args.realm, roles)
 
-    frontend_payload, backend_payload = build_client_payloads(
-        args.frontend_client_id,
-        args.backend_client_id,
-        args.frontend_root_url,
-        args.api_root_url,
+    frontend_uuid, backend_uuid, backend_secret = _ensure_bootstrap_clients(
+        args, token
     )
-    frontend_uuid = ensure_client(args.base_url, token, args.realm, frontend_payload)
-    backend_uuid = ensure_client(args.base_url, token, args.realm, backend_payload)
-    backend_secret = get_client_secret(args.base_url, token, args.realm, backend_uuid)
 
     if client_roles:
         print("\nEnsuring frontend client roles exist...")
@@ -695,6 +493,61 @@ def run_bootstrap(args: argparse.Namespace) -> None:
             client_roles,
         )
 
+    _provision_users(args, token, users, frontend_uuid, client_roles)
+    _configure_service_account(args, token, backend_uuid)
+
+    summary = build_sanitized_summary(args, roles, users, backend_secret)
+    print("\nBootstrap completed. Summary:")
+    print(json.dumps(summary, indent=2))
+
+
+def _ensure_bootstrap_clients(
+    args: argparse.Namespace,
+    token: str,
+) -> tuple[str, str, str]:
+    """Ensure frontend/backend clients and optionally share the proof secret.
+
+    Args:
+        args: Parsed client identity and endpoint arguments.
+        token: Bootstrap administrator access token.
+
+    Returns:
+        tuple[str, str, str]: Frontend UUID, backend UUID, and backend secret.
+    """
+    frontend_payload, backend_payload = build_client_payloads(
+        args.frontend_client_id,
+        args.backend_client_id,
+        args.frontend_root_url,
+        args.api_root_url,
+    )
+    frontend_uuid = ensure_client(args.base_url, token, args.realm, frontend_payload)
+    backend_uuid = ensure_client(args.base_url, token, args.realm, backend_payload)
+    backend_secret = get_client_secret(args.base_url, token, args.realm, backend_uuid)
+    destination = getattr(args, "backend_client_secret_file", "")
+    if destination:
+        write_disposable_client_secret(backend_secret, destination)
+    return frontend_uuid, backend_uuid, backend_secret
+
+
+def _provision_users(
+    args: argparse.Namespace,
+    token: str,
+    users: list[dict[str, object]],
+    frontend_uuid: str,
+    client_roles: list[str],
+) -> None:
+    """Create fixture users and assign configured realm/client roles.
+
+    Args:
+        args: Parsed realm and provider endpoint arguments.
+        token: Bootstrap administrator access token.
+        users: Parsed local fixture user specifications.
+        frontend_uuid: Public client UUID that owns Booking roles.
+        client_roles: Roles configured on the public client.
+
+    Returns:
+        None: Successful return means all fixtures were provisioned.
+    """
     print("\nCreating/updating users...")
     for user in users:
         username = str(user["username"])
@@ -704,14 +557,25 @@ def run_bootstrap(args: argparse.Namespace) -> None:
         assign_realm_roles(args.base_url, token, args.realm, user_id, user["roles"], username)
         if client_roles:
             assign_client_roles(
-                args.base_url,
-                token,
-                args.realm,
-                frontend_uuid,
-                user_id,
-                user["roles"],
+                args.base_url, token, args.realm, frontend_uuid, user_id, user["roles"]
             )
 
+
+def _configure_service_account(
+    args: argparse.Namespace,
+    token: str,
+    backend_uuid: str,
+) -> None:
+    """Assign the requested realm and narrow client roles to the service account.
+
+    Args:
+        args: Parsed service-account role configuration.
+        token: Bootstrap administrator access token.
+        backend_uuid: Confidential backend client UUID.
+
+    Returns:
+        None: Successful return means configured mappings were accepted.
+    """
     if args.assign_service_account_role:
         assign_service_account_role(
             args.base_url,
@@ -720,10 +584,16 @@ def run_bootstrap(args: argparse.Namespace) -> None:
             backend_uuid,
             args.assign_service_account_role,
         )
-
-    summary = build_sanitized_summary(args, roles, users, backend_secret)
-    print("\nBootstrap completed. Summary:")
-    print(json.dumps(summary, indent=2))
+    client_roles = getattr(args, "service_account_client_role", None) or []
+    if client_roles:
+        assign_service_account_client_roles(
+            args.base_url,
+            token,
+            args.realm,
+            backend_uuid,
+            getattr(args, "service_account_role_client_id", ""),
+            client_roles,
+        )
 
 
 def _env_default(name: str, fallback: str) -> str:
@@ -749,6 +619,21 @@ def build_arg_parser() -> argparse.ArgumentParser:
         description="Bootstrap a Keycloak realm with clients, roles, and users.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
+    _add_connection_arguments(parser)
+    _add_role_and_user_arguments(parser)
+    _add_service_account_arguments(parser)
+    return parser
+
+
+def _add_connection_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add Keycloak, realm, and client endpoint arguments.
+
+    Args:
+        parser: Parser receiving connection and client options.
+
+    Returns:
+        None: Arguments are registered on the supplied parser.
+    """
     parser.add_argument("--base-url", default=_env_default("KEYCLOAK_URL", "http://localhost:9090"))
     parser.add_argument("--admin-user", default=_env_default("KEYCLOAK_ADMIN", "admin"))
     parser.add_argument("--admin-password", default=_env_default("KEYCLOAK_ADMIN_PASSWORD", "admin"))
@@ -770,6 +655,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=_env_default("KEYCLOAK_API_ROOT_URL", "http://localhost:8000"),
     )
 
+
+def _add_role_and_user_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add realm/client role and local fixture-user arguments.
+
+    Args:
+        parser: Parser receiving role and user options.
+
+    Returns:
+        None: Arguments are registered on the supplied parser.
+    """
     roles_env = os.getenv("KEYCLOAK_ROLES")
     default_roles = ["python-api-template-user", "python-api-template-admin"]
     roles_default = _split_env_list(roles_env) if roles_env else default_roles
@@ -794,11 +689,42 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="User spec username:password:role1,role2 (repeatable)",
     )
 
+
+def _add_service_account_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add confidential client secret and service-account role arguments.
+
+    Args:
+        parser: Parser receiving service-account options.
+
+    Returns:
+        None: Arguments are registered on the supplied parser.
+    """
     parser.add_argument(
         "--assign-service-account-role",
         default=_env_default("KEYCLOAK_SERVICE_ACCOUNT_ROLE", "python-api-template-admin"),
     )
-    return parser
+    parser.add_argument(
+        "--backend-client-secret-file",
+        default=_env_default("KEYCLOAK_BACKEND_CLIENT_SECRET_FILE", ""),
+        help="Disposable proof-volume destination for the generated client secret",
+    )
+    parser.add_argument(
+        "--service-account-role-client-id",
+        default=_env_default("KEYCLOAK_SERVICE_ACCOUNT_ROLE_CLIENT_ID", ""),
+        help="Client owning exact roles assigned to the backend service account",
+    )
+    service_client_roles_env = os.getenv("KEYCLOAK_SERVICE_ACCOUNT_CLIENT_ROLES")
+    service_client_roles = (
+        _split_env_list(service_client_roles_env)
+        if service_client_roles_env
+        else []
+    )
+    parser.add_argument(
+        "--service-account-client-role",
+        action="append",
+        default=service_client_roles,
+        help="Exact client role assigned to the backend service account",
+    )
 
 
 def main() -> None:

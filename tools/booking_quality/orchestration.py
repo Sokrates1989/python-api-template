@@ -38,6 +38,7 @@ FOCUSED_TEST_MODULES = (
     "tests.test_booking_service_quality",
     "tests.test_booking_service_identity",
     "tests.test_booking_service_tenancy",
+    "tests.test_booking_service_memberships",
     "tests.test_booking_service_jwt_contract",
     "tests.test_keycloak_bootstrap_redaction",
     "tests.test_selected_app_route_guard",
@@ -205,8 +206,47 @@ def _assert_logs_redacted(runtime: QualityRuntime) -> None:
         capture_output=True,
     )
     logs = f"{completed.stdout}\n{completed.stderr}"
-    if any(secret and secret in logs for secret in runtime.sensitive_values):
+    generated_secret = _read_generated_identity_secret(runtime)
+    sensitive_values = (*runtime.sensitive_values, generated_secret)
+    if any(secret and secret in logs for secret in sensitive_values):
         raise BookingServiceQualityError("Runtime logs contain a secret-bearing value.")
+
+
+def _read_generated_identity_secret(runtime: QualityRuntime) -> str:
+    """Read the ephemeral identity-admin secret only for redaction scanning.
+
+    Args:
+        runtime: Running Compose project containing the read-only API mount.
+
+    Returns:
+        str: Non-empty generated secret retained only in quality-process memory.
+
+    Raises:
+        BookingServiceQualityError: When the disposable handoff is absent.
+        subprocess.CalledProcessError: When the bounded container read fails.
+
+    Side Effects:
+        Reads one file through the API container without printing its value.
+    """
+    completed = run_compose(
+        runtime,
+        "exec",
+        "-T",
+        "api",
+        API_PYTHON,
+        "-c",
+        (
+            "from pathlib import Path; "
+            "print(Path('/run/booking-quality-secrets/identity-admin-client').read_text())"
+        ),
+        capture_output=True,
+    )
+    secret = completed.stdout.strip()
+    if not secret:
+        raise BookingServiceQualityError(
+            "Generated identity administration secret was unavailable."
+        )
+    return secret
 
 
 def start_stack(runtime: QualityRuntime, timeout_seconds: float) -> None:

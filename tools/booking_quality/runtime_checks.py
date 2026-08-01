@@ -18,6 +18,10 @@ from booking_quality.config import (
     QualityRuntime,
     SeedIdentity,
 )
+from booking_quality.membership_checks import (
+    MembershipCheckTools,
+    verify_membership_management,
+)
 
 
 def read_json(url: str, timeout_seconds: float = 5.0) -> dict[str, Any]:
@@ -653,3 +657,7 @@ def verify_tenancy(runtime: QualityRuntime) -> None:
         tokens["platform_admin"],
         tokens["worker"],
     )
+    membership_tools = MembershipCheckTools(
+        _request_bearer_json, read_bearer_json, _expect_http_status, _decode_token_payload
+    )
+    verify_membership_management(runtime, tokens, membership_tools)

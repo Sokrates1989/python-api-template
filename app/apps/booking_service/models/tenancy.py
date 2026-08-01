@@ -8,6 +8,7 @@ the repository's mandatory organization predicates.
 from __future__ import annotations
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -143,6 +144,48 @@ class OrganizationMembershipRole(Base):
     membership_id = Column(String(36), primary_key=True)
     role = Column(String(32), primary_key=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class BookingIdentityRoleOutbox(Base):
+    """Persist retryable Keycloak client-role synchronization intent."""
+
+    __tablename__ = "booking_identity_role_outbox"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["organization_id", "membership_id"],
+            [
+                "booking_organization_memberships.organization_id",
+                "booking_organization_memberships.id",
+            ],
+            name="fk_booking_identity_outbox_membership_scope",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'succeeded', 'failed', 'cancelled')",
+            name="ck_booking_identity_outbox_status",
+        ),
+        Index(
+            "ix_booking_identity_outbox_status_created",
+            "status",
+            "created_at",
+        ),
+    )
+
+    id = Column(String(36), primary_key=True)
+    organization_id = Column(String(36), nullable=False)
+    membership_id = Column(String(36), nullable=False)
+    subject_id = Column(String(255), nullable=False)
+    roles = Column(JSON, nullable=False)
+    membership_revision = Column(Integer, nullable=False)
+    status = Column(String(20), nullable=False, default="pending")
+    attempt_count = Column(Integer, nullable=False, default=0)
+    last_error_code = Column(String(80), nullable=True)
+    retryable = Column(Boolean, nullable=False, default=True)
+    revision = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
 
 class BookingAuditEvent(Base):

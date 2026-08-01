@@ -2,6 +2,7 @@
 
 from apps.booking_service.models.tenancy import (
     BookingAuditEvent,
+    BookingIdentityRoleOutbox,
     BookingOrganization,
     BookingPlatformAccess,
     BookingSubject,
@@ -11,6 +12,7 @@ from apps.booking_service.models.tenancy import (
 
 __all__ = [
     "BookingAuditEvent",
+    "BookingIdentityRoleOutbox",
     "BookingOrganization",
     "BookingPlatformAccess",
     "BookingSubject",

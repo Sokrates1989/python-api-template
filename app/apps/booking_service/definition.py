@@ -1,9 +1,9 @@
 """Selected-app definition for the Booking Service backend.
 
 The profile retains PostgreSQL, Redis, and app-owned migration boundaries and
-registers only approved product routers. BKG-101 adds app-owned organization
-context and audited platform lifecycle routes while the detached neutral
-records starter and all later booking routes remain absent.
+registers only approved product routers. BKG-103 adds scoped membership
+administration beneath the existing organization route family while the
+detached neutral records starter and all later booking routes remain absent.
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ BACKEND_APP_DEFINITION = BackendAppDefinition(
         RouteSecurityRequirement(
             path_prefix="/v1/organizations",
             requirement={"BookingBearer": []},
-            methods=("get",),
+            methods=("get", "post", "put"),
         ),
     ),
 )
