@@ -42,6 +42,19 @@ docker compose `
   up --build --detach
 ```
 
+Seed the persistent database with two neutral companies and role-compatible
+memberships. The command reads `BOOKING_LOCAL_DEMO_PASSWORD` from the current
+process when present; otherwise it prompts without echo. It sends the password
+only to the fixed loopback Keycloak realm and passes only opaque subjects to
+the running API container:
+
+```powershell
+python tools\booking_service_local_seed.py
+```
+
+The seed is idempotent. Re-run it after recreating the database volume or after
+reconciling replacement Keycloak demo users.
+
 Inspect the service state and the selected API metadata:
 
 ```powershell
