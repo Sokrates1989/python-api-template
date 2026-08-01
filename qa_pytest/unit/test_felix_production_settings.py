@@ -1,4 +1,4 @@
-"""Production-only settings coverage for the fixed Felix runtime contract."""
+"""Production settings coverage for Felix's relational runtime contract."""
 
 from __future__ import annotations
 
@@ -30,15 +30,15 @@ def _secret_file(tmp_path: Path, name: str, value: str = "test-secret") -> str:
 
 
 def _production_values(tmp_path: Path) -> dict[str, object]:
-    """Build the complete Felix production settings fixture.
+    """Build a complete, deliberately non-default Felix settings fixture.
 
     Args:
         tmp_path (Path): Directory in which required secret stand-ins are
             created.
 
     Returns:
-        dict[str, object]: Public settings and file paths satisfying the fixed
-            candidate contract.
+        dict[str, object]: Public settings and file paths satisfying the
+            relational production contract without using deployment defaults.
 
     Side Effects:
         Creates isolated database and Keycloak secret stand-in files.
@@ -52,21 +52,28 @@ def _production_values(tmp_path: Path) -> dict[str, object]:
         "DB_MODE": "external",
         "DB_PASSWORD": "",
         "DB_PASSWORD_FILE": _secret_file(tmp_path, "db_password"),
-        "CORS_ORIGINS": "https://felix-app.fe-wi.com",
+        "CORS_ORIGINS": (
+            "https://web.release-smoke.example.com,"
+            "https://admin.release-smoke.example.com"
+        ),
         "AUTH_PROVIDER": "keycloak",
-        "KEYCLOAK_SERVER_URL": "https://keycloak.fe-wi.com",
+        "KEYCLOAK_SERVER_URL": "https://identity.release-smoke.example.com",
         "KEYCLOAK_INTERNAL_URL": "",
-        "KEYCLOAK_REALM": "felix-new",
-        "KEYCLOAK_CLIENT_ID": "felix-new-frontend",
+        "KEYCLOAK_REALM": "release-smoke-realm",
+        "KEYCLOAK_CLIENT_ID": "release-smoke-frontend",
         "KEYCLOAK_CLIENT_SECRET": "",
-        "KEYCLOAK_ISSUER_URL": "https://keycloak.fe-wi.com/realms/felix-new",
+        "KEYCLOAK_ISSUER_URL": (
+            "https://identity.release-smoke.example.com/"
+            "realms/release-smoke-realm"
+        ),
         "KEYCLOAK_JWKS_URL": (
-            "https://keycloak.fe-wi.com/realms/felix-new/"
+            "https://identity.release-smoke.example.com/"
+            "realms/release-smoke-realm/"
             "protocol/openid-connect/certs"
         ),
         "KEYCLOAK_ENFORCE_AUDIENCE": True,
-        "KEYCLOAK_AUDIENCE": "felix-new-backend",
-        "KEYCLOAK_ADMIN_CLIENT_ID": "felix-new-backend",
+        "KEYCLOAK_AUDIENCE": "release-smoke-api",
+        "KEYCLOAK_ADMIN_CLIENT_ID": "release-smoke-backend",
         "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE": _secret_file(
             tmp_path, "keycloak_admin_client_secret"
         ),
@@ -90,8 +97,10 @@ def _production_values(tmp_path: Path) -> dict[str, object]:
     }
 
 
-def test_complete_felix_production_settings_are_accepted(tmp_path: Path) -> None:
-    """Accept the exact candidate identity with mounted secrets.
+def test_non_default_coherent_felix_production_settings_are_accepted(
+    tmp_path: Path,
+) -> None:
+    """Accept a safe realm, clients, audience, and domains chosen at deploy.
 
     Args:
         tmp_path (Path): Pytest-owned directory for secret stand-in files.
@@ -104,6 +113,8 @@ def test_complete_felix_production_settings_are_accepted(tmp_path: Path) -> None
     assert configured.is_production_environment() is True
     assert configured.normalized_app_profile() == "felix"
     assert configured.get_auth_provider() == "keycloak"
+    assert configured.KEYCLOAK_REALM == "release-smoke-realm"
+    assert configured.KEYCLOAK_AUDIENCE == "release-smoke-api"
     assert configured.get_keycloak_admin_client_secret() == "test-secret"
 
 
@@ -115,24 +126,35 @@ def test_complete_felix_production_settings_are_accepted(tmp_path: Path) -> None
         (
             "CORS_ORIGINS",
             "http://localhost:3000",
-            "must contain only https://felix-app.fe-wi.com",
+            "must be an absolute HTTPS URL",
+        ),
+        (
+            "CORS_ORIGINS",
+            "https://*.example.com",
+            "must not contain wildcards or placeholders",
         ),
         ("DEBUG", True, "production debug flags must be disabled"),
         ("KEYCLOAK_ENFORCE_AUDIENCE", False, "must be enabled"),
         (
             "KEYCLOAK_CLIENT_ID",
-            "legacy-frontend",
-            "must be 'felix-new-frontend'",
-        ),
-        (
-            "KEYCLOAK_AUDIENCE",
-            "legacy-backend",
-            "must be 'felix-new-backend'",
+            "Unsafe Client",
+            "must be a lowercase safe identifier",
         ),
         (
             "KEYCLOAK_ADMIN_CLIENT_ID",
-            "broad-admin",
-            "must be 'felix-new-backend'",
+            "release-smoke-frontend",
+            "frontend and backend client IDs must differ",
+        ),
+        (
+            "KEYCLOAK_AUDIENCE",
+            "release-smoke-frontend",
+            "must differ from the frontend client ID",
+        ),
+        ("KEYCLOAK_REALM", "master", "protected Keycloak identifier"),
+        (
+            "KEYCLOAK_SERVER_URL",
+            "https://localhost",
+            "must use a public, non-local hostname",
         ),
         ("KEYCLOAK_CLIENT_SECRET", "direct-secret", "must be file-backed"),
         ("DB_PASSWORD", "direct-password", "must be file-backed"),
@@ -161,6 +183,51 @@ def test_felix_production_rejects_unsafe_runtime_values(
     values[field] = unsafe_value
 
     with pytest.raises(ValidationError, match=expected_message):
+        Settings(**values)
+
+
+def test_mismatched_keycloak_issuer_is_rejected(tmp_path: Path) -> None:
+    """Reject an issuer that does not derive from the selected base and realm.
+
+    Args:
+        tmp_path: Pytest-owned directory for secret stand-in files.
+
+    Returns:
+        None.
+    """
+
+    values = _production_values(tmp_path)
+    values["KEYCLOAK_ISSUER_URL"] = (
+        "https://identity.release-smoke.example.com/realms/other-realm"
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="must match KEYCLOAK_SERVER_URL and KEYCLOAK_REALM",
+    ):
+        Settings(**values)
+
+
+def test_mismatched_keycloak_jwks_url_is_rejected(tmp_path: Path) -> None:
+    """Reject a JWKS URL that drifts from the selected realm relationship.
+
+    Args:
+        tmp_path: Pytest-owned directory for secret stand-in files.
+
+    Returns:
+        None.
+    """
+
+    values = _production_values(tmp_path)
+    values["KEYCLOAK_JWKS_URL"] = (
+        "https://identity.release-smoke.example.com/realms/other-realm/"
+        "protocol/openid-connect/certs"
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="must match the selected Keycloak base URL and KEYCLOAK_REALM",
+    ):
         Settings(**values)
 
 

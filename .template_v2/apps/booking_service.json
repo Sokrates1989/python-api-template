@@ -6,7 +6,7 @@
     "contract_id": "template-v2-backend-foundation",
     "contract_version": 1,
     "foundation_revision": "1.0.0",
-    "source_sha256": "7e93e273d135313d4de477eca07468f416c77ead97f936b97cc56a12e9c85328"
+    "source_sha256": "f33ffa779ea99dffd2817f83d4ed163d52ce0fcfee6d71598754c2e2ea27975b"
   },
   "registration_schema_version": 1,
   "target_directory": "app/apps/booking_service"

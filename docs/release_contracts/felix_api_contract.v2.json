@@ -1,0 +1,61 @@
+{
+  "$schema": "felix-api-release-contract",
+  "schemaVersion": 2,
+  "owner": "api",
+  "appId": "felix",
+  "fixedRuntimeIdentity": {
+    "APP_ENVIRONMENT": "production",
+    "APP_PROFILE": "felix",
+    "BACKEND_APP_ID": "felix",
+    "AUTH_PROVIDER": "keycloak",
+    "DB_TYPE": "postgresql"
+  },
+  "keycloak": {
+    "requiredFields": [
+      "KEYCLOAK_SERVER_URL",
+      "KEYCLOAK_REALM",
+      "KEYCLOAK_CLIENT_ID",
+      "KEYCLOAK_ISSUER_URL",
+      "KEYCLOAK_JWKS_URL",
+      "KEYCLOAK_ENFORCE_AUDIENCE",
+      "KEYCLOAK_AUDIENCE",
+      "KEYCLOAK_ADMIN_CLIENT_ID",
+      "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE"
+    ],
+    "constraints": {
+      "serverUrl": "public-https-origin",
+      "realmAndClientIds": "lowercase-safe-identifiers",
+      "audienceEnforcement": true,
+      "directClientSecretAllowed": false
+    },
+    "relationships": {
+      "issuer": "{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}",
+      "jwks": "{KEYCLOAK_INTERNAL_URL|KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/certs",
+      "frontendAndBackendClientIdsDiffer": true,
+      "audienceDiffersFromFrontendClientId": true
+    }
+  },
+  "cors": {
+    "required": true,
+    "eachOrigin": "public-https-origin-without-path-wildcard-or-placeholder"
+  },
+  "routePrefixes": [
+    "/felix/v1",
+    "/v1/sync",
+    "/health"
+  ],
+  "publicFieldMap": {
+    "authProvider": "AUTH_PROVIDER",
+    "appProfile": "APP_PROFILE",
+    "backendAppId": "BACKEND_APP_ID",
+    "issuer": "KEYCLOAK_ISSUER_URL",
+    "realm": "KEYCLOAK_REALM",
+    "frontendClientId": "KEYCLOAK_CLIENT_ID",
+    "audience": "KEYCLOAK_AUDIENCE",
+    "backendClientId": "KEYCLOAK_ADMIN_CLIENT_ID"
+  },
+  "requiredSecretFileFields": [
+    "DB_PASSWORD_FILE",
+    "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE"
+  ]
+}

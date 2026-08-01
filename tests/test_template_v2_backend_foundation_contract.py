@@ -30,7 +30,7 @@ class BackendFoundationContractTest(unittest.TestCase):
         self.assertEqual(identity.contract_id, "template-v2-backend-foundation")
         self.assertEqual(identity.contract_version, 1)
         self.assertEqual(identity.foundation_revision, "1.0.0")
-        self.assertEqual(identity.source_file_count, 14)
+        self.assertEqual(identity.source_file_count, 15)
         self.assertRegex(identity.manifest_sha256, r"^[0-9a-f]{64}$")
         self.assertRegex(identity.source_sha256, r"^[0-9a-f]{64}$")
         self.assertNotIn(str(REPOSITORY_ROOT), repr(identity))

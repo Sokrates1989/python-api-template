@@ -34,6 +34,7 @@ except ModuleNotFoundError:
     )
 try:
     from tools.release_command import CommandRunner, ReleaseError
+    from tools.release_image_startup_smoke import run_image_startup_smoke
     from tools.release_registry_publication import (
         push_image_with_auth_retry as _push_image_with_auth_retry,
         run_visible as _run_visible,
@@ -48,6 +49,9 @@ try:
     )
 except ModuleNotFoundError:
     from release_command import CommandRunner, ReleaseError  # type: ignore[no-redef]
+    from release_image_startup_smoke import (  # type: ignore[no-redef]
+        run_image_startup_smoke,
+    )
     from release_registry_publication import (  # type: ignore[no-redef]
         push_image_with_auth_retry as _push_image_with_auth_retry,
         run_visible as _run_visible,
@@ -496,6 +500,13 @@ def build_release_image(
     )
     _print_status("[VERIFY] Inspecting runtime user, labels, and healthcheck...")
     inspection = _inspect_image(repository_root, plan, runner)
+    startup_smoke = run_image_startup_smoke(
+        repository_root,
+        plan.app_id,
+        plan.image_ref,
+        runner,
+        progress=_print_status,
+    )
     evidence_request = ImageEvidenceRequest(
         app_id=plan.app_id,
         package_name=plan.package_name,
@@ -525,6 +536,7 @@ def build_release_image(
         "deploymentAuthorized": False,
         "plan": asdict(plan),
         "image": inspection,
+        "startupSmoke": startup_smoke,
         **evidence,
         "publication": {
             "versionTagPushed": False,

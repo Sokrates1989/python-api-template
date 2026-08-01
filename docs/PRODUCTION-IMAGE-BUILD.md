@@ -68,10 +68,12 @@ The action builds the selected version and then:
 
 1. verifies the production/Felix OCI identity;
 2. verifies the non-root `linux/amd64` runtime contract;
-3. runs the applicable test and startup/health gates;
-4. creates dependency and full-image SPDX evidence;
-5. applies the fixable HIGH/CRITICAL vulnerability policy; and
-6. writes a sanitized local receipt.
+3. runs an app-owned production startup import with deliberately non-default,
+   coherent public identity when the selected app declares that fixture;
+4. runs the remaining applicable test and health gates;
+5. creates dependency and full-image SPDX evidence;
+6. applies the fixable HIGH/CRITICAL vulnerability policy; and
+7. writes a sanitized local receipt.
 
 It does not change Git history, push source, push an image, update `latest`, or
 deploy anything.
@@ -114,11 +116,9 @@ The version published by the menu must exactly match
 `site-configs/felix.json` in the Swarm deployment repository before preflight
 or deployment begins.
 
-For example, if the API repository currently contains `0.1.1`, choosing
-**Keep current** publishes or replaces `0.1.1` without another version commit.
-The Swarm Felix profile must then select `0.1.1`. If the operator instead
-chooses the next patch `0.1.2`, the Swarm profile must be committed at `0.1.2`.
-Never substitute `latest`.
+For the corrected Felix release, the API repository and Swarm profile both
+select `0.1.2`. Choose **Keep current** to publish or replace `0.1.2` without
+another version commit. Never substitute `latest`.
 
 The registry digest printed by the publication receipt is the value that the
 strict Swarm preflight resolves and binds to deployment evidence.

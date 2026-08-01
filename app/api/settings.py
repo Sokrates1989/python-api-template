@@ -11,6 +11,11 @@ from typing import TYPE_CHECKING, Literal, Optional, Self
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from api.production_contract_validation import (
+    collect_production_cors_errors,
+    collect_production_keycloak_errors,
+)
+
 if TYPE_CHECKING:
     from apps.contracts import BackendAppDefinition
 
@@ -254,10 +259,7 @@ class Settings(BaseSettings):
                 "Cognito/AWS authentication settings must be absent: "
                 + ", ".join(configured_legacy_auth)
             )
-        if self.get_cors_origins() != ["https://felix-app.fe-wi.com"]:
-            errors.append(
-                "CORS_ORIGINS must contain only https://felix-app.fe-wi.com"
-            )
+        errors.extend(collect_production_cors_errors(self.get_cors_origins()))
         return errors
 
     def _collect_production_debug_errors(self) -> list[str]:
@@ -291,49 +293,26 @@ class Settings(BaseSettings):
         return errors
 
     def _collect_production_keycloak_errors(self) -> list[str]:
-        """Collect missing or drifting fixed Keycloak candidate settings.
+        """Collect unsafe or relationally inconsistent Keycloak settings.
 
         Returns:
-            list[str]: Keycloak contract violations, or an empty list when the
-                issuer, realm, clients, and audience match the candidate realm.
+            list[str]: Keycloak contract violations, or an empty list when a
+                complete operator-selected identity is safe and coherent.
         """
-        required_values = {
-            "KEYCLOAK_SERVER_URL": self.KEYCLOAK_SERVER_URL,
-            "KEYCLOAK_REALM": self.KEYCLOAK_REALM,
-            "KEYCLOAK_CLIENT_ID": self.KEYCLOAK_CLIENT_ID,
-            "KEYCLOAK_AUDIENCE": self.KEYCLOAK_AUDIENCE,
-            "KEYCLOAK_ADMIN_CLIENT_ID": self.KEYCLOAK_ADMIN_CLIENT_ID,
-            "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE": (
-                self.KEYCLOAK_ADMIN_CLIENT_SECRET_FILE
-            ),
-        }
-        missing = [
-            name
-            for name, value in required_values.items()
-            if not str(value or "").strip()
-        ]
-        errors = (
-            ["missing production Keycloak settings: " + ", ".join(missing)]
-            if missing
-            else []
+        return collect_production_keycloak_errors(
+            server_url=str(self.KEYCLOAK_SERVER_URL or "").strip(),
+            internal_url=str(self.KEYCLOAK_INTERNAL_URL or "").strip(),
+            realm=str(self.KEYCLOAK_REALM or "").strip(),
+            frontend_client_id=str(self.KEYCLOAK_CLIENT_ID or "").strip(),
+            issuer_url=str(self.KEYCLOAK_ISSUER_URL or "").strip(),
+            jwks_url=str(self.KEYCLOAK_JWKS_URL or "").strip(),
+            enforce_audience=self.KEYCLOAK_ENFORCE_AUDIENCE,
+            audience=str(self.KEYCLOAK_AUDIENCE or "").strip(),
+            backend_client_id=str(
+                self.KEYCLOAK_ADMIN_CLIENT_ID or ""
+            ).strip(),
+            backend_secret_file=self.KEYCLOAK_ADMIN_CLIENT_SECRET_FILE.strip(),
         )
-        expected_values = {
-            "KEYCLOAK_SERVER_URL": "https://keycloak.fe-wi.com",
-            "KEYCLOAK_REALM": "felix",
-            "KEYCLOAK_CLIENT_ID": "felix-new-frontend",
-            "KEYCLOAK_AUDIENCE": "felix-new-backend",
-            "KEYCLOAK_ADMIN_CLIENT_ID": "felix-new-backend",
-        }
-        for setting_name, expected_value in expected_values.items():
-            actual_value = str(getattr(self, setting_name) or "").strip()
-            if actual_value and actual_value != expected_value:
-                errors.append(f"{setting_name} must be '{expected_value}'")
-        expected_issuer = "https://keycloak.fe-wi.com/realms/felix"
-        if self.get_keycloak_issuer_url() != expected_issuer:
-            errors.append(f"KEYCLOAK_ISSUER_URL must be {expected_issuer}")
-        if not self.KEYCLOAK_ENFORCE_AUDIENCE:
-            errors.append("KEYCLOAK_ENFORCE_AUDIENCE must be enabled")
-        return errors
 
     def _collect_direct_secret_errors(self) -> list[str]:
         """Collect secret values forbidden in the production environment.

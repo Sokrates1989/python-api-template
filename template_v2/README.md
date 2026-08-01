@@ -53,6 +53,9 @@ applications.
 - `foundation_revision` changes when supported semantics change.
 - `source_sha256` covers every sorted `source_files` entry after canonical LF
   normalization. Paths, byte lengths, and bytes are domain-separated.
+- `app/api/production_contract_validation.py` is part of that foundation so
+  generated backends retain the shared relational URL/identity safety helpers
+  imported by `settings.py`.
 - `standard_connected_profile` is Keycloak with PostgreSQL.
 - Cognito and MongoDB remain explicit retained compatibility, not defaults.
 

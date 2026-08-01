@@ -84,6 +84,31 @@ class ReleaseImageContractTests(unittest.TestCase):
         self.assertIn('if [[ "$confirmation" =~ ^[Nn]$ ]]', source)
         self.assertIn("never pushes Git", source)
 
+    def test_felix_declares_a_non_default_production_startup_smoke(self) -> None:
+        """Require Felix image proof to exercise relational Keycloak identity.
+
+        Returns:
+            None.
+        """
+
+        smoke_path = (
+            REPOSITORY_ROOT
+            / "app"
+            / "apps"
+            / "felix"
+            / "deployment"
+            / "release-startup-smoke.env"
+        )
+        source = smoke_path.read_text(encoding="utf-8")
+
+        self.assertIn("APP_ENVIRONMENT=production", source)
+        self.assertIn("KEYCLOAK_REALM=release-smoke-realm", source)
+        self.assertIn("KEYCLOAK_CLIENT_ID=release-smoke-frontend", source)
+        self.assertIn("KEYCLOAK_AUDIENCE=release-smoke-api", source)
+        self.assertNotIn("felix-new-frontend", source)
+        self.assertNotIn("keycloak.fe-wi.com", source)
+        self.assertNotIn("KEYCLOAK_CLIENT_SECRET=", source)
+
     def test_build_only_handler_contains_no_push_or_latest_command(self) -> None:
         source = (
             REPOSITORY_ROOT / "setup" / "modules" / "menu_handlers.sh"
@@ -119,6 +144,7 @@ class ReleaseImageContractTests(unittest.TestCase):
             "tools/release_api_image.py",
             "tools/release_command.py",
             "tools/release_image_evidence.py",
+            "tools/release_image_startup_smoke.py",
             "tools/release_registry_publication.py",
             "tools/release_source_publication.py",
         ):

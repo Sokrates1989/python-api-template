@@ -162,7 +162,42 @@ class ReleaseApiImageTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
+        self._write_startup_smoke_fixture()
         self.runner = FakeRunner()
+
+    def _write_startup_smoke_fixture(self) -> None:
+        """Create one public non-default app-owned startup-smoke fixture.
+
+        Returns:
+            None.
+
+        Side Effects:
+            Writes the selected app's dedicated release-smoke environment.
+        """
+
+        deployment_root = self.app_root / "deployment"
+        deployment_root.mkdir()
+        (deployment_root / "release-startup-smoke.env").write_text(
+            "\n".join(
+                (
+                    "APP_ENVIRONMENT=production",
+                    "BACKEND_APP_ID=felix",
+                    "APP_PROFILE=felix",
+                    "DB_PASSWORD_FILE=/tmp/release-smoke/database-password",
+                    "CORS_ORIGINS=https://web.release-smoke.example.com",
+                    "AUTH_PROVIDER=keycloak",
+                    "KEYCLOAK_SERVER_URL=https://identity.release-smoke.example.com",
+                    "KEYCLOAK_REALM=release-smoke-realm",
+                    "KEYCLOAK_CLIENT_ID=release-smoke-frontend",
+                    "KEYCLOAK_AUDIENCE=release-smoke-api",
+                    "KEYCLOAK_ADMIN_CLIENT_ID=release-smoke-backend",
+                    "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE="
+                    "/tmp/release-smoke/keycloak-client-secret",
+                    "",
+                )
+            ),
+            encoding="utf-8",
+        )
 
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
@@ -280,6 +315,7 @@ class ReleaseApiImageTests(unittest.TestCase):
         self.assertEqual(image_sbom["spdxVersion"], "SPDX-2.3")
         self.assertEqual(dependency_sbom["packages"][0]["name"], "fastapi")
         self.assertEqual(receipt["imageEvidence"]["sbomScanner"], "trivy")
+        self.assertIs(receipt["startupSmoke"]["executed"], True)
         self.assertTrue((self.repository / plan.receipt_path).is_file())
 
     def test_build_command_binds_identity_revision_lock_and_pinned_pdm(self) -> None:
@@ -303,6 +339,70 @@ class ReleaseApiImageTests(unittest.TestCase):
         )
         self.assertIn("PDM_VERSION=2.27.0", rendered)
         self.assertIn("--platform linux/amd64", rendered)
+
+    def test_build_runs_non_default_startup_smoke_before_image_evidence(self) -> None:
+        """Import the built production app with non-default coherent identity.
+
+        Returns:
+            None.
+        """
+
+        plan = self._plan()
+        self._set_valid_inspection(plan)
+
+        receipt = build_release_image(self.repository, plan, runner=self.runner)
+
+        commands = self.runner.commands
+        inspect_index = next(
+            index
+            for index, command in enumerate(commands)
+            if command[:3] == ("docker", "image", "inspect")
+        )
+        smoke_index = next(
+            index
+            for index, command in enumerate(commands)
+            if command[:2] == ("docker", "run")
+        )
+        evidence_index = next(
+            index
+            for index, command in enumerate(commands)
+            if command[:2] == ("trivy", "image")
+        )
+        smoke_command = commands[smoke_index]
+        rendered = " ".join(smoke_command)
+        self.assertLess(inspect_index, smoke_index)
+        self.assertLess(smoke_index, evidence_index)
+        self.assertIn("KEYCLOAK_REALM=release-smoke-realm", smoke_command)
+        self.assertIn("KEYCLOAK_CLIENT_ID=release-smoke-frontend", smoke_command)
+        self.assertIn("KEYCLOAK_AUDIENCE=release-smoke-api", smoke_command)
+        self.assertIn("import main", rendered)
+        self.assertIs(receipt["startupSmoke"]["executed"], True)
+        self.assertNotIn("felix-new-frontend", rendered)
+
+    def test_startup_smoke_rejects_direct_secret_fields(self) -> None:
+        """Block a release fixture that attempts to embed a secret value.
+
+        Returns:
+            None.
+        """
+
+        fixture = (
+            self.app_root / "deployment" / "release-startup-smoke.env"
+        )
+        fixture.write_text(
+            fixture.read_text(encoding="utf-8")
+            + "KEYCLOAK_CLIENT_SECRET=unsafe-placeholder\n",
+            encoding="utf-8",
+        )
+        plan = self._plan()
+        self._set_valid_inspection(plan)
+
+        with self.assertRaisesRegex(ReleaseError, "direct secret field"):
+            build_release_image(self.repository, plan, runner=self.runner)
+
+        self.assertFalse(
+            any(command[:2] == ("docker", "push") for command in self.runner.commands)
+        )
 
     def test_build_rejects_root_image_before_receipt(self) -> None:
         plan = self._plan()
@@ -396,7 +496,13 @@ class ReleaseApiImageTests(unittest.TestCase):
             if command == ("docker", "push", "sokrates1989/python-api-felix:latest")
         )
         self.assertLess(commit_index, build_index)
+        smoke_index = next(
+            i
+            for i, command in enumerate(commands)
+            if command[:2] == ("docker", "run")
+        )
         self.assertLess(build_index, version_push_index)
+        self.assertLess(smoke_index, version_push_index)
         self.assertLess(version_push_index, latest_push_index)
         self.assertFalse(any(command == ("git", "push") for command in commands))
         self.assertEqual(receipt["publication"]["registryDigest"], REGISTRY_DIGEST)

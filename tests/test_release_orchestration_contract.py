@@ -16,7 +16,7 @@ CONTRACT_PATH = (
     Path(__file__).resolve().parents[1]
     / "docs"
     / "release_contracts"
-    / "felix_api_contract.v1.json"
+    / "felix_api_contract.v2.json"
 )
 
 
@@ -31,22 +31,34 @@ class FelixApiReleaseContractTests(unittest.TestCase):
     def test_runtime_identity_is_explicitly_felix(self) -> None:
         """Build and runtime selectors both target Felix production."""
 
-        self.assertEqual(self.contract["schemaVersion"], 1)
+        self.assertEqual(self.contract["schemaVersion"], 2)
         self.assertEqual(self.contract["owner"], "api")
         self.assertEqual(self.contract["appId"], "felix")
-        self.assertEqual(self.contract["appProfile"], "felix")
-        self.assertEqual(self.contract["backendAppId"], "felix")
-        self.assertEqual(self.contract["environment"], "production")
-        self.assertEqual(self.contract["authProvider"], "keycloak")
+        identity = self.contract["fixedRuntimeIdentity"]
+        self.assertEqual(identity["APP_PROFILE"], "felix")
+        self.assertEqual(identity["BACKEND_APP_ID"], "felix")
+        self.assertEqual(identity["APP_ENVIRONMENT"], "production")
+        self.assertEqual(identity["AUTH_PROVIDER"], "keycloak")
+        self.assertEqual(identity["DB_TYPE"], "postgresql")
 
-    def test_candidate_keycloak_identity_is_isolated(self) -> None:
-        """The API reuses realm Felix through its separate candidate client."""
+    def test_keycloak_contract_uses_relationships_not_frozen_identity(self) -> None:
+        """Permit coherent deployment identity without weakening boundaries."""
 
-        candidate = self.contract["candidate"]
+        keycloak = self.contract["keycloak"]
+        relationships = keycloak["relationships"]
+        serialized = json.dumps(keycloak)
 
-        self.assertEqual(candidate["realm"], "felix")
-        self.assertEqual(candidate["frontendClientId"], "felix-new-frontend")
-        self.assertTrue(candidate["issuerUrl"].endswith("/realms/felix"))
+        self.assertIn("KEYCLOAK_REALM", keycloak["requiredFields"])
+        self.assertIn("KEYCLOAK_CLIENT_ID", keycloak["requiredFields"])
+        self.assertEqual(
+            relationships["issuer"],
+            "{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}",
+        )
+        self.assertIs(relationships["frontendAndBackendClientIdsDiffer"], True)
+        self.assertIs(relationships["audienceDiffersFromFrontendClientId"], True)
+        self.assertIs(keycloak["constraints"]["audienceEnforcement"], True)
+        self.assertNotIn("keycloak.fe-wi.com", serialized)
+        self.assertNotIn("felix-new-frontend", serialized)
 
     def test_api_service_routes_have_no_redundant_api_prefix(self) -> None:
         """No API-owned route uses the forbidden `/api` prefix."""
@@ -64,7 +76,10 @@ class FelixApiReleaseContractTests(unittest.TestCase):
         secret_fields = self.contract["requiredSecretFileFields"]
         serialized = json.dumps(self.contract).lower()
 
-        self.assertEqual(secret_fields, ["KEYCLOAK_ADMIN_CLIENT_SECRET_FILE"])
+        self.assertEqual(
+            secret_fields,
+            ["DB_PASSWORD_FILE", "KEYCLOAK_ADMIN_CLIENT_SECRET_FILE"],
+        )
         self.assertNotIn("client_secret=", serialized)
         self.assertNotIn("password=", serialized)
 
