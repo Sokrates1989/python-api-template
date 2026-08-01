@@ -36,6 +36,7 @@ from .backend_lifecycle_planning import (
     build_backend_lifecycle_plan,
     render_registration,
 )
+from .windows_permissions import reset_windows_inherited_permissions
 
 
 TransactionObserver = Callable[[str], None]
@@ -182,6 +183,7 @@ def _replace_registration(context: BackendLifecycleContext, content: bytes) -> N
     try:
         with os.fdopen(descriptor, "wb") as handle:
             handle.write(content)
+        reset_windows_inherited_permissions(temporary)
         if temporary.read_bytes() != content:
             raise BackendLifecycleError(["backend registration: byte verification failed"])
         os.replace(temporary, context.registration_path)
@@ -297,6 +299,7 @@ def create_backend_target(
     previous_registration = _registration_bytes(context)
     published = False
     try:
+        reset_windows_inherited_permissions(staging)
         _write_tree(staging, context.desired_files)
         _notify(observer, "before_target_publish")
         os.rename(staging, context.target_path)
@@ -436,6 +439,7 @@ def _swap_existing_target(
     resulting_digest = _bundle_sha256(files)
     swapped = False
     try:
+        reset_windows_inherited_permissions(staging)
         _write_tree(staging, files)
         _notify(observer, "before_target_swap")
         os.rename(context.target_path, backup)
