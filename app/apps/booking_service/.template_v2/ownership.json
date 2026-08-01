@@ -9,11 +9,11 @@
       "sha256": "b1a9adc66521ec58167e51cd7d2b8cc036f4f2a6a081127f45f9547b8a3d672a"
     },
     {
-      "bytes": 827,
+      "bytes": 751,
       "classification": "handwritten",
       "detached": true,
       "path": ".template_v2/public_runtime.json",
-      "sha256": "7b1012c21f0203fd7d60ec8ca24a66f78bc3a4d5411bfbe3f12c7d0fed73e389"
+      "sha256": "77d08b257feb9db8cdfe0b2faf8bdeed66fc7972d446911d979218e9c3e4b912"
     },
     {
       "bytes": 172,
@@ -23,11 +23,11 @@
       "sha256": "7c218940bfe6fc947a2a338a9163778cce57187fd96dc855b6d45272e263a125"
     },
     {
-      "bytes": 165,
+      "bytes": 280,
       "classification": "handwritten",
       "detached": true,
       "path": "__init__.py",
-      "sha256": "3c3761b78a6c72cb530adbed29cb6436d872e4a84b3149455627c9595be55c8e"
+      "sha256": "483a97f21ffa7323f7f65485cb30907f78aa0622eac57a88f8df78659c59d28d"
     },
     {
       "bytes": 283,
@@ -51,11 +51,11 @@
       "sha256": "5bc5de6510ef1e4f64307f51fcf242ae3a7b2c809ccd57f6c7eb352006fc63ac"
     },
     {
-      "bytes": 1191,
+      "bytes": 982,
       "classification": "handwritten",
       "detached": true,
       "path": "definition.py",
-      "sha256": "b94cdfcbe56f40a7c7da906e1e1d4a31ed05aa1393b3f7d55bb9801851b11cbe"
+      "sha256": "151fb470df96b833ef9246c9b67322703c2baedeeb7c0a3ca13aa30127cd552f"
     },
     {
       "bytes": 178,
@@ -86,11 +86,11 @@
       "sha256": "211e229387c5844ac1d576d23c0845bd9684004bb87b29b1f4acf257e1fe9395"
     },
     {
-      "bytes": 263,
+      "bytes": 335,
       "classification": "handwritten",
       "detached": true,
       "path": "migrations/README.md",
-      "sha256": "52ca2fd252c49c1bff60120b4e78b16ad19173cfc4b7c167b3964bcaa35c5c70"
+      "sha256": "3649f7297449339d72d28fb94a4baaf6270296c9dc640455f49c63ef9098bde4"
     },
     {
       "bytes": 1776,
@@ -128,11 +128,11 @@
       "sha256": "0cf969473387102ca0fe7c18f91913d3c29eb5bcef4fb6097f4d27dad7670338"
     },
     {
-      "bytes": 1090,
+      "bytes": 2098,
       "classification": "handwritten",
       "detached": true,
       "path": "README.md",
-      "sha256": "ffd0182048467c3455ea7fe0cc77946f9dd0209b6dab506a9dc64c75a19c16a6"
+      "sha256": "0d4307b33c85075668702502d5656714c021fa84aa8a274c290d47d81ecad530"
     },
     {
       "bytes": 44,
