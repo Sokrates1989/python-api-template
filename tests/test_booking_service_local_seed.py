@@ -59,6 +59,7 @@ class BookingServiceLocalSeedTests(unittest.TestCase):
         self.assertEqual(command[:2], ("docker", "compose"))
         self.assertIn("booking-service-local", command)
         self.assertIn("apps.booking_service.quality.seed_tenancy", command)
+        self.assertIn("--customer-organization-id", command)
         self.assertNotIn("password", " ".join(command).lower())
         self.assertNotIn("9094", command)
 

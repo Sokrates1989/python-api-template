@@ -26,10 +26,11 @@ from backend.database import close_database, get_database_handler, initialize_da
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the exact command-line contract for disposable tenancy seeding.
+    """Build the exact command-line contract for tenancy fixture seeding.
 
     Returns:
-        argparse.ArgumentParser: Parser requiring four subjects and two tenants.
+        argparse.ArgumentParser: Parser requiring four subjects and two tenants,
+            with an optional customer membership used by persistent manual tests.
     """
     parser = argparse.ArgumentParser(description="Seed Booking tenancy proof data.")
     for role in ("platform", "organization-admin", "worker", "customer"):
@@ -38,6 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--organization-a-name", required=True)
     parser.add_argument("--organization-b-id", required=True)
     parser.add_argument("--organization-b-name", required=True)
+    parser.add_argument("--customer-organization-id")
     return parser
 
 
@@ -143,6 +145,8 @@ async def seed(args: argparse.Namespace) -> None:
         None: Changes are committed once every fixture is staged.
 
     Raises:
+        ValueError: When an optional customer organization is not one of the
+            two deterministic fixture organizations.
         RuntimeError: When selected-app database startup is unavailable.
         SQLAlchemyError: When a constraint or database operation fails.
     """
@@ -179,6 +183,20 @@ async def seed(args: argparse.Namespace) -> None:
             "organization_admin",
         )
         await _ensure_membership(session, args.organization_a_id, args.worker_subject, "worker")
+        if args.customer_organization_id:
+            if args.customer_organization_id not in {
+                args.organization_a_id,
+                args.organization_b_id,
+            }:
+                raise ValueError(
+                    "Customer organization must be one of the fixture organizations."
+                )
+            await _ensure_membership(
+                session,
+                args.customer_organization_id,
+                args.customer_subject,
+                "customer",
+            )
         await session.commit()
 
 

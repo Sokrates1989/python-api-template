@@ -245,6 +245,8 @@ def build_seed_command(subjects: Mapping[str, str]) -> tuple[str, ...]:
         QUALITY_ORGANIZATION_B_ID,
         "--organization-b-name",
         QUALITY_ORGANIZATION_B_NAME,
+        "--customer-organization-id",
+        QUALITY_ORGANIZATION_A_ID,
     )
 
 

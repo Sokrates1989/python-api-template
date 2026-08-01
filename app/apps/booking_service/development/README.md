@@ -43,10 +43,11 @@ docker compose `
 ```
 
 Seed the persistent database with two neutral companies and role-compatible
-memberships. The command reads `BOOKING_LOCAL_DEMO_PASSWORD` from the current
-process when present; otherwise it prompts without echo. It sends the password
-only to the fixed loopback Keycloak realm and passes only opaque subjects to
-the running API container:
+memberships. The organization administrator belongs to both companies; the
+worker and customer belong only to the North fixture. The command reads
+`BOOKING_LOCAL_DEMO_PASSWORD` from the current process when present; otherwise
+it prompts without echo. It sends the password only to the fixed loopback
+Keycloak realm and passes only opaque subjects to the running API container:
 
 ```powershell
 python tools\booking_service_local_seed.py
