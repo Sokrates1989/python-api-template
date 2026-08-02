@@ -2,7 +2,7 @@
   "contract_id": "template-v2-backend-foundation",
   "contract_version": 1,
   "foundation_revision": "1.0.0",
-  "manifest_sha256": "cc6d7b2fcc9ed86b86726dd4b2f59e72f981af09d482f24822d3322ebf2ff209",
-  "source_file_count": 14,
-  "source_sha256": "7e93e273d135313d4de477eca07468f416c77ead97f936b97cc56a12e9c85328"
+  "manifest_sha256": "42ab09f529e7db27e24f43b591cda2ab56b102cd3426aed989c146c3742655ca",
+  "source_file_count": 15,
+  "source_sha256": "f33ffa779ea99dffd2817f83d4ed163d52ce0fcfee6d71598754c2e2ea27975b"
 }

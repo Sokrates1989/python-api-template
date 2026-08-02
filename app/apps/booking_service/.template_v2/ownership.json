@@ -6,7 +6,7 @@
       "classification": "generated",
       "detached": false,
       "path": ".template_v2/backend_foundation.json",
-      "sha256": "b1a9adc66521ec58167e51cd7d2b8cc036f4f2a6a081127f45f9547b8a3d672a"
+      "sha256": "739a4609b3f237d861b5237089d0b1cfd21a771e3f91a598bfca61b72b60dedd"
     },
     {
       "bytes": 751,
@@ -200,7 +200,7 @@
     },
     {
       "recipe_id": "keycloak_auth",
-      "version": "1.0.0"
+      "version": "1.0.1"
     },
     {
       "recipe_id": "records_starter",
