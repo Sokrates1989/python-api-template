@@ -43,6 +43,16 @@ Before continuing, verify that the menu reports the intended active backend
 app. For the Felix candidate release it must be `felix`; stop if another app
 is selected.
 
+The selected app, shared image inputs, and release machinery must be committed.
+Uncommitted files below another app's `app/apps/<sibling_app>/` directory—and
+other files unrelated to the selected image or release mechanism—do not block
+the release. When such work exists, the publisher automatically creates a
+temporary detached build context at the exact recorded Git revision. This
+prevents Docker's repository-level build context from copying unrelated changes
+into the selected app image. Selected-app files and shared runtime, migration,
+Docker, or release-tool files remain blocking because silently omitting those
+changes would publish or validate source different from the intended release.
+
 Menu numbering may evolve, so select actions by their full labels rather than
 relying on a fixed number.
 
@@ -92,7 +102,8 @@ Press Enter at the default-yes confirmation to continue, or enter `n` to
 cancel. The menu then performs one ordered release:
 
 1. keeps the current manifest unchanged or updates it to the chosen increment;
-2. creates a version-bump commit only for an incremented version;
+2. creates a version-bump commit containing only the selected app manifest for
+   an incremented version, even when sibling-app files are already staged;
 3. rebuilds and repeats all image proof gates against the exact selected HEAD;
 4. pushes or replaces the selected semantic-version image tag;
 5. records the registry-reported digest; and

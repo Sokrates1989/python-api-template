@@ -40,11 +40,12 @@ try:
         run_visible as _run_visible,
     )
     from tools.release_source_publication import (
-        ensure_clean_worktree as _ensure_clean_worktree,
+        committed_release_context as _committed_release_context,
         ensure_release_branch as _ensure_release_branch,
         extract_push_digest as _extract_push_digest,
         git_output as _git_output,
         prepare_release_source as _prepare_release_source,
+        validate_release_worktree as _validate_release_worktree,
         validate_version_transition as _validate_version_transition,
     )
 except ModuleNotFoundError:
@@ -57,11 +58,12 @@ except ModuleNotFoundError:
         run_visible as _run_visible,
     )
     from release_source_publication import (  # type: ignore[no-redef]
-        ensure_clean_worktree as _ensure_clean_worktree,
+        committed_release_context as _committed_release_context,
         ensure_release_branch as _ensure_release_branch,
         extract_push_digest as _extract_push_digest,
         git_output as _git_output,
         prepare_release_source as _prepare_release_source,
+        validate_release_worktree as _validate_release_worktree,
         validate_version_transition as _validate_version_transition,
     )
 
@@ -483,21 +485,37 @@ def build_release_image(
         Builds a local Docker image and writes ignored SPDX/receipt artifacts.
 
     Raises:
-        ReleaseError: If the tree is dirty or any build, inspect, SBOM, or
-            vulnerability gate fails.
+        ReleaseError: If selected-app/shared source is dirty or any build,
+            inspect, SBOM, or vulnerability gate fails.
     """
 
     runner = runner or CommandRunner()
-    _print_status("[CHECK] Verifying clean selected-app source...")
-    _ensure_clean_worktree(repository_root, runner)
+    _print_status("[CHECK] Verifying committed selected-app release source...")
+    worktree_state = _validate_release_worktree(
+        repository_root,
+        plan.app_id,
+        runner,
+    )
+    if worktree_state.unrelated_paths:
+        _print_status(
+            "[CHECK] Allowing "
+            f"{len(worktree_state.unrelated_paths)} unrelated dirty path(s); "
+            "Docker will build the exact committed revision."
+        )
     _print_status("[CHECK] Verifying Docker Buildx...")
     runner.run(("docker", "buildx", "version"), cwd=repository_root)
     _print_status(f"[BUILD] Building Docker image: {plan.image_ref}")
-    _run_visible(
+    with _committed_release_context(
+        repository_root,
+        plan.git_revision,
+        worktree_state,
         runner,
-        _docker_build_command(plan),
-        cwd=repository_root,
-    )
+    ) as build_context:
+        _run_visible(
+            runner,
+            _docker_build_command(plan),
+            cwd=build_context,
+        )
     _print_status("[VERIFY] Inspecting runtime user, labels, and healthcheck...")
     inspection = _inspect_image(repository_root, plan, runner)
     startup_smoke = run_image_startup_smoke(
@@ -594,7 +612,7 @@ def publish_release_image(
     runner = runner or CommandRunner()
     repository_root = repository_root.resolve()
     _print_status("[RELEASE] Validating source and selected version...")
-    _ensure_clean_worktree(repository_root, runner)
+    _validate_release_worktree(repository_root, app_id, runner)
     _ensure_release_branch(repository_root, runner)
     manifest_path = repository_root / "app" / "apps" / app_id / "pyproject.toml"
     _, current_version = _read_project_manifest(manifest_path)

@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import re
 import subprocess
+import tempfile
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, Sequence
+from typing import Iterator, Protocol, Sequence
 
 try:
     from tools.release_command import ReleaseError
@@ -16,6 +19,19 @@ except ModuleNotFoundError:
 SEMVER_PATTERN = re.compile(
     r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$"
 )
+
+
+@dataclass(frozen=True)
+class ReleaseWorktreeState:
+    """Describe dirty unrelated paths allowed during one app release.
+
+    Attributes:
+        unrelated_paths: Repository-relative dirty paths outside the selected
+            app, shared image inputs, and release machinery. These paths are
+            deliberately excluded by building from the recorded Git revision.
+    """
+
+    unrelated_paths: tuple[str, ...]
 
 
 class PublicationCommandRunner(Protocol):
@@ -66,34 +82,183 @@ def git_output(
     return completed.stdout.strip()
 
 
-def ensure_clean_worktree(
+def _parse_porcelain_paths(status: str) -> tuple[str, ...]:
+    """Extract repository-relative paths from NUL-safe Git status output.
+
+    Args:
+        status: Output from ``git status --porcelain=v1 -z --no-renames``.
+
+    Returns:
+        tuple[str, ...]: Dirty paths in Git's repository-relative form.
+
+    Raises:
+        ReleaseError: If Git returns a malformed porcelain record.
+    """
+
+    if not status:
+        return ()
+    records = status.split("\0") if "\0" in status else status.splitlines()
+    paths: list[str] = []
+    for record in records:
+        if not record:
+            continue
+        if len(record) < 4 or record[2] != " ":
+            raise ReleaseError(
+                "Git returned malformed worktree status while validating the "
+                "selected-app release source."
+            )
+        paths.append(record[3:])
+    return tuple(paths)
+
+
+def _is_release_input_path(path: str, selected_app_id: str) -> bool:
+    """Identify selected-app, shared-image, or release-tool source.
+
+    Args:
+        path: Git repository-relative dirty path.
+        selected_app_id: Backend app currently being released.
+
+    Returns:
+        bool: ``True`` when the path can affect the selected image or the
+        mechanism that validates and publishes it.
+    """
+
+    normalized = path.replace("\\", "/")
+    parts = normalized.split("/")
+    if len(parts) >= 4 and parts[0:2] == ["app", "apps"]:
+        return parts[2] == selected_app_id
+    if normalized.startswith("app/"):
+        return True
+    if normalized == "alembic.ini" or normalized.startswith("alembic/"):
+        return True
+    if normalized in {"Dockerfile", ".dockerignore"}:
+        return True
+    if normalized.startswith("tools/release_"):
+        return True
+    return normalized in {
+        "quick-start.sh",
+        "quick-start.ps1",
+        "setup/modules/menu_handlers.sh",
+    }
+
+
+def validate_release_worktree(
     repository_root: Path,
+    selected_app_id: str,
     runner: PublicationCommandRunner,
-) -> None:
-    """Require a completely clean Git tree.
+) -> ReleaseWorktreeState:
+    """Require committed selected-app and shared source for publication.
 
     Args:
         repository_root: Git working tree.
+        selected_app_id: Backend app selected for the image release.
         runner: Injectable command runner.
+
+    Returns:
+        ReleaseWorktreeState: Allowed unrelated dirt that requires an
+        isolated committed build context.
 
     Side Effects:
         Executes a read-only Git status query.
 
     Raises:
-        ReleaseError: If tracked, staged, or untracked changes exist.
+        ReleaseError: If selected-app or shared paths have tracked, staged, or
+            untracked changes.
     """
 
-    status = git_output(
-        runner,
-        repository_root,
-        "status",
-        "--porcelain",
-        "--untracked-files=all",
+    completed = runner.run(
+        (
+            "git",
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--no-renames",
+        ),
+        cwd=repository_root,
     )
-    if status:
+    dirty_paths = _parse_porcelain_paths(completed.stdout)
+    blocking_paths = tuple(
+        path
+        for path in dirty_paths
+        if _is_release_input_path(path, selected_app_id)
+    )
+    unrelated_paths = tuple(
+        path for path in dirty_paths if path not in blocking_paths
+    )
+    if blocking_paths:
+        rendered_paths = ", ".join(blocking_paths[:8])
+        if len(blocking_paths) > 8:
+            rendered_paths += f", ... (+{len(blocking_paths) - 8} more)"
         raise ReleaseError(
-            "Build & Push requires a clean Git worktree before the version bump."
+            "Build & Push requires committed selected-app and shared release "
+            f"source. Commit or stash these blocking paths: {rendered_paths}. "
+            "Dirty unrelated paths are allowed and excluded by building from "
+            "committed HEAD instead."
         )
+    return ReleaseWorktreeState(unrelated_paths=unrelated_paths)
+
+
+@contextmanager
+def committed_release_context(
+    repository_root: Path,
+    revision: str,
+    worktree_state: ReleaseWorktreeState,
+    runner: PublicationCommandRunner,
+) -> Iterator[Path]:
+    """Yield a Docker context that cannot contain dirty unrelated source.
+
+    A clean release scope can be used directly. When unrelated work is present, this
+    helper creates a temporary detached Git worktree at the release plan's
+    exact revision so Docker cannot copy those uncommitted changes.
+
+    Args:
+        repository_root: Canonical API Git working tree.
+        revision: Exact full Git revision recorded by the release plan.
+        worktree_state: Result of selected-app worktree validation.
+        runner: Injectable command runner.
+
+    Yields:
+        Path: Canonical or temporary committed Docker build context.
+
+    Side Effects:
+        May add and remove a temporary detached Git worktree.
+
+    Raises:
+        ReleaseError: Through the runner if temporary worktree creation or
+            cleanup fails.
+    """
+
+    if not worktree_state.unrelated_paths:
+        yield repository_root
+        return
+
+    with tempfile.TemporaryDirectory(prefix="api-release-context-") as parent:
+        build_context = Path(parent) / "source"
+        runner.run(
+            (
+                "git",
+                "worktree",
+                "add",
+                "--detach",
+                str(build_context),
+                revision,
+            ),
+            cwd=repository_root,
+        )
+        try:
+            yield build_context
+        finally:
+            runner.run(
+                (
+                    "git",
+                    "worktree",
+                    "remove",
+                    "--force",
+                    str(build_context),
+                ),
+                cwd=repository_root,
+            )
 
 
 def ensure_release_branch(
@@ -265,8 +430,11 @@ def prepare_release_source(
         (
             "git",
             "commit",
+            "--only",
             "-m",
             f"[Release] {app_id} API {target_version}",
+            "--",
+            manifest_argument,
         ),
         cwd=repository_root,
     )

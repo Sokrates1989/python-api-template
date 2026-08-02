@@ -28,7 +28,10 @@ class FakeRunner:
     """Record argument-vector effects and provide deterministic Docker/Git data."""
 
     def __init__(self) -> None:
+        """Initialize deterministic command outputs and invocation records."""
+
         self.commands: list[tuple[str, ...]] = []
+        self.command_cwds: list[Path] = []
         self.inspect_document: list[dict[str, object]] = []
         self.revision = REVISION
         self.worktree_status = ""
@@ -43,9 +46,25 @@ class FakeRunner:
         cwd: Path,
         check: bool = True,
     ) -> subprocess.CompletedProcess[str]:
+        """Record a command and return its configured deterministic result.
+
+        Args:
+            command: Shell-free executable and argument vector.
+            cwd: Requested process working directory.
+            check: Accepted for parity with the production command runner.
+
+        Returns:
+            subprocess.CompletedProcess[str]: Simulated process outcome.
+
+        Side Effects:
+            Records the command and working directory, mutates the simulated
+            revision after a commit, and may write scanner output fixtures.
+        """
+
         del check
         normalized = tuple(command)
         self.commands.append(normalized)
+        self.command_cwds.append(cwd)
         stdout = ""
         if normalized[:3] == ("git", "rev-parse", "HEAD"):
             stdout = self.revision + "\n"
@@ -111,6 +130,15 @@ class FakeRunner:
         return subprocess.CompletedProcess(normalized, 0, stdout=stdout, stderr="")
 
     def which(self, executable: str) -> str | None:
+        """Resolve the simulated vulnerability scanner executable.
+
+        Args:
+            executable: Tool name requested by release evidence code.
+
+        Returns:
+            str | None: Fake Trivy path when enabled; otherwise ``None``.
+        """
+
         if executable == "trivy" and self.trivy_available:
             return "/usr/bin/trivy"
         return None
@@ -280,13 +308,64 @@ class ReleaseApiImageTests(unittest.TestCase):
 
     def test_local_build_fails_closed_on_dirty_worktree(self) -> None:
         plan = self._plan()
-        self.runner.worktree_status = " M app/apps/felix/pyproject.toml\n"
+        self.runner.worktree_status = " M app/apps/felix/pyproject.toml\0"
 
-        with self.assertRaisesRegex(ReleaseError, "clean Git worktree"):
+        with self.assertRaisesRegex(ReleaseError, "selected-app and shared"):
             build_release_image(self.repository, plan, runner=self.runner)
 
         self.assertFalse(
             any(command[:3] == ("docker", "buildx", "build") for command in self.runner.commands)
+        )
+
+    def test_local_build_isolates_dirty_sibling_app_at_committed_head(self) -> None:
+        """Allow sibling work without copying it into the selected-app image."""
+
+        plan = self._plan()
+        self._set_valid_inspection(plan)
+        self.runner.worktree_status = (
+            " M app/apps/booking_service/models/company.py\0"
+            "?? app/apps/booking_service/schemas/company.py\0"
+            " M tools/booking_quality/runtime_checks.py\0"
+            "?? tests/test_booking_service_company_settings.py\0"
+        )
+
+        receipt = build_release_image(self.repository, plan, runner=self.runner)
+
+        add_index = next(
+            index
+            for index, command in enumerate(self.runner.commands)
+            if command[:3] == ("git", "worktree", "add")
+        )
+        build_index = next(
+            index
+            for index, command in enumerate(self.runner.commands)
+            if command[:3] == ("docker", "buildx", "build")
+        )
+        remove_index = next(
+            index
+            for index, command in enumerate(self.runner.commands)
+            if command[:3] == ("git", "worktree", "remove")
+        )
+        self.assertLess(add_index, build_index)
+        self.assertLess(build_index, remove_index)
+        self.assertNotEqual(self.runner.command_cwds[build_index], self.repository)
+        self.assertEqual(self.runner.commands[add_index][-1], REVISION)
+        self.assertEqual(receipt["plan"]["app_id"], "felix")
+
+    def test_local_build_blocks_dirty_shared_image_input(self) -> None:
+        """Reject a dirty shared runtime path that affects every app image."""
+
+        plan = self._plan()
+        self.runner.worktree_status = " M app/backend/config.py\0"
+
+        with self.assertRaisesRegex(ReleaseError, "app/backend/config.py"):
+            build_release_image(self.repository, plan, runner=self.runner)
+
+        self.assertFalse(
+            any(
+                command[:3] == ("docker", "buildx", "build")
+                for command in self.runner.commands
+            )
         )
 
     def test_local_build_never_pushes_and_writes_lock_sbom_receipt(self) -> None:
@@ -448,7 +527,7 @@ class ReleaseApiImageTests(unittest.TestCase):
         )
 
     def test_publish_commits_bump_then_pushes_version_and_latest(self) -> None:
-        """Commit a greater version before proving and publishing its image."""
+        """Commit only the app bump before proving and publishing its image."""
 
         original_plan = self._plan()
         del original_plan
@@ -474,6 +553,9 @@ class ReleaseApiImageTests(unittest.TestCase):
                 },
             }
         ]
+        self.runner.worktree_status = (
+            "M  app/apps/booking_service/models/company.py\0"
+        )
 
         receipt = publish_release_image(
             self.repository,
@@ -484,6 +566,7 @@ class ReleaseApiImageTests(unittest.TestCase):
 
         commands = self.runner.commands
         commit_index = next(i for i, command in enumerate(commands) if command[:2] == ("git", "commit"))
+        commit_command = commands[commit_index]
         build_index = next(i for i, command in enumerate(commands) if command[:3] == ("docker", "buildx", "build"))
         version_push_index = next(
             i
@@ -496,6 +579,8 @@ class ReleaseApiImageTests(unittest.TestCase):
             if command == ("docker", "push", "sokrates1989/python-api-felix:latest")
         )
         self.assertLess(commit_index, build_index)
+        self.assertIn("--only", commit_command)
+        self.assertEqual(commit_command[-1], "app/apps/felix/pyproject.toml")
         smoke_index = next(
             i
             for i, command in enumerate(commands)
