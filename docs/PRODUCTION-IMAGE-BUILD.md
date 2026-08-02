@@ -128,8 +128,8 @@ The version published by the menu must exactly match
 or deployment begins.
 
 For the coordinated visible-version release, the API repository and Swarm
-profile both select `1.0.7`. Choose **Keep current** to publish or replace
-`1.0.7` without another version commit. Never substitute `latest`.
+profile both select `1.0.8`. Choose **Keep current** to publish or replace
+`1.0.8` without another version commit. Never substitute `latest`.
 
 The registry digest printed by the publication receipt is the value that the
 strict Swarm preflight resolves and binds to deployment evidence.

@@ -38,7 +38,16 @@ Startup/shutdown and diagnostics now emit structured key-value events, for examp
 - `event=startup.provider_probe_failed`
 - `event=shutdown.complete`
 
-HTTP debug middleware (when explicitly enabled) also emits structured events:
+Every runtime emits privacy-safe request outcomes using declared route
+templates rather than concrete paths, query strings, headers, or bodies:
+
+- `event=http.request.completed`
+- `event=http.request.validation_failed`
+- `event=http.request.failed`
+
+Validation diagnostics contain only field locations and validator types. They
+do not contain rejected values. HTTP debug middleware, when explicitly
+enabled, additionally emits detailed structured events:
 
 - `event=http.request`
 - `event=http.response`

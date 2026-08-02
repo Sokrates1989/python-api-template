@@ -50,7 +50,7 @@ def setup_middleware(app: FastAPI) -> None:
 
     Middleware are applied in the order they are called:
     1. Database lock middleware (blocks writes during restore)
-    2. Logging middleware (explicit opt-in debug logging)
+    2. Logging middleware (safe summaries plus explicit opt-in diagnostics)
     3. CORS middleware (outermost layer — handles browser preflight first)
 
     Args:

@@ -67,11 +67,11 @@ class FelixAppIdentityTests(unittest.TestCase):
         self.assertIn("version=settings.IMAGE_TAG", main_source)
 
     def test_changed_felix_api_uses_the_coordinated_release_floor(self) -> None:
-        """Publish the branding change at the shared 1.0.7 stack floor."""
+        """Publish diagnostics correction at the shared 1.0.8 stack floor."""
         with PYPROJECT_PATH.open("rb") as project_file:
             project = tomllib.load(project_file)
 
-        self.assertEqual(project["project"]["version"], "1.0.7")
+        self.assertEqual(project["project"]["version"], "1.0.8")
 
 
 if __name__ == "__main__":

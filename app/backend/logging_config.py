@@ -350,9 +350,10 @@ def _configure_logger_hierarchy(level: int) -> None:
     appropriate verbosity clamping.
 
     Uvicorn startup lines (uvicorn.error at INFO) are kept so the API
-    address and process ID remain visible. Per-request access lines
-    (uvicorn.access) are suppressed at INFO because they produce a line
-    per request and obscure lifecycle events; they remain visible at DEBUG.
+    address and process ID remain visible. Raw per-request access lines
+    (uvicorn.access) are suppressed because they expose concrete paths and
+    duplicate the privacy-safe route-template middleware summaries; they
+    remain available at DEBUG for exceptional local diagnosis.
 
     SQLAlchemy engine loggers echo every SQL statement at INFO when the
     SQLAlchemy ``echo`` flag is set or propagation reaches the root logger.
@@ -374,8 +375,8 @@ def _configure_logger_hierarchy(level: int) -> None:
         target_logger.propagate = True
         target_logger.setLevel(level)
 
-    # Suppress per-request access lines unless the operator explicitly wants
-    # DEBUG output — at INFO they flood the startup stream.
+    # Suppress raw access lines unless the operator explicitly wants DEBUG.
+    # The always-on request middleware records safe route-template outcomes.
     access_logger = logging.getLogger("uvicorn.access")
     access_logger.handlers.clear()
     access_logger.propagate = True
