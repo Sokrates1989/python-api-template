@@ -29,11 +29,11 @@ selected_backend_app = settings.get_backend_app_definition()
 
 def _selected_openapi_identity() -> tuple[str, str]:
     """
-    Resolve generated app branding without changing legacy app definitions.
+    Resolve selected-app branding through the standard metadata export.
 
-    The generic ``BACKEND_APP_CONFIG`` export is part of generated Template V2
-    apps. Older handwritten apps use their existing deployment-level settings
-    until they explicitly adopt the generated metadata contract.
+    Apps that expose ``BACKEND_APP_CONFIG`` own their OpenAPI title and
+    description. Older app definitions retain deployment-level fallbacks until
+    they explicitly adopt the same app-config contract.
 
     Args:
         None.
@@ -60,7 +60,7 @@ def _selected_openapi_identity() -> tuple[str, str]:
     return settings.APP_NAME, settings.APP_DESCRIPTION
 
 
-# Initialize FastAPI with generated-app branding and legacy settings fallbacks.
+# Initialize FastAPI with selected-app branding and legacy settings fallbacks.
 openapi_title, openapi_description = _selected_openapi_identity()
 app = FastAPI(
     title=openapi_title,

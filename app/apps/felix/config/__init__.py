@@ -1,4 +1,5 @@
-"""Configuration metadata for the Felix backend app."""
-from apps.felix.config.app_metadata import FELIX_APP_CONFIG
+"""Public configuration metadata for the Felix backend app."""
 
-__all__ = ["FELIX_APP_CONFIG"]
+from apps.felix.config.app_metadata import BACKEND_APP_CONFIG, FELIX_APP_CONFIG
+
+__all__ = ["BACKEND_APP_CONFIG", "FELIX_APP_CONFIG"]

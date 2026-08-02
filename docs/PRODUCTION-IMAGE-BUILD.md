@@ -116,9 +116,9 @@ The version published by the menu must exactly match
 `site-configs/felix.json` in the Swarm deployment repository before preflight
 or deployment begins.
 
-For the corrected Felix release, the API repository and Swarm profile both
-select `0.1.2`. Choose **Keep current** to publish or replace `0.1.2` without
-another version commit. Never substitute `latest`.
+For the coordinated visible-version release, the API repository and Swarm
+profile both select `1.0.7`. Choose **Keep current** to publish or replace
+`1.0.7` without another version commit. Never substitute `latest`.
 
 The registry digest printed by the publication receipt is the value that the
 strict Swarm preflight resolves and binds to deployment evidence.

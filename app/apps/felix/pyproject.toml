@@ -3,7 +3,7 @@ distribution = false
 
 [project]
 name = "felix"
-version = "0.1.2"
+version = "1.0.7"
 description = "App-specific backend dependency manifest for the Felix backend."
 requires-python = ">=3.13,<3.14"
 dependencies = [
