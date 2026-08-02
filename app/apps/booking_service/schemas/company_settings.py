@@ -361,7 +361,8 @@ class CompanySettingsResponse(BaseModel):
         worker_selection_mode: Organization-wide worker-choice default.
         payment_configuration_status: Explicit placeholder until BKG-700.
         revision: Monotonic settings revision.
-        locations: Active tenant-owned locations in stable display order.
+        locations: Active locations for members; administrators also receive
+            retained archived locations needed for lifecycle recovery.
     """
 
     model_config = ConfigDict(frozen=True)

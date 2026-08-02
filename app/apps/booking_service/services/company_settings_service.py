@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.booking_service.dependencies.identity import BookingPrincipal
 from apps.booking_service.domain.company_settings import LocationStatus
+from apps.booking_service.domain.tenancy import MembershipRole
 from apps.booking_service.models.company_settings import (
     BookingCompanySettings,
     BookingLocation,
@@ -93,12 +94,19 @@ class BookingCompanySettingsService:
             TenancyError: For absent, foreign, inactive, or uninitialized scope.
         """
         async with self._sessions()() as session:
-            await require_active_organization_access(session, principal, organization_id)
+            access = await require_active_organization_access(
+                session,
+                principal,
+                organization_id,
+            )
             repository = CompanySettingsRepository(session)
             settings = await repository.get_settings(organization_id)
             if settings is None:
                 raise self._settings_missing()
-            locations = await repository.list_active_locations(organization_id)
+            locations = await repository.list_locations(
+                organization_id,
+                include_archived=MembershipRole.ORGANIZATION_ADMIN in access.roles,
+            )
             response = company_settings_response(settings, locations)
             await session.commit()
         return response
@@ -134,7 +142,10 @@ class BookingCompanySettingsService:
             await session.flush()
             after = settings_audit_state(settings)
             await self._audit_settings(session, principal, settings, before, after)
-            locations = await repository.list_active_locations(organization_id)
+            locations = await repository.list_locations(
+                organization_id,
+                include_archived=True,
+            )
             response = company_settings_response(settings, locations)
             await session.commit()
         return response

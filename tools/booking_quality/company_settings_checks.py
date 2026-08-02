@@ -284,6 +284,21 @@ def _archive_and_assert_final_guard(
     )
     if not isinstance(archived, dict) or archived.get("status") != "archived":
         raise BookingServiceQualityError("Location soft archive drifted.")
+    settings_url = _settings_url(runtime, QUALITY_ORGANIZATION_A_ID)
+    administrator_locations = tools.read_json(
+        settings_url,
+        tokens["organization_admin"],
+    ).get("locations", [])
+    worker_locations = tools.read_json(settings_url, tokens["worker"]).get(
+        "locations",
+        [],
+    )
+    archived_id = archived.get("location_id")
+    if (
+        not any(item.get("location_id") == archived_id for item in administrator_locations)
+        or any(item.get("location_id") == archived_id for item in worker_locations)
+    ):
+        raise BookingServiceQualityError("Archived location visibility drifted.")
     first = settings.get("locations", [None])[0]
     if not isinstance(first, dict):
         raise BookingServiceQualityError("Initial location proof fixture disappeared.")

@@ -47,11 +47,11 @@ def company_settings_response(
     settings: BookingCompanySettings,
     locations: tuple[BookingLocation, ...],
 ) -> CompanySettingsResponse:
-    """Build one complete settings response with active locations only.
+    """Build one complete settings response from caller-authorized locations.
 
     Args:
         settings: Persisted company settings row.
-        locations: Active locations already scoped to the same tenant.
+        locations: Locations already scoped and visibility-filtered for caller.
 
     Returns:
         CompanySettingsResponse: Public profile, booking policy, and locations.

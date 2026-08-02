@@ -72,6 +72,8 @@ identifiers. Archive is a revision-checked lifecycle transition rather than a
 physical delete, so current and future historical references remain intact;
 the final active location cannot be archived. Every successful settings or
 location mutation writes a sanitized audit event in the same transaction.
+Ordinary members read active places only, while same-tenant administrators also
+receive archived places required for explicit reactivation.
 
 Every later route must belong to an approved booking slice and must never use
 a redundant `/api/` prefix. Production role delivery requires a dedicated

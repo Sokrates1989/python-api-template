@@ -114,13 +114,34 @@ class CompanySettingsRepository:
         Returns:
             tuple[BookingLocation, ...]: Stable name/identifier ordered rows.
         """
+        return await self.list_locations(organization_id, include_archived=False)
+
+    async def list_locations(
+        self,
+        organization_id: str,
+        *,
+        include_archived: bool,
+    ) -> tuple[BookingLocation, ...]:
+        """List tenant locations with an explicit archive-visibility policy.
+
+        Args:
+            organization_id: Tenant owning every returned location.
+            include_archived: Whether retained archived rows are included.
+
+        Returns:
+            tuple[BookingLocation, ...]: Stable status/name/identifier ordered rows.
+        """
+        conditions = [BookingLocation.organization_id == organization_id]
+        if not include_archived:
+            conditions.append(BookingLocation.status == "active")
         result = await self._session.execute(
             select(BookingLocation)
-            .where(
-                BookingLocation.organization_id == organization_id,
-                BookingLocation.status == "active",
+            .where(*conditions)
+            .order_by(
+                BookingLocation.status,
+                BookingLocation.display_name,
+                BookingLocation.id,
             )
-            .order_by(BookingLocation.display_name, BookingLocation.id)
         )
         return tuple(result.scalars().all())
 
