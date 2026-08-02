@@ -17,12 +17,20 @@ docker compose up -d
 python tools\booking_local_realm.py check
 python tools\booking_local_realm.py reconcile
 python tools\booking_local_realm.py verify
-python tools\booking_local_realm.py login-check
 ```
 
-The reconcile and login commands read `BOOKING_LOCAL_DEMO_PASSWORD` from the
-ignored Keycloak `.env`. They do not print it. The reconciler also writes the
-confidential backend-client value to its ignored `data/local-realms` path.
+The Keycloak `.env` remains deployment-owned and contains no Booking-specific
+demo credential. Reconciliation does not read or reset demo-user passwords. It
+writes the confidential backend-client value and a non-secret demo-user subject
+manifest to its ignored `data/local-realms` path.
+
+Set or rotate browser-test credentials explicitly. This operation prompts
+twice for a distinct local-only password of at least 16 characters per user and
+retains each value only in process and Admin API request memory:
+
+```powershell
+python tools\booking_local_realm.py credentials
+```
 
 ## Start and stop
 
@@ -44,10 +52,10 @@ docker compose `
 
 Seed the persistent database with two neutral companies and role-compatible
 memberships. The organization administrator belongs to both companies; the
-worker and customer belong only to the North fixture. The command reads
-`BOOKING_LOCAL_DEMO_PASSWORD` from the current process when present; otherwise
-it prompts without echo. It sends the password only to the fixed loopback
-Keycloak realm and passes only opaque subjects to the running API container:
+worker and customer belong only to the North fixture. The command reads the
+non-secret reconciler-produced subject manifest and passes only validated
+opaque subjects to the running API container. It never reads or uses demo-user
+credentials:
 
 ```powershell
 python tools\booking_service_local_seed.py

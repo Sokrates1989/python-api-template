@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import base64
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest.mock import Mock, patch
 
 
@@ -21,28 +22,75 @@ import booking_service_local_seed as local_seed  # noqa: E402
 class BookingServiceLocalSeedTests(unittest.TestCase):
     """Keep local tenant seeding bounded, role-safe, and credential-safe."""
 
-    def test_collect_subjects_requires_exact_issuer_audience_and_roles(self) -> None:
-        """Project all four opaque subjects only from matching local claims."""
+    def _write_manifest(
+        self,
+        directory: str,
+        mutate: Any | None = None,
+    ) -> Path:
+        """Write one disposable reconciler-compatible subject manifest.
 
-        tokens: dict[str, str] = {}
-        for _, username, _, role in local_seed.DEFAULT_IDENTITY_SPECS:
-            claims = {
-                "aud": "keycloak",
-                "iss": local_seed.KEYCLOAK_ISSUER,
-                "resource_access": {"keycloak": {"roles": [role]}},
-                "sub": f"subject-{role}",
-            }
-            payload = base64.urlsafe_b64encode(
-                json.dumps(claims).encode("utf-8")
-            ).rstrip(b"=").decode("ascii")
-            tokens[username] = f"header.{payload}.signature"
-        requester = Mock(side_effect=lambda username, _: tokens[username])
+        Args:
+            directory: Temporary destination directory.
+            mutate: Optional callable that changes the decoded manifest.
 
-        subjects = local_seed.collect_subjects("local-password", requester=requester)
+        Returns:
+            Path to the written JSON manifest.
+
+        Side Effects:
+            Writes one temporary JSON file.
+        """
+
+        payload: dict[str, Any] = {
+            "schemaVersion": 1,
+            "kind": "local-keycloak-demo-user-subjects",
+            "contractFingerprint": "a" * 64,
+            "targetOrigin": local_seed.KEYCLOAK_ORIGIN,
+            "realm": local_seed.KEYCLOAK_REALM,
+            "users": [
+                {
+                    "username": username,
+                    "subject": f"subject-{role}",
+                    "roles": [role],
+                }
+                for _, username, _, role in local_seed.DEFAULT_IDENTITY_SPECS
+            ],
+        }
+        if mutate is not None:
+            mutate(payload)
+        path = Path(directory) / "subjects.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
+
+    def test_collect_subjects_requires_exact_manifest_identity_and_roles(self) -> None:
+        """Project all four opaque subjects from reconciler output only."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write_manifest(directory)
+            subjects = local_seed.collect_subjects(path)
 
         self.assertEqual(subjects["platform_admin"], "subject-platform_admin")
         self.assertEqual(subjects["customer"], "subject-customer")
-        self.assertEqual(requester.call_count, 4)
+
+    def test_collect_subjects_rejects_wrong_realm_and_duplicate_subjects(self) -> None:
+        """Fail closed for foreign manifests and ambiguous Keycloak subjects."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            foreign = self._write_manifest(
+                directory,
+                lambda payload: payload.__setitem__("realm", "foreign-realm"),
+            )
+            with self.assertRaises(local_seed.BookingServiceLocalSeedError):
+                local_seed.collect_subjects(foreign)
+
+            duplicate = self._write_manifest(
+                directory,
+                lambda payload: payload["users"][1].__setitem__(
+                    "subject",
+                    payload["users"][0]["subject"],
+                ),
+            )
+            with self.assertRaises(local_seed.BookingServiceLocalSeedError):
+                local_seed.collect_subjects(duplicate)
 
     def test_seed_command_is_fixed_and_contains_no_password(self) -> None:
         """Build only the persistent Compose target with opaque subjects."""
@@ -63,8 +111,8 @@ class BookingServiceLocalSeedTests(unittest.TestCase):
         self.assertNotIn("password", " ".join(command).lower())
         self.assertNotIn("9094", command)
 
-    def test_runner_removes_demo_password_from_compose_environment(self) -> None:
-        """Never forward the interactive login credential to Docker Compose."""
+    def test_runner_never_constructs_a_credential_environment(self) -> None:
+        """Execute Compose without reading or forwarding demo credentials."""
 
         runner = Mock()
         environment_file = Mock()
@@ -72,16 +120,11 @@ class BookingServiceLocalSeedTests(unittest.TestCase):
         with patch.object(local_seed, "COMPOSE_ENV_FILE", environment_file):
             local_seed.run_seed_command(
                 ("docker", "compose", "ps"),
-                source_environment={
-                    local_seed.DEMO_PASSWORD_ENV: "local-secret-value",
-                    "SAFE_VALUE": "retained",
-                },
                 runner=runner,
             )
 
-        child_environment = runner.call_args.kwargs["env"]
-        self.assertNotIn(local_seed.DEMO_PASSWORD_ENV, child_environment)
-        self.assertEqual(child_environment["SAFE_VALUE"], "retained")
+        self.assertNotIn("env", runner.call_args.kwargs)
+        self.assertNotIn("password", " ".join(runner.call_args.args[0]).lower())
 
 
 if __name__ == "__main__":

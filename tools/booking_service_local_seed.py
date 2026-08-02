@@ -1,26 +1,20 @@
-"""Seed persistent Booking Service development tenants from local Keycloak.
+"""Seed persistent Booking Service tenants from reconciled local identities.
 
-The command authenticates the four neutral demo users only against the fixed
-``localhost:9090`` realm, validates their Booking client-role projections, and
-passes only opaque subject identifiers to the existing app-owned seed module.
-The demo password remains in process memory and is removed from the Docker
-Compose child environment.
+The command reads the non-secret, environment-specific subject manifest written
+by the persistent Keycloak reconciler and passes only validated opaque subject
+identifiers to the app-owned seed module. It never authenticates demo users or
+reads their credentials.
 """
 
 from __future__ import annotations
 
-import base64
-import getpass
+import argparse
 import json
-import os
 import subprocess
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
 from booking_quality.config import (
     DEFAULT_IDENTITY_SPECS,
@@ -35,165 +29,133 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 DEVELOPMENT_ROOT = REPOSITORY_ROOT / "app" / "apps" / "booking_service" / "development"
 COMPOSE_FILE = DEVELOPMENT_ROOT / "compose.yml"
 COMPOSE_ENV_FILE = DEVELOPMENT_ROOT / ".env"
-KEYCLOAK_ISSUER = "http://localhost:9090/realms/booking-service-example"
-TOKEN_URL = f"{KEYCLOAK_ISSUER}/protocol/openid-connect/token"
-FRONTEND_CLIENT_ID = "keycloak"
-DEMO_PASSWORD_ENV = "BOOKING_LOCAL_DEMO_PASSWORD"
+KEYCLOAK_ORIGIN = "http://localhost:9090"
+KEYCLOAK_REALM = "booking-service-example"
+DEFAULT_SUBJECT_MANIFEST = (
+    REPOSITORY_ROOT.parents[1]
+    / "keycloak"
+    / "data"
+    / "local-realms"
+    / KEYCLOAK_REALM
+    / "demo-user-subjects.v1.json"
+)
 
 
 class BookingServiceLocalSeedError(RuntimeError):
     """Report a credential-safe local fixture-seeding failure."""
 
 
-TokenRequester = Callable[[str, str], str]
-
-
-def _decode_claims(access_token: str) -> dict[str, Any]:
-    """Decode the payload of one local Keycloak JWT.
+def _read_subject_manifest(path: Path) -> dict[str, Any]:
+    """Read one regular JSON subject manifest from the reconciler.
 
     Args:
-        access_token: Compact JWT retained only in process memory.
+        path: Explicit or conventional ignored manifest path.
 
     Returns:
-        dict[str, Any]: Parsed token-claim object.
+        Parsed JSON object.
 
     Raises:
-        BookingServiceLocalSeedError: When the token payload is malformed.
+        BookingServiceLocalSeedError: If the path is linked, absent, unreadable,
+            malformed, or not an object.
     """
 
     try:
-        payload = access_token.split(".")[1]
-        padded = payload + "=" * (-len(payload) % 4)
-        decoded = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
-        claims = json.loads(decoded)
-    except (IndexError, UnicodeError, ValueError, json.JSONDecodeError) as error:
+        if path.is_symlink() or not path.is_file():
+            raise BookingServiceLocalSeedError(
+                "Run the persistent Keycloak reconciliation before seeding."
+            )
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
         raise BookingServiceLocalSeedError(
-            "Local Keycloak returned a malformed access token."
+            "The local Keycloak subject manifest is unreadable or invalid."
         ) from error
-    if not isinstance(claims, dict):
+    if not isinstance(payload, dict):
         raise BookingServiceLocalSeedError(
-            "Local Keycloak returned a non-object token payload."
+            "The local Keycloak subject manifest must be an object."
         )
-    return claims
+    return payload
 
 
-def _request_access_token(
-    username: str,
-    password: str,
-    timeout_seconds: float = 10.0,
-) -> str:
-    """Request one demo-user token from the fixed loopback realm.
+def _validate_manifest_identity(payload: Mapping[str, Any]) -> None:
+    """Validate the stable persistent-realm identity of one manifest.
 
     Args:
-        username: Neutral reconciler-owned demo username.
-        password: Local-only password retained in request memory.
-        timeout_seconds: Loopback request timeout; defaults to ten seconds.
+        payload: Parsed subject-manifest object.
 
     Returns:
-        str: Compact access token used only to derive safe claims.
+        None.
 
     Raises:
-        BookingServiceLocalSeedError: When login fails or no token is returned.
-
-    Side Effects:
-        Performs one password-grant request to ``localhost:9090``.
+        BookingServiceLocalSeedError: If schema, target, realm, or fingerprint
+            does not match the persistent local contract.
     """
 
-    request = Request(
-        TOKEN_URL,
-        data=urlencode(
-            {
-                "client_id": FRONTEND_CLIENT_ID,
-                "grant_type": "password",
-                "username": username,
-                "password": password,
-            }
-        ).encode("utf-8"),
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        method="POST",
+    fingerprint = payload.get("contractFingerprint")
+    valid_fingerprint = (
+        isinstance(fingerprint, str)
+        and len(fingerprint) == 64
+        and all(character in "0123456789abcdef" for character in fingerprint)
     )
-    try:
-        with urlopen(request, timeout=timeout_seconds) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except (HTTPError, URLError, UnicodeError, json.JSONDecodeError) as error:
+    if not (
+        payload.get("schemaVersion") == 1
+        and payload.get("kind") == "local-keycloak-demo-user-subjects"
+        and payload.get("targetOrigin") == KEYCLOAK_ORIGIN
+        and payload.get("realm") == KEYCLOAK_REALM
+        and valid_fingerprint
+    ):
         raise BookingServiceLocalSeedError(
-            f"Local login failed for demo user '{username}'."
-        ) from error
-    token = payload.get("access_token") if isinstance(payload, dict) else None
-    if not isinstance(token, str) or not token:
-        raise BookingServiceLocalSeedError(
-            f"Local login returned no access token for demo user '{username}'."
+            "The local Keycloak subject manifest identity is invalid."
         )
-    return token
 
 
-def _validated_subject(claims: Mapping[str, Any], expected_role: str) -> str:
-    """Validate one token projection and return its opaque subject.
+def collect_subjects(path: Path) -> dict[str, str]:
+    """Load and validate role-to-subject mappings from reconciliation output.
 
     Args:
-        claims: Decoded local Keycloak access-token claims.
-        expected_role: Booking client role required for this demo persona.
+        path: Ignored subject-manifest path produced by Keycloak reconciliation.
 
     Returns:
-        str: Non-empty opaque Keycloak subject identifier.
+        Four Booking roles mapped to opaque Keycloak subjects.
 
     Raises:
-        BookingServiceLocalSeedError: When issuer, audience, role, or subject
-            claims do not match the persistent realm contract.
+        BookingServiceLocalSeedError: If identities, roles, or subjects are
+            incomplete, duplicated, or unexpected.
     """
 
-    audience = claims.get("aud")
-    audience_matches = audience == FRONTEND_CLIENT_ID or (
-        isinstance(audience, list) and FRONTEND_CLIENT_ID in audience
-    )
-    resource_access = claims.get("resource_access")
-    client_access = (
-        resource_access.get(FRONTEND_CLIENT_ID)
-        if isinstance(resource_access, Mapping)
-        else None
-    )
-    roles = client_access.get("roles") if isinstance(client_access, Mapping) else None
-    subject = claims.get("sub")
-    valid = (
-        claims.get("iss") == KEYCLOAK_ISSUER
-        and audience_matches
-        and isinstance(roles, list)
-        and expected_role in roles
-        and isinstance(subject, str)
-        and bool(subject.strip())
-    )
-    if not valid:
+    payload = _read_subject_manifest(path)
+    _validate_manifest_identity(payload)
+    raw_users = payload.get("users")
+    if not isinstance(raw_users, list):
         raise BookingServiceLocalSeedError(
-            f"Local token projection did not match role '{expected_role}'."
+            "The local Keycloak subject manifest users are invalid."
         )
-    return subject.strip()
-
-
-def collect_subjects(
-    password: str,
-    requester: TokenRequester = _request_access_token,
-) -> dict[str, str]:
-    """Authenticate every demo persona and collect role-to-subject mappings.
-
-    Args:
-        password: Shared local-only demo password retained in memory.
-        requester: Injectable token requester used by unit tests.
-
-    Returns:
-        dict[str, str]: Four Booking roles mapped to opaque Keycloak subjects.
-
-    Raises:
-        BookingServiceLocalSeedError: When any login or role projection fails.
-
-    Side Effects:
-        Performs four loopback token requests through the default requester.
-    """
-
+    users = {
+        str(item.get("username")): item
+        for item in raw_users
+        if isinstance(item, dict)
+    }
+    expected_usernames = {spec[1] for spec in DEFAULT_IDENTITY_SPECS}
+    if set(users) != expected_usernames or len(raw_users) != len(users):
+        raise BookingServiceLocalSeedError(
+            "The local Keycloak subject manifest users do not match the demo contract."
+        )
     subjects: dict[str, str] = {}
     for _, username, _, role in DEFAULT_IDENTITY_SPECS:
-        subjects[role] = _validated_subject(
-            _decode_claims(requester(username, password)),
-            role,
+        item = users[username]
+        subject = item.get("subject")
+        if (
+            set(item) != {"roles", "subject", "username"}
+            or item.get("roles") != [role]
+            or not isinstance(subject, str)
+            or not subject.strip()
+        ):
+            raise BookingServiceLocalSeedError(
+                f"The reconciled identity for '{username}' is invalid."
+            )
+        subjects[role] = subject.strip()
+    if len(set(subjects.values())) != len(subjects):
+        raise BookingServiceLocalSeedError(
+            "The local Keycloak subject manifest contains duplicate subjects."
         )
     return subjects
 
@@ -252,14 +214,12 @@ def build_seed_command(subjects: Mapping[str, str]) -> tuple[str, ...]:
 
 def run_seed_command(
     command: tuple[str, ...],
-    source_environment: Mapping[str, str] | None = None,
     runner: Callable[..., subprocess.CompletedProcess[Any]] = subprocess.run,
 ) -> None:
-    """Execute the local seed command without forwarding the demo password.
+    """Execute the bounded local seed command.
 
     Args:
         command: Exact bounded Compose argument vector.
-        source_environment: Optional process environment; defaults to ``os.environ``.
         runner: Injectable subprocess boundary used by unit tests.
 
     Returns:
@@ -277,60 +237,49 @@ def run_seed_command(
         raise BookingServiceLocalSeedError(
             "Create app/apps/booking_service/development/.env before seeding."
         )
-    child_environment = dict(source_environment or os.environ)
-    child_environment.pop(DEMO_PASSWORD_ENV, None)
     runner(
         command,
         cwd=REPOSITORY_ROOT,
-        env=child_environment,
         check=True,
     )
 
 
-def _resolve_password(
-    environment: Mapping[str, str],
-    prompt: Callable[[str], str] = getpass.getpass,
-) -> str:
-    """Resolve a sufficiently long local password from memory or a prompt.
-
-    Args:
-        environment: Process environment containing an optional local password.
-        prompt: Hidden interactive password prompt used when the variable is absent.
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the persistent local seed argument parser.
 
     Returns:
-        str: Local-only password retained by the current process.
-
-    Raises:
-        BookingServiceLocalSeedError: When the value is shorter than twelve characters.
-
-    Side Effects:
-        Prompts on the controlling terminal when no environment value exists.
+        Parser with an overridable subject-manifest path.
     """
 
-    password = environment.get(DEMO_PASSWORD_ENV, "").strip()
-    if not password:
-        password = prompt("Booking local demo password: ").strip()
-    if len(password) < 12:
-        raise BookingServiceLocalSeedError(
-            "BOOKING_LOCAL_DEMO_PASSWORD must contain at least 12 characters."
-        )
-    return password
+    parser = argparse.ArgumentParser(
+        description="Seed Booking Service from reconciled local Keycloak subjects."
+    )
+    parser.add_argument(
+        "--subject-manifest",
+        type=Path,
+        default=DEFAULT_SUBJECT_MANIFEST,
+        help="Subject manifest written by booking_local_realm.py reconcile.",
+    )
+    return parser
 
 
-def main() -> int:
-    """Authenticate local personas and seed the persistent demo database.
+def main(argv: Sequence[str] | None = None) -> int:
+    """Load reconciled subjects and seed the persistent demo database.
+
+    Args:
+        argv: Optional arguments excluding the executable name.
 
     Returns:
         int: Zero on success and one after a sanitized recoverable failure.
 
     Side Effects:
-        Prompts for a password, contacts loopback Keycloak, runs Docker Compose,
-        and prints a secret-free completion summary.
+        Reads one ignored non-secret manifest, runs Docker Compose, and prints a
+        credential-free completion summary.
     """
 
+    arguments = _build_parser().parse_args(argv)
     try:
-        password = _resolve_password(os.environ)
-        subjects = collect_subjects(password)
+        subjects = collect_subjects(arguments.subject_manifest)
         run_seed_command(build_seed_command(subjects))
     except (BookingServiceLocalSeedError, OSError, subprocess.CalledProcessError) as error:
         print(f"Booking local seed failed: {error}", file=sys.stderr)

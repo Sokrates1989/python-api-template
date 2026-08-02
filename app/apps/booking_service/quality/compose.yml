@@ -131,6 +131,7 @@ services:
       - ../../../../keycloak:/app/keycloak:ro
       - ../../../../template_v2:/app/template_v2:ro
       - ../../../booking_service_contract:/app/app/booking_service_contract:ro
+      - ../../../api/production_contract_validation.py:/app/app/api/production_contract_validation.py:ro
       - ../../../api/settings.py:/app/app/api/settings.py:ro
       - ../../contracts.py:/app/app/apps/contracts.py:ro
       - ../../registry.py:/app/app/apps/registry.py:ro
