@@ -1,5 +1,9 @@
 """SQLAlchemy models owned exclusively by the Booking Service app."""
 
+from apps.booking_service.models.company_settings import (
+    BookingCompanySettings,
+    BookingLocation,
+)
 from apps.booking_service.models.tenancy import (
     BookingAuditEvent,
     BookingIdentityRoleOutbox,
@@ -12,7 +16,9 @@ from apps.booking_service.models.tenancy import (
 
 __all__ = [
     "BookingAuditEvent",
+    "BookingCompanySettings",
     "BookingIdentityRoleOutbox",
+    "BookingLocation",
     "BookingOrganization",
     "BookingPlatformAccess",
     "BookingSubject",

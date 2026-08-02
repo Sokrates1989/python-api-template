@@ -22,6 +22,9 @@ from apps.booking_service.models.tenancy import (
     OrganizationMembership,
     OrganizationMembershipRole,
 )
+from apps.booking_service.repositories.company_settings_repository import (
+    CompanySettingsRepository,
+)
 from backend.database import close_database, get_database_handler, initialize_database
 
 
@@ -168,8 +171,19 @@ async def seed(args: argparse.Namespace) -> None:
                     revision=1,
                 )
             )
-        await _ensure_organization(session, args.organization_a_id, args.organization_a_name)
-        await _ensure_organization(session, args.organization_b_id, args.organization_b_name)
+        organization_a = await _ensure_organization(
+            session,
+            args.organization_a_id,
+            args.organization_a_name,
+        )
+        organization_b = await _ensure_organization(
+            session,
+            args.organization_b_id,
+            args.organization_b_name,
+        )
+        settings = CompanySettingsRepository(session)
+        await settings.ensure_defaults(organization_a.id, organization_a.display_name)
+        await settings.ensure_defaults(organization_b.id, organization_b.display_name)
         await _ensure_membership(
             session,
             args.organization_a_id,

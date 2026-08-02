@@ -4,9 +4,9 @@
 
 This selected app package owns the authenticated PostgreSQL backend for
 `booking_service`. BKG-100 introduced the authenticated coarse identity;
-BKG-101 added tenant ownership, and BKG-103 adds scoped membership commands,
-last-administrator protection, sanitized audit evidence, and a durable narrow
-identity-role delivery boundary. Booking, availability, payments, and
+BKG-101 added tenant ownership, BKG-103 added scoped membership administration,
+and BKG-200 adds tenant-owned company profiles, booking-policy defaults, and
+one-or-more reversible locations. Booking, availability, payments, and
 notification delivery remain later focused slices.
 
 ## Ownership
@@ -58,6 +58,21 @@ payloads. Database role removal is immediate and authoritative. The adapter
 grants only newly required client roles; it does not remove a coarse Keycloak
 role that another organization may still require.
 
+Company settings are read beneath
+`/v1/organizations/{organization_id}/company-settings` by active compatible
+members and replaced only by an active same-tenant organization administrator.
+The complete replacement carries an expected revision and validates its IANA
+timezone, generated-client locale, initial currency, booking horizon, notice
+windows, and worker-selection policy. Payment configuration is explicitly
+`not_configured`; BKG-200 accepts no provider or payment credential.
+
+Location create/update/archive/reactivate operations remain beneath the same
+organization boundary. Every lookup includes both organization and location
+identifiers. Archive is a revision-checked lifecycle transition rather than a
+physical delete, so current and future historical references remain intact;
+the final active location cannot be archived. Every successful settings or
+location mutation writes a sanitized audit event in the same transaction.
+
 Every later route must belong to an approved booking slice and must never use
 a redundant `/api/` prefix. Production role delivery requires a dedicated
 confidential client configured by the deployment with
@@ -86,8 +101,10 @@ organizations from the projected non-personal subjects, and proves active
 context, explicit multi-membership, dual platform access, foreign-scope `404`,
 suspension `403`, reactivation, anonymous `401`, scoped membership denial,
 last-admin lockout, provider-failure persistence, worker/customer transition,
-and explicit compensation. It also runs focused contracts and the route guard,
-scans logs for invocation secrets, and removes its containers, network, volume,
-and locally built images.
+explicit compensation, company-policy validation/revision conflicts,
+same-tenant location isolation, soft archive, last-location protection, and
+reactivation. It also runs focused contracts and the route guard, scans logs
+for invocation secrets, and removes its containers, network, volume, and
+locally built images.
 Keep later service routes relative to the API host and free of a redundant
 `/api/` prefix.

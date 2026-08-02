@@ -27,7 +27,9 @@ is the stable command wrapper; the focused `tools/booking_quality/` modules own
 configuration, orchestration, health/auth assertions, seeded-role token checks,
 two-tenant context/isolation/lifecycle proofs, scoped membership grants,
 last-admin lockout, missing-subject compensation, provider-backed role
-transitions, focused tests, route guards, log scanning, and guaranteed teardown.
+transitions, company-policy validation/conflicts, location tenant isolation,
+archive/reactivation and final-location protection, focused tests, route
+guards, log scanning, and guaranteed teardown.
 
 ## Automated run
 
@@ -79,6 +81,9 @@ ports, and counts only.
   pass or persist a bearer token in the seed command.
 - Keep organization A/B identifiers neutral and prove foreign lookup, suspend,
   context removal, reactivation, and context restoration in every live run.
+- Keep BKG-200 fixtures address-optional and credential-free; prove unsupported
+  policy input, non-admin mutation denial, revision conflicts, location scope,
+  soft archive, final-location protection, and reactivation in every live run.
 - Do not add provider credentials, passwords, tokens, or personal identities.
 - Pin image/runtime versions and update tests when service wiring changes.
 - Run `down` after interrupted interactive work; it is safe without passwords.

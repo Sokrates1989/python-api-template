@@ -55,7 +55,8 @@ memberships. The organization administrator belongs to both companies; the
 worker and customer belong only to the North fixture. The command reads the
 non-secret reconciler-produced subject manifest and passes only validated
 opaque subjects to the running API container. It never reads or uses demo-user
-credentials:
+credentials. BKG-200 also ensures each company has neutral settings and one
+address-free primary location:
 
 ```powershell
 python tools\booking_service_local_seed.py

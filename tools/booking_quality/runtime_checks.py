@@ -18,6 +18,10 @@ from booking_quality.config import (
     QualityRuntime,
     SeedIdentity,
 )
+from booking_quality.company_settings_checks import (
+    CompanySettingsCheckTools,
+    verify_company_settings,
+)
 from booking_quality.membership_checks import (
     MembershipCheckTools,
     verify_membership_management,
@@ -693,3 +697,9 @@ def verify_tenancy(runtime: QualityRuntime) -> None:
         _request_bearer_json, read_bearer_json, _expect_http_status, _decode_token_payload
     )
     verify_membership_management(runtime, tokens, membership_tools)
+    company_tools = CompanySettingsCheckTools(
+        _request_bearer_json,
+        read_bearer_json,
+        _expect_http_status,
+    )
+    verify_company_settings(runtime, tokens, company_tools)

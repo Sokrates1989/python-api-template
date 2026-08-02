@@ -24,6 +24,9 @@ from apps.booking_service.domain.tenancy import (
     compatible_membership_roles,
 )
 from apps.booking_service.models.tenancy import BookingOrganization
+from apps.booking_service.repositories.company_settings_repository import (
+    CompanySettingsRepository,
+)
 from apps.booking_service.repositories.tenancy_repository import TenancyRepository
 from apps.booking_service.schemas.tenancy import (
     EffectiveContextResponse,
@@ -183,6 +186,10 @@ class BookingTenancyService:
             repository = TenancyRepository(session)
             await self._require_platform_access(repository, principal)
             organization = await repository.create_organization(display_name)
+            await CompanySettingsRepository(session).ensure_defaults(
+                organization.id,
+                organization.display_name,
+            )
             summary = self._summary(organization)
             await repository.add_audit_event(
                 actor_subject_id=principal.subject_id,
