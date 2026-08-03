@@ -158,8 +158,17 @@ def _assert_settings_mutation_guards(
         method="PUT",
         payload=valid,
     )
-    if not isinstance(updated, dict) or updated.get("revision") != settings.get("revision", 0) + 1:
+    if (
+        not isinstance(updated, dict)
+        or updated.get("revision") != settings.get("revision", 0) + 1
+    ):
         raise BookingServiceQualityError("Company-settings replacement drifted.")
+    _assert_context_name_projection(
+        runtime,
+        tokens["organization_admin"],
+        tools,
+        expected_name="Booking Quality North Updated",
+    )
     tools.expect_status(
         lambda: tools.request_json(
             url,
@@ -171,6 +180,51 @@ def _assert_settings_mutation_guards(
         "Stale company-settings replacement did not conflict.",
     )
     return updated
+
+
+def _assert_context_name_projection(
+    runtime: QualityRuntime,
+    access_token: str,
+    tools: CompanySettingsCheckTools,
+    *,
+    expected_name: str,
+) -> None:
+    """Prove a public company rename reaches the tenant context projection.
+
+    Args:
+        runtime: Running disposable quality stack.
+        access_token: Organization-administrator bearer token.
+        tools: Shared authenticated request helpers.
+        expected_name: Public company name accepted by the preceding update.
+
+    Returns:
+        None: Successful return means the quick-selector source is canonical.
+
+    Raises:
+        BookingServiceQualityError: When the tenant is absent or still exposes
+            a stale display name.
+    """
+    context = tools.read_json(
+        f"{runtime.api_origin}/v1/me/context",
+        access_token,
+    )
+    organizations = context.get("organizations")
+    if not isinstance(organizations, list):
+        raise BookingServiceQualityError("Organization context projection drifted.")
+    for item in organizations:
+        organization = item.get("organization") if isinstance(item, dict) else None
+        if (
+            isinstance(organization, dict)
+            and organization.get("organization_id") == QUALITY_ORGANIZATION_A_ID
+        ):
+            if organization.get("display_name") != expected_name:
+                raise BookingServiceQualityError(
+                    "Company rename did not update the organization context label."
+                )
+            return
+    raise BookingServiceQualityError(
+        "Renamed organization disappeared from its administrator context."
+    )
 
 
 def _location_payload(display_name: str) -> dict[str, Any]:

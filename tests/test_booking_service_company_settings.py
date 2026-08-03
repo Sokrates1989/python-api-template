@@ -16,10 +16,14 @@ from apps.booking_service.domain.company_settings import (
     WorkerSelectionMode,
 )
 from apps.booking_service.domain.tenancy import MembershipRole
+from apps.booking_service.models.tenancy import BookingOrganization
 from apps.booking_service.schemas.company_settings import (
     CompanySettingsResponse,
     CompanySettingsUpdateRequest,
     LocationCreateRequest,
+)
+from apps.booking_service.services.company_settings_service import (
+    BookingCompanySettingsService,
 )
 from apps.booking_service.services.errors import TenancyError
 from apps.booking_service.services.organization_access import (
@@ -187,6 +191,28 @@ class BookingCompanySettingsPolicyTests(unittest.TestCase):
         self.assertIsNone(location.address_line_1)
         self.assertEqual(location.country_code, "DE")
 
+    def test_public_company_name_synchronizes_tenant_selector_identity(self) -> None:
+        """Keep the organization-context label aligned with the public name."""
+        organization = BookingOrganization(
+            id="organization-1",
+            display_name="Old name",
+            status="active",
+            revision=4,
+        )
+
+        BookingCompanySettingsService._apply_organization_display_name(
+            organization,
+            "New public name",
+        )
+
+        self.assertEqual(organization.display_name, "New public name")
+        self.assertEqual(organization.revision, 5)
+
+        BookingCompanySettingsService._apply_organization_display_name(
+            organization,
+            "New public name",
+        )
+        self.assertEqual(organization.revision, 5)
 
 class BookingCompanySettingsAuthorizationTests(unittest.IsolatedAsyncioTestCase):
     """Prove same-tenant admin access without platform-role bypass."""
@@ -226,6 +252,31 @@ class BookingCompanySettingsAuthorizationTests(unittest.IsolatedAsyncioTestCase)
 
 class BookingCompanySettingsContractTests(unittest.TestCase):
     """Retain migration, route, and forbidden-prefix evidence."""
+
+    def test_name_reconciliation_migration_repairs_existing_drift(self) -> None:
+        """Keep the data repair chained after the complete Phase 2 schema."""
+        relative = (
+            Path("apps")
+            / "booking_service"
+            / "migrations"
+            / "versions"
+            / "booking_service_006_canonical_company_name.py"
+        )
+        path = next(
+            candidate
+            for candidate in (
+                REPOSITORY_ROOT / "app" / relative,
+                REPOSITORY_ROOT / relative,
+            )
+            if candidate.is_file()
+        )
+        migration = path.read_text(encoding="utf-8")
+
+        self.assertIn('revision = "booking_service_006"', migration)
+        self.assertIn('down_revision = "booking_service_005"', migration)
+        self.assertIn("UPDATE booking_organizations AS organization", migration)
+        self.assertIn("display_name = settings.public_name", migration)
+        self.assertIn("revision = organization.revision + 1", migration)
 
     def test_migration_backfills_scoped_defaults_and_soft_lifecycle(self) -> None:
         """Require revision-chain, tenant uniqueness, backfill, and archive state."""

@@ -13,6 +13,7 @@ from apps.booking_service.models.company_settings import (
     BookingCompanySettings,
     BookingLocation,
 )
+from apps.booking_service.models.tenancy import BookingOrganization
 from apps.booking_service.repositories.company_settings_repository import (
     CompanySettingsRepository,
 )
@@ -134,7 +135,11 @@ class BookingCompanySettingsService:
             TenancyError: For denied scope, missing settings, or stale revision.
         """
         async with self._sessions()() as session:
-            await require_organization_administrator(session, principal, organization_id)
+            access = await require_organization_administrator(
+                session,
+                principal,
+                organization_id,
+            )
             repository = CompanySettingsRepository(session)
             settings = await repository.get_settings_for_update(organization_id)
             if settings is None:
@@ -147,6 +152,10 @@ class BookingCompanySettingsService:
             ):
                 await require_company_specific_disable_safe(session, organization_id)
             self._apply_settings(settings, request)
+            self._apply_organization_display_name(
+                access.organization,
+                request.public_name,
+            )
             await session.flush()
             after = settings_audit_state(settings)
             await self._audit_settings(session, principal, settings, before, after)
@@ -339,6 +348,32 @@ class BookingCompanySettingsService:
         for field, value in values.items():
             setattr(settings, field, value)
         settings.revision += 1
+
+    @staticmethod
+    def _apply_organization_display_name(
+        organization: BookingOrganization,
+        public_name: str,
+    ) -> None:
+        """Synchronize the tenant selector label with the public company name.
+
+        Args:
+            organization: Authorized tracked organization row.
+            public_name: Validated company name accepted by the settings schema.
+
+        Returns:
+            None: Changed names update the tracked row and increment its
+            optimistic revision; identical names remain a no-op.
+
+        Note:
+            The settings revision lock serializes concurrent company updates,
+            so the duplicated tenancy projection cannot drift after a successful
+            transaction. A separate internal tenant alias can be introduced
+            later only through an explicit product field.
+        """
+        if organization.display_name == public_name:
+            return
+        organization.display_name = public_name
+        organization.revision += 1
 
     @staticmethod
     def _apply_location(
