@@ -63,6 +63,7 @@ def _service_payload(location_id: str, **changes: object) -> dict[str, Any]:
         "price_minor_units": 8_500,
         "currency": "EUR",
         "is_published": True,
+        "worker_selection_mode": "specific_or_auto",
         "location_ids": [location_id],
     }
     payload.update(changes)

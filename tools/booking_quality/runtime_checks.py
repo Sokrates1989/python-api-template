@@ -30,6 +30,7 @@ from booking_quality.service_catalog_checks import (
     ServiceCatalogCheckTools,
     verify_service_catalog,
 )
+from booking_quality.workforce_checks import WorkforceCheckTools, verify_workforce
 
 
 def read_json(url: str, timeout_seconds: float = 5.0) -> dict[str, Any]:
@@ -713,3 +714,10 @@ def verify_tenancy(runtime: QualityRuntime) -> None:
         _expect_http_status,
     )
     verify_service_catalog(runtime, tokens, catalog_tools)
+    workforce_tools = WorkforceCheckTools(
+        _request_bearer_json,
+        read_bearer_json,
+        _expect_http_status,
+        _decode_token_payload,
+    )
+    verify_workforce(runtime, tokens, workforce_tools)

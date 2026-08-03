@@ -36,6 +36,9 @@ from apps.booking_service.services.organization_access import (
     require_active_organization_access,
     require_organization_administrator,
 )
+from apps.booking_service.services.workforce_policy import (
+    require_company_specific_disable_safe,
+)
 from backend.database import get_database_handler
 
 
@@ -138,6 +141,11 @@ class BookingCompanySettingsService:
                 raise self._settings_missing()
             self._require_revision(settings.revision, request.expected_revision, "settings")
             before = settings_audit_state(settings)
+            if (
+                settings.worker_selection_mode != request.worker_selection_mode.value
+                and request.worker_selection_mode.value == "next_available_only"
+            ):
+                await require_company_specific_disable_safe(session, organization_id)
             self._apply_settings(settings, request)
             await session.flush()
             after = settings_audit_state(settings)

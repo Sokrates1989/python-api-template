@@ -32,6 +32,9 @@ from apps.booking_service.services.service_catalog_projection import (
     service_offering_audit_state,
     service_offering_response,
 )
+from apps.booking_service.services.workforce_policy import (
+    require_no_stranded_specific_services,
+)
 from backend.database import get_database_handler
 
 
@@ -180,6 +183,7 @@ class BookingServiceCatalogService:
                 offering.id,
                 request.location_ids,
             )
+            await require_no_stranded_specific_services(session, organization_id)
             after = service_offering_audit_state(offering, request.location_ids)
             await self._audit(session, principal, offering, "service.created", None, after)
             await session.commit()
@@ -229,6 +233,7 @@ class BookingServiceCatalogService:
                 service_offering_id,
                 request.location_ids,
             )
+            await require_no_stranded_specific_services(session, organization_id)
             after = service_offering_audit_state(offering, request.location_ids)
             await self._audit(session, principal, offering, "service.updated", before, after)
             await session.commit()

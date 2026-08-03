@@ -33,6 +33,7 @@ def service_offering_response(
         price_minor_units=offering.price_minor_units,
         currency=offering.currency,
         is_published=offering.is_published,
+        worker_selection_mode=offering.worker_selection_mode,
         location_ids=location_ids,
         status=ServiceOfferingStatus(offering.status),
         revision=offering.revision,

@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from apps.booking_service import definition
 from apps.booking_service.domain.service_catalog import ServiceOfferingStatus
+from apps.booking_service.domain.workforce import ServiceWorkerSelectionMode
 from apps.booking_service.schemas.service_catalog import (
     ServiceOfferingCreateRequest,
     ServiceOfferingResponse,
@@ -48,6 +49,7 @@ def _service_request(**changes: object) -> ServiceOfferingCreateRequest:
         "price_minor_units": 8_500,
         "currency": "EUR",
         "is_published": True,
+        "worker_selection_mode": "specific_or_auto",
         "location_ids": ("location-b", "location-a"),
     }
     payload.update(changes)
@@ -97,6 +99,10 @@ class BookingServiceCatalogPolicyTests(unittest.TestCase):
         )
         self.assertEqual(response.price_minor_units, 8_500)
         self.assertEqual(response.duration_minutes, 60)
+        self.assertEqual(
+            response.worker_selection_mode,
+            ServiceWorkerSelectionMode.SPECIFIC_OR_AUTO,
+        )
         self.assertEqual(response.revision, 3)
 
 

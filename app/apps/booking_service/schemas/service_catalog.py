@@ -14,6 +14,7 @@ from apps.booking_service.domain.service_catalog import (
     ServiceOfferingStatus,
     validate_slot_step,
 )
+from apps.booking_service.domain.workforce import ServiceWorkerSelectionMode
 
 
 def _normalize_optional_text(value: object) -> object:
@@ -45,6 +46,7 @@ class ServiceOfferingFields(BaseModel):
         price_minor_units: Non-negative price in integer minor currency units.
         currency: Supported ISO-style currency matching company policy.
         is_published: Whether an active service may appear in discovery.
+        worker_selection_mode: Authoritative specific/automatic worker policy.
         location_ids: One or more explicit active same-tenant locations.
     """
 
@@ -63,6 +65,7 @@ class ServiceOfferingFields(BaseModel):
     price_minor_units: int = Field(ge=0, le=MAXIMUM_SERVICE_PRICE_MINOR_UNITS)
     currency: str = Field(min_length=3, max_length=3)
     is_published: bool
+    worker_selection_mode: ServiceWorkerSelectionMode
     location_ids: tuple[str, ...] = Field(
         min_length=1,
         max_length=MAXIMUM_SERVICE_LOCATIONS,

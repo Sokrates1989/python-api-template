@@ -54,6 +54,11 @@ class BookingServiceOffering(Base):
             "status IN ('active', 'archived')",
             name="ck_booking_service_status",
         ),
+        CheckConstraint(
+            "worker_selection_mode IN "
+            "('auto_only', 'specific_only', 'specific_or_auto')",
+            name="ck_booking_service_worker_selection",
+        ),
         UniqueConstraint(
             "organization_id",
             "id",
@@ -84,6 +89,7 @@ class BookingServiceOffering(Base):
     price_minor_units = Column(Integer, nullable=False)
     currency = Column(String(3), nullable=False)
     is_published = Column(Boolean, nullable=False, default=False)
+    worker_selection_mode = Column(String(32), nullable=False)
     status = Column(String(20), nullable=False, default="active")
     revision = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

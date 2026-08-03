@@ -17,6 +17,11 @@ from apps.booking_service.models.tenancy import (
     OrganizationMembership,
     OrganizationMembershipRole,
 )
+from apps.booking_service.models.workforce import (
+    BookingWorkerLocationAssignment,
+    BookingWorkerProfile,
+    BookingWorkerServiceQualification,
+)
 
 __all__ = [
     "BookingAuditEvent",
@@ -28,6 +33,9 @@ __all__ = [
     "BookingServiceLocationOffering",
     "BookingServiceOffering",
     "BookingSubject",
+    "BookingWorkerLocationAssignment",
+    "BookingWorkerProfile",
+    "BookingWorkerServiceQualification",
     "OrganizationMembership",
     "OrganizationMembershipRole",
 ]

@@ -7,7 +7,9 @@ This selected app package owns the authenticated PostgreSQL backend for
 BKG-101 added tenant ownership, BKG-103 added scoped membership administration,
 and BKG-200 adds tenant-owned company profiles, booking-policy defaults, and
 one-or-more reversible locations. BKG-201 adds the first versioned service
-catalog. Booking, availability, payments, and
+catalog, and BKG-202 adds explicit worker profiles, locations, service
+qualifications, and service-owned worker-selection policy. Booking,
+availability, payments, and
 notification delivery remain later focused slices.
 
 ## Ownership
@@ -89,6 +91,25 @@ always unpublishes, and reactivation deliberately remains unpublished until an
 administrator reviews and republishes the offering. No catalog route grants
 public customer discovery; that boundary belongs to BKG-203.
 
+Worker profiles live below
+`/v1/organizations/{organization_id}/workers`. Only active or invited
+same-tenant memberships carrying the app-owned `worker` role may receive a
+profile. Locations and service qualifications are always explicit: creating a
+location never assigns a worker, and removing an assignment never deletes the
+retained worker or service. Each qualification separately controls automatic
+eligibility and deterministic priority. Public presentation is optional and
+independent from automatic eligibility, so hiding a worker from individual
+selection does not silently remove that worker from next-available searches.
+
+Organization administrators manage the full workforce with optimistic
+revisions and reversible activation. Workers may read only the profile tied to
+their own active membership. Company policy may disable individual selection,
+while each service owns its authoritative `auto_only`, `specific_only`, or
+`specific_or_auto` mode after initialization. A mutation is rejected with a
+dependent-service conflict when it would leave a published `specific_only`
+service without a selectable worker. Archived services and inactive workers
+remain retained for future appointment-history references.
+
 Every later route must belong to an approved booking slice and must never use
 a redundant `/api/` prefix. Production role delivery requires a dedicated
 confidential client configured by the deployment with
@@ -121,8 +142,11 @@ explicit compensation, company-policy validation/revision conflicts,
 same-tenant location isolation, soft archive, last-location protection, and
 reactivation. It also proves catalog normalization, tenant/currency/location
 validation, member visibility, administrator-only mutation, optimistic
-revision conflicts, safe archive, and unpublished reactivation. It runs
-focused contracts and the route guard, scans logs
+revision conflicts, safe archive, and unpublished reactivation. Workforce
+proofs cover tenant isolation, explicit assignments, worker self-only reads,
+automatic versus individual eligibility, dependency conflicts, stale
+replacement, and reversible activation. It runs focused contracts and the
+route guard, scans logs
 for invocation secrets, and removes its containers, network, volume, and
 locally built images.
 Keep later service routes relative to the API host and free of a redundant

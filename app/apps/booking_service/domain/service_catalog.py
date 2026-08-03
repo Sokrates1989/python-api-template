@@ -2,7 +2,8 @@
 
 The first Booking profile models products only as single-party timed services.
 It deliberately contains no stock, capacity, physical-goods, payment-provider,
-or worker-qualification behavior.
+or worker-qualification persistence. BKG-202 adds only the authoritative
+service-level worker-selection value required by workforce policy.
 """
 
 from __future__ import annotations

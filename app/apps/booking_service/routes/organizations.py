@@ -13,6 +13,7 @@ from apps.booking_service.routes.context import get_tenancy_service
 from apps.booking_service.routes.errors import raise_tenancy_http
 from apps.booking_service.routes.memberships import router as membership_router
 from apps.booking_service.routes.service_catalog import router as service_catalog_router
+from apps.booking_service.routes.workforce import router as workforce_router
 from apps.booking_service.schemas.tenancy import (
     OrganizationCreateRequest,
     OrganizationLifecycleRequest,
@@ -30,9 +31,10 @@ organization_router = APIRouter(
     tags=["booking-organizations"],
 )
 
-# Company settings, catalog, and memberships share the tenant boundary.
+# Company settings, catalog, workforce, and memberships share tenant ownership.
 organization_router.include_router(company_settings_router)
 organization_router.include_router(service_catalog_router)
+organization_router.include_router(workforce_router)
 organization_router.include_router(membership_router)
 
 

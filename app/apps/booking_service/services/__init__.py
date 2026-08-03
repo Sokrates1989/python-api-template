@@ -9,11 +9,13 @@ from apps.booking_service.services.service_catalog_service import (
     BookingServiceCatalogService,
 )
 from apps.booking_service.services.tenancy_service import BookingTenancyService
+from apps.booking_service.services.workforce_service import BookingWorkforceService
 
 __all__ = [
     "BookingCompanySettingsService",
     "BookingMembershipService",
     "BookingServiceCatalogService",
     "BookingTenancyService",
+    "BookingWorkforceService",
     "TenancyError",
 ]
