@@ -258,7 +258,7 @@ class BookingTenancyRouteTests(unittest.IsolatedAsyncioTestCase):
         )
 
     def test_definition_has_only_versioned_non_api_route_prefixes(self) -> None:
-        """Register BKG-101 families without the forbidden `/api` prefix."""
+        """Register selected Booking families without forbidden `/api` routes."""
         backend = definition.BACKEND_APP_DEFINITION
         self.assertEqual(
             backend.registered_route_prefixes(),
@@ -266,6 +266,7 @@ class BookingTenancyRouteTests(unittest.IsolatedAsyncioTestCase):
                 "/v1/me",
                 "/v1/platform/organizations",
                 "/v1/organizations",
+                "/v1/discovery",
             ),
         )
         for registration in backend.route_registrations:

@@ -10,6 +10,7 @@ from apps.booking_service.dependencies.identity import (
 )
 from apps.booking_service.routes.company_settings import router as company_settings_router
 from apps.booking_service.routes.context import get_tenancy_service
+from apps.booking_service.routes.discovery import preview_router as discovery_preview_router
 from apps.booking_service.routes.errors import raise_tenancy_http
 from apps.booking_service.routes.memberships import router as membership_router
 from apps.booking_service.routes.service_catalog import router as service_catalog_router
@@ -31,9 +32,10 @@ organization_router = APIRouter(
     tags=["booking-organizations"],
 )
 
-# Company settings, catalog, workforce, and memberships share tenant ownership.
+# Company settings, catalog, discovery preview, workforce, and memberships share ownership.
 organization_router.include_router(company_settings_router)
 organization_router.include_router(service_catalog_router)
+organization_router.include_router(discovery_preview_router)
 organization_router.include_router(workforce_router)
 organization_router.include_router(membership_router)
 

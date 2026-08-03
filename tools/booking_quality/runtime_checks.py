@@ -22,6 +22,7 @@ from booking_quality.company_settings_checks import (
     CompanySettingsCheckTools,
     verify_company_settings,
 )
+from booking_quality.discovery_checks import DiscoveryCheckTools, verify_discovery
 from booking_quality.membership_checks import (
     MembershipCheckTools,
     verify_membership_management,
@@ -192,6 +193,7 @@ def assert_health_contract(
         "/v1/me",
         "/v1/platform/organizations",
         "/v1/organizations",
+        "/v1/discovery",
     ]
     if payload.get("registered_route_prefixes") != expected_prefixes:
         raise BookingServiceQualityError("Booking route registration drifted.")
@@ -721,3 +723,9 @@ def verify_tenancy(runtime: QualityRuntime) -> None:
         _decode_token_payload,
     )
     verify_workforce(runtime, tokens, workforce_tools)
+    discovery_tools = DiscoveryCheckTools(
+        _request_bearer_json,
+        read_bearer_json,
+        _expect_http_status,
+    )
+    verify_discovery(runtime, tokens, discovery_tools)

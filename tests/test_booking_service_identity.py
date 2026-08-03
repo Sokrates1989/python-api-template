@@ -135,7 +135,7 @@ class BookingIdentityTests(unittest.TestCase):
         )
 
     def test_definition_registers_exact_bearer_protected_route(self) -> None:
-        """Keep identity exact while BKG-101 adds protected route families."""
+        """Keep identity exact while later phases add protected route families."""
         backend = definition.BACKEND_APP_DEFINITION
         self.assertEqual(
             backend.registered_route_prefixes(),
@@ -143,6 +143,7 @@ class BookingIdentityTests(unittest.TestCase):
                 "/v1/me",
                 "/v1/platform/organizations",
                 "/v1/organizations",
+                "/v1/discovery",
             ),
         )
         self.assertEqual(

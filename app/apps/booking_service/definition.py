@@ -1,16 +1,20 @@
 """Selected-app definition for the Booking Service backend.
 
 The profile retains PostgreSQL, Redis, and app-owned migration boundaries and
-registers only approved product routers. BKG-200 adds company settings and
-locations, BKG-201 adds timed services, and BKG-202 adds tenant workers and
-eligibility beneath the existing organization route family. The detached
-neutral records starter and all later booking routes remain absent.
+registers only approved product routers. Phase 2 adds company settings, timed
+services, workers, and authenticated published discovery. The detached neutral
+records starter and all later booking routes remain absent.
 """
 
 from __future__ import annotations
 
 from apps.booking_service.config import BACKEND_APP_CONFIG
-from apps.booking_service.routes import me_router, organization_router, platform_router
+from apps.booking_service.routes import (
+    discovery_router,
+    me_router,
+    organization_router,
+    platform_router,
+)
 from apps.contracts import (
     BackendAppDefinition,
     OpenApiSecurityScheme,
@@ -32,6 +36,10 @@ BACKEND_APP_DEFINITION = BackendAppDefinition(
         RouteRegistration(
             router=organization_router,
             public_prefix="/v1/organizations",
+        ),
+        RouteRegistration(
+            router=discovery_router,
+            public_prefix="/v1/discovery",
         ),
     ),
     migration_version_locations=("migrations/versions",),
@@ -66,6 +74,11 @@ BACKEND_APP_DEFINITION = BackendAppDefinition(
             requirement={"BookingBearer": []},
             methods=("get",),
             exact_path=True,
+        ),
+        RouteSecurityRequirement(
+            path_prefix="/v1/discovery",
+            requirement={"BookingBearer": []},
+            methods=("get",),
         ),
         RouteSecurityRequirement(
             path_prefix="/v1/platform/organizations",
