@@ -4,6 +4,10 @@ from apps.booking_service.models.company_settings import (
     BookingCompanySettings,
     BookingLocation,
 )
+from apps.booking_service.models.service_catalog import (
+    BookingServiceLocationOffering,
+    BookingServiceOffering,
+)
 from apps.booking_service.models.tenancy import (
     BookingAuditEvent,
     BookingIdentityRoleOutbox,
@@ -21,6 +25,8 @@ __all__ = [
     "BookingLocation",
     "BookingOrganization",
     "BookingPlatformAccess",
+    "BookingServiceLocationOffering",
+    "BookingServiceOffering",
     "BookingSubject",
     "OrganizationMembership",
     "OrganizationMembershipRole",

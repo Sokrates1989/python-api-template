@@ -41,6 +41,7 @@ FOCUSED_TEST_MODULES = (
     "tests.test_booking_service_tenancy",
     "tests.test_booking_service_memberships",
     "tests.test_booking_service_company_settings",
+    "tests.test_booking_service_catalog",
     "tests.test_booking_service_jwt_contract",
     "tests.test_keycloak_bootstrap_redaction",
     "tests.test_selected_app_route_guard",

@@ -21,10 +21,18 @@ reserved for later same-tenant catalog and appointment foreign keys. Locations
 use active/archive lifecycle state; application operations never hard-delete a
 referenced location.
 
+`booking_service_004_service_catalog` adds tenant-owned service offerings and
+their explicit location assignments. Composite foreign keys bind every
+offering and assignment to one organization, database checks preserve bounded
+time/price fields and lifecycle state, and revisions support conflict-safe
+complete replacement. Offerings use active/archive lifecycle state and retain
+their location relationships for later booking-history references.
+
 Run revisions through the repository's selected-app migration command and
 never share them with another app profile. Review destructive downgrades before
-use: the BKG-103 downgrade removes pending identity-role delivery evidence, the
-BKG-200 downgrade removes company profile and location history, and the BKG-101
+use: the BKG-201 downgrade removes service-catalog history, the BKG-103
+downgrade removes pending identity-role delivery evidence, the BKG-200
+downgrade removes company profile and location history, and the BKG-101
 downgrade removes tenancy and audit history. Future booking tables must
 reference both organization and owned location where applicable and preserve
 the explicit scoped-repository boundary.

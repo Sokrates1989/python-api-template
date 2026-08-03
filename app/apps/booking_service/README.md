@@ -6,7 +6,8 @@ This selected app package owns the authenticated PostgreSQL backend for
 `booking_service`. BKG-100 introduced the authenticated coarse identity;
 BKG-101 added tenant ownership, BKG-103 added scoped membership administration,
 and BKG-200 adds tenant-owned company profiles, booking-policy defaults, and
-one-or-more reversible locations. Booking, availability, payments, and
+one-or-more reversible locations. BKG-201 adds the first versioned service
+catalog. Booking, availability, payments, and
 notification delivery remain later focused slices.
 
 ## Ownership
@@ -75,6 +76,19 @@ location mutation writes a sanitized audit event in the same transaction.
 Ordinary members read active places only, while same-tenant administrators also
 receive archived places required for explicit reactivation.
 
+Service offerings live below
+`/v1/organizations/{organization_id}/services`. Each offering owns normalized
+name, description and category text; duration, setup and cleanup buffers; a
+five-minute-aligned slot step; integer minor-unit price and ISO currency; an
+explicit set of active same-tenant locations; and a published flag. The
+offering currency must match the organization profile. Organization
+administrators create, replace, archive, and reactivate offerings using an
+expected revision. Ordinary active members see only active published entries;
+administrators retain the unpublished and archived recovery view. Archive
+always unpublishes, and reactivation deliberately remains unpublished until an
+administrator reviews and republishes the offering. No catalog route grants
+public customer discovery; that boundary belongs to BKG-203.
+
 Every later route must belong to an approved booking slice and must never use
 a redundant `/api/` prefix. Production role delivery requires a dedicated
 confidential client configured by the deployment with
@@ -105,7 +119,10 @@ suspension `403`, reactivation, anonymous `401`, scoped membership denial,
 last-admin lockout, provider-failure persistence, worker/customer transition,
 explicit compensation, company-policy validation/revision conflicts,
 same-tenant location isolation, soft archive, last-location protection, and
-reactivation. It also runs focused contracts and the route guard, scans logs
+reactivation. It also proves catalog normalization, tenant/currency/location
+validation, member visibility, administrator-only mutation, optimistic
+revision conflicts, safe archive, and unpublished reactivation. It runs
+focused contracts and the route guard, scans logs
 for invocation secrets, and removes its containers, network, volume, and
 locally built images.
 Keep later service routes relative to the API host and free of a redundant

@@ -28,7 +28,8 @@ configuration, orchestration, health/auth assertions, seeded-role token checks,
 two-tenant context/isolation/lifecycle proofs, scoped membership grants,
 last-admin lockout, missing-subject compensation, provider-backed role
 transitions, company-policy validation/conflicts, location tenant isolation,
-archive/reactivation and final-location protection, focused tests, route
+archive/reactivation and final-location protection, service-catalog validation,
+published-member visibility, catalog lifecycle recovery, focused tests, route
 guards, log scanning, and guaranteed teardown.
 
 ## Automated run
@@ -84,6 +85,9 @@ ports, and counts only.
 - Keep BKG-200 fixtures address-optional and credential-free; prove unsupported
   policy input, non-admin mutation denial, revision conflicts, location scope,
   soft archive, final-location protection, and reactivation in every live run.
+- Keep BKG-201 catalog fixtures tenant-bound and currency-consistent; prove
+  location isolation, administrator-only mutation, active-member visibility,
+  revision conflicts, safe archive, and unpublished reactivation in every run.
 - Do not add provider credentials, passwords, tokens, or personal identities.
 - Pin image/runtime versions and update tests when service wiring changes.
 - Run `down` after interrupted interactive work; it is safe without passwords.

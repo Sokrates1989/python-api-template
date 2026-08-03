@@ -2,8 +2,9 @@
 
 The profile retains PostgreSQL, Redis, and app-owned migration boundaries and
 registers only approved product routers. BKG-200 adds company settings and
-locations beneath the existing organization route family while the detached
-neutral records starter and all later booking routes remain absent.
+locations; BKG-201 adds timed service offerings beneath the existing
+organization route family while the detached neutral records starter and all
+later booking routes remain absent.
 """
 
 from __future__ import annotations

@@ -26,6 +26,10 @@ from booking_quality.membership_checks import (
     MembershipCheckTools,
     verify_membership_management,
 )
+from booking_quality.service_catalog_checks import (
+    ServiceCatalogCheckTools,
+    verify_service_catalog,
+)
 
 
 def read_json(url: str, timeout_seconds: float = 5.0) -> dict[str, Any]:
@@ -703,3 +707,9 @@ def verify_tenancy(runtime: QualityRuntime) -> None:
         _expect_http_status,
     )
     verify_company_settings(runtime, tokens, company_tools)
+    catalog_tools = ServiceCatalogCheckTools(
+        _request_bearer_json,
+        read_bearer_json,
+        _expect_http_status,
+    )
+    verify_service_catalog(runtime, tokens, catalog_tools)
