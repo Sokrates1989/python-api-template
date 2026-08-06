@@ -15,6 +15,7 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, EmailStr, ValidationError
 
 from api.middleware.logging import (
+    REQUEST_ID_HEADER,
     log_request_outcome,
     log_request_validation_failure,
 )
@@ -106,8 +107,79 @@ class HttpLoggingMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 404)
         self.assertIn('route="/users/{user_id}"', rendered)
         self.assertIn("status_code=404", rendered)
+        self.assertIn("request_id=", rendered)
+        self.assertIsNotNone(response.headers.get(REQUEST_ID_HEADER))
         self.assertNotIn("private-owner-123", rendered)
         self.assertNotIn("private-value", rendered)
+
+    async def test_safe_client_request_id_is_echoed_and_logged(self) -> None:
+        """Preserve a bounded opaque client correlation identifier.
+
+        Returns:
+            Nothing after proving response and log correlation without payload
+            or credential logging.
+        """
+
+        request = _request(
+            method="GET",
+            path="/health",
+            route_template="/health",
+        )
+        request.scope["headers"] = [(b"x-request-id", b"booking-web-42")]
+
+        async def return_ok(_request: Request) -> Response:
+            """Return an empty successful response for correlation testing.
+
+            Args:
+                _request: Routed request whose state is owned by middleware.
+
+            Returns:
+                Empty HTTP 200 response.
+            """
+
+            return Response(status_code=200)
+
+        with self.assertLogs("api.middleware.request", level="INFO") as logs:
+            response = await log_request_outcome(request, return_ok)
+
+        self.assertEqual(response.headers[REQUEST_ID_HEADER], "booking-web-42")
+        self.assertIn('request_id="booking-web-42"', "\n".join(logs.output))
+
+    async def test_unsafe_client_request_id_is_replaced(self) -> None:
+        """Reject unbounded or log-breaking client correlation values.
+
+        Returns:
+            Nothing after proving the unsafe value never reaches response or
+            operational logs.
+        """
+
+        unsafe_id = "private value\nforged"
+        request = _request(
+            method="GET",
+            path="/health",
+            route_template="/health",
+        )
+        request.scope["headers"] = [
+            (b"x-request-id", unsafe_id.encode("utf-8")),
+        ]
+
+        async def return_ok(_request: Request) -> Response:
+            """Return an empty successful response for replacement testing.
+
+            Args:
+                _request: Routed request whose state is owned by middleware.
+
+            Returns:
+                Empty HTTP 200 response.
+            """
+
+            return Response(status_code=200)
+
+        with self.assertLogs("api.middleware.request", level="INFO") as logs:
+            response = await log_request_outcome(request, return_ok)
+
+        self.assertNotEqual(response.headers[REQUEST_ID_HEADER], unsafe_id)
+        self.assertNotIn(unsafe_id, "\n".join(logs.output))
 
     async def test_validation_log_omits_rejected_email_value(self) -> None:
         """Record only the invalid field and validator type for HTTP 422.

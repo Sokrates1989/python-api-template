@@ -23,6 +23,10 @@ from booking_quality.company_settings_checks import (
     verify_company_settings,
 )
 from booking_quality.discovery_checks import DiscoveryCheckTools, verify_discovery
+from booking_quality.foundation_contract_checks import (
+    FoundationContractCheckTools,
+    verify_account_foundations,
+)
 from booking_quality.membership_checks import (
     MembershipCheckTools,
     verify_membership_management,
@@ -502,52 +506,6 @@ def _access_token(runtime: QualityRuntime, identity: SeedIdentity) -> str:
     return token
 
 
-def _context(runtime: QualityRuntime, token: str) -> dict[str, Any]:
-    """Read one effective context through the real authenticated API.
-
-    Args:
-        runtime: Runtime containing the local API endpoint.
-        token: Short-lived fixture token retained only in request memory.
-
-    Returns:
-        dict[str, Any]: Parsed effective context response.
-    """
-    return read_bearer_json(f"{runtime.api_origin}/v1/me/context", token)
-
-
-def _assert_context_memberships(
-    runtime: QualityRuntime,
-    tokens: Mapping[str, str],
-) -> None:
-    """Prove platform dual-gating and active multi-tenant context projection.
-
-    Args:
-        runtime: Runtime containing the local API endpoint.
-        tokens: Role-keyed short-lived tokens retained only for this proof.
-
-    Returns:
-        None: Successful return means context projections match seed policy.
-
-    Raises:
-        BookingServiceQualityError: When capabilities or membership scopes drift.
-    """
-    platform = _context(runtime, tokens["platform_admin"])
-    if platform.get("platform_capabilities") != ["manage_platform_organizations"]:
-        raise BookingServiceQualityError("Platform dual-gate capability proof failed.")
-    expected_ids = {
-        "organization_admin": [QUALITY_ORGANIZATION_A_ID, QUALITY_ORGANIZATION_B_ID],
-        "worker": [QUALITY_ORGANIZATION_A_ID],
-        "customer": [],
-    }
-    for role, organization_ids in expected_ids.items():
-        projected = _context(runtime, tokens[role]).get("organizations")
-        if not isinstance(projected, list):
-            raise BookingServiceQualityError("Organization context shape drifted.")
-        observed = [item.get("organization", {}).get("organization_id") for item in projected]
-        if observed != organization_ids:
-            raise BookingServiceQualityError("Organization context isolation proof failed.")
-
-
 def _expect_http_status(
     operation: Callable[[], object],
     expected_status: int,
@@ -648,7 +606,10 @@ def _assert_platform_lifecycle(
     )
     if not isinstance(suspended, dict) or suspended.get("status") != "suspended":
         raise BookingServiceQualityError("Organization suspension proof failed.")
-    if _context(runtime, worker_token).get("organizations") != []:
+    if read_bearer_json(
+        f"{runtime.api_origin}/v1/me/context",
+        worker_token,
+    ).get("organizations") != []:
         raise BookingServiceQualityError("Suspended organization remained in context.")
     _expect_http_status(
         lambda: read_bearer_json(
@@ -665,7 +626,12 @@ def _assert_platform_lifecycle(
     )
     if not isinstance(reactivated, dict) or reactivated.get("status") != "active":
         raise BookingServiceQualityError("Organization reactivation proof failed.")
-    if len(_context(runtime, worker_token).get("organizations", [])) != 1:
+    if len(
+        read_bearer_json(
+            f"{runtime.api_origin}/v1/me/context",
+            worker_token,
+        ).get("organizations", [])
+    ) != 1:
         raise BookingServiceQualityError("Reactivated organization context was not restored.")
 
 
@@ -693,7 +659,12 @@ def verify_tenancy(runtime: QualityRuntime) -> None:
         identity.role: _access_token(runtime, identity)
         for identity in runtime.identities
     }
-    _assert_context_memberships(runtime, tokens)
+    foundation_tools = FoundationContractCheckTools(
+        _request_bearer_json,
+        read_bearer_json,
+        _expect_http_status,
+    )
+    verify_account_foundations(runtime, tokens, foundation_tools)
     _assert_member_isolation(runtime, tokens["worker"])
     _assert_platform_lifecycle(
         runtime,

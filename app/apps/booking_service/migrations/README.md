@@ -28,6 +28,12 @@ time/price fields and lifecycle state, and revisions support conflict-safe
 complete replacement. Offerings use active/archive lifecycle state and retain
 their location relationships for later booking-history references.
 
+`booking_service_005_workforce` adds worker profiles, location assignments,
+and service qualifications. `booking_service_006_canonical_company_name`
+reconciles pre-fix organization labels with their canonical public names.
+`booking_service_007_user_preferences` stores revisioned per-subject locale
+preferences in the Booking backend rather than in Keycloak identity data.
+
 Run revisions through the repository's selected-app migration command and
 never share them with another app profile. Review destructive downgrades before
 use: the BKG-201 downgrade removes service-catalog history, the BKG-103

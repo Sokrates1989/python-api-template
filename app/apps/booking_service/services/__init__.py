@@ -6,6 +6,7 @@ from apps.booking_service.services.company_settings_service import (
 from apps.booking_service.services.discovery_service import BookingDiscoveryService
 from apps.booking_service.services.errors import TenancyError
 from apps.booking_service.services.membership_service import BookingMembershipService
+from apps.booking_service.services.preferences_service import BookingPreferencesService
 from apps.booking_service.services.service_catalog_service import (
     BookingServiceCatalogService,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "BookingCompanySettingsService",
     "BookingDiscoveryService",
     "BookingMembershipService",
+    "BookingPreferencesService",
     "BookingServiceCatalogService",
     "BookingTenancyService",
     "BookingWorkforceService",

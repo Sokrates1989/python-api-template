@@ -76,6 +76,12 @@ BACKEND_APP_DEFINITION = BackendAppDefinition(
             exact_path=True,
         ),
         RouteSecurityRequirement(
+            path_prefix="/v1/me/preferences",
+            requirement={"BookingBearer": []},
+            methods=("get", "put"),
+            exact_path=True,
+        ),
+        RouteSecurityRequirement(
             path_prefix="/v1/discovery",
             requirement={"BookingBearer": []},
             methods=("get",),

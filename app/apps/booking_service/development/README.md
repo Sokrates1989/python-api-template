@@ -78,6 +78,25 @@ Invoke-RestMethod http://localhost:8084/health
 Invoke-RestMethod http://localhost:8084/openapi.json
 ```
 
+## Request diagnostics
+
+Follow privacy-safe API outcomes while reproducing a browser issue:
+
+```powershell
+docker compose `
+  --project-name booking-service-local `
+  --env-file app\apps\booking_service\development\.env `
+  --file app\apps\booking_service\development\compose.yml `
+  logs --follow api
+```
+
+The Flutter development console and API log share the bounded
+`X-Request-ID`. Search the API output for the UI's diagnostic reference to find
+the method, matched route template, status, and duration. Concrete resource
+identifiers, queries, bodies, bearer tokens, subjects, and provider errors are
+deliberately absent. Keep request/response body logging disabled; correlation
+is sufficient for normal Phase 2 diagnosis.
+
 Stop the API stack without touching Keycloak or the retained PostgreSQL volume:
 
 ```powershell

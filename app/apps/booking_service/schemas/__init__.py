@@ -6,6 +6,7 @@ from apps.booking_service.schemas.company_settings import (
 )
 from apps.booking_service.schemas.discovery import DiscoveryOrganizationResponse
 from apps.booking_service.schemas.identity import EffectiveIdentityResponse
+from apps.booking_service.schemas.preferences import UserPreferencesResponse
 from apps.booking_service.schemas.service_catalog import (
     ServiceOfferingCreateRequest,
     ServiceOfferingLifecycleRequest,
@@ -18,6 +19,7 @@ __all__ = [
     "DiscoveryOrganizationResponse",
     "EffectiveIdentityResponse",
     "LocationResponse",
+    "UserPreferencesResponse",
     "ServiceOfferingCreateRequest",
     "ServiceOfferingLifecycleRequest",
     "ServiceOfferingResponse",

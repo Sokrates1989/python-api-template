@@ -8,6 +8,7 @@ from apps.booking_service.models.service_catalog import (
     BookingServiceLocationOffering,
     BookingServiceOffering,
 )
+from apps.booking_service.models.preferences import BookingUserPreferences
 from apps.booking_service.models.tenancy import (
     BookingAuditEvent,
     BookingIdentityRoleOutbox,
@@ -33,6 +34,7 @@ __all__ = [
     "BookingServiceLocationOffering",
     "BookingServiceOffering",
     "BookingSubject",
+    "BookingUserPreferences",
     "BookingWorkerLocationAssignment",
     "BookingWorkerProfile",
     "BookingWorkerServiceQualification",

@@ -9,8 +9,10 @@ logging rejected values.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Dict
+from uuid import uuid4
 
 from fastapi import FastAPI, Request, Response
 from fastapi.exception_handlers import request_validation_exception_handler
@@ -32,6 +34,37 @@ SENSITIVE_HEADER_KEYS = {
 
 request_logger = logging.getLogger("api.middleware.request")
 debug_logger = logging.getLogger("api.middleware.http_debug")
+
+REQUEST_ID_HEADER = "X-Request-ID"
+"""Public correlation header shared by clients and request diagnostics."""
+
+_SAFE_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+"""Allow only bounded opaque identifiers in operational log fields."""
+
+
+def _request_id(request: Request) -> str:
+    """Return or create one privacy-safe correlation identifier.
+
+    Args:
+        request: Active request whose optional client identifier is inspected.
+
+    Returns:
+        A bounded client identifier when it matches the safe alphabet, or a
+        server-generated UUID otherwise. The value is retained on request
+        state so exception handlers and nested debug middleware use one ID.
+    """
+
+    existing = getattr(request.state, "request_id", None)
+    if isinstance(existing, str) and _SAFE_REQUEST_ID_PATTERN.fullmatch(existing):
+        return existing
+    candidate = request.headers.get(REQUEST_ID_HEADER, "").strip()
+    request_id = (
+        candidate
+        if _SAFE_REQUEST_ID_PATTERN.fullmatch(candidate)
+        else str(uuid4())
+    )
+    request.state.request_id = request_id
+    return request_id
 
 
 def _route_template(request: Request) -> str:
@@ -107,6 +140,7 @@ async def log_request_outcome(
     """
 
     started_at = time.perf_counter()
+    request_id = _request_id(request)
     try:
         response = await call_next(request)
     except Exception as error:
@@ -116,17 +150,20 @@ async def log_request_outcome(
             "http.request.failed",
             method=request.method,
             route=_route_template(request),
+            request_id=request_id,
             duration_ms=_duration_milliseconds(started_at),
             exception_type=type(error).__name__,
         )
         raise
 
+    response.headers[REQUEST_ID_HEADER] = request_id
     log_event(
         request_logger,
         _request_log_level(response.status_code),
         "http.request.completed",
         method=request.method,
         route=_route_template(request),
+        request_id=request_id,
         status_code=response.status_code,
         duration_ms=_duration_milliseconds(started_at),
     )
@@ -186,6 +223,7 @@ async def log_request_validation_failure(
         "http.request.validation_failed",
         method=request.method,
         route=_route_template(request),
+        request_id=_request_id(request),
         status_code=422,
         error_count=len(error_items),
         fields=_safe_validation_fields(error),
@@ -253,6 +291,7 @@ async def log_request_headers(
         "http.request",
         method=request.method,
         route=_route_template(request),
+        request_id=_request_id(request),
     )
 
     request_body = b""
@@ -287,6 +326,7 @@ async def log_request_headers(
         status_code=response.status_code,
         method=request.method,
         route=_route_template(request),
+        request_id=_request_id(request),
     )
     if settings.LOG_RESPONSE_HEADERS:
         log_event(

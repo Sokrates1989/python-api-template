@@ -14,6 +14,9 @@ from booking_quality.config import (
     BookingServiceQualityError,
     QualityRuntime,
 )
+from booking_quality.foundation_contract_checks import (
+    assert_request_correlation_contract,
+)
 from booking_quality.runtime_checks import (
     assert_health_contract,
     assert_openapi_contract,
@@ -38,6 +41,7 @@ FOCUSED_TEST_MODULES = (
     "tests.test_booking_service_pair_contract",
     "tests.test_booking_service_quality",
     "tests.test_booking_service_identity",
+    "tests.test_booking_service_preferences",
     "tests.test_booking_service_tenancy",
     "tests.test_booking_service_memberships",
     "tests.test_booking_service_company_settings",
@@ -294,6 +298,7 @@ def verify_stack(runtime: QualityRuntime, timeout_seconds: float) -> None:
     """
     assert_health_contract(wait_for_health(runtime, timeout_seconds), runtime)
     assert_openapi_contract(runtime)
+    assert_request_correlation_contract(runtime)
     subjects = verify_keycloak(runtime)
     _seed_tenancy(runtime, subjects)
     verify_tenancy(runtime)

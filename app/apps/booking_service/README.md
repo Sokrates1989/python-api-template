@@ -7,10 +7,12 @@ This selected app package owns the authenticated PostgreSQL backend for
 BKG-101 added tenant ownership, BKG-103 added scoped membership administration,
 and BKG-200 adds tenant-owned company profiles, booking-policy defaults, and
 one-or-more reversible locations. BKG-201 adds the first versioned service
-catalog, and BKG-202 adds explicit worker profiles, locations, service
-qualifications, and service-owned worker-selection policy. Booking,
-availability, payments, and
-notification delivery remain later focused slices.
+catalog, BKG-202 adds explicit worker profiles, locations, service
+qualifications, and service-owned worker-selection policy, and BKG-203 adds
+authenticated published discovery. Phase 2 acceptance remediation adds
+subject-scoped language preferences and privacy-safe request correlation.
+Booking, availability, payments, and notification delivery remain later
+focused slices.
 
 ## Ownership
 
@@ -38,6 +40,12 @@ active memberships whose PostgreSQL roles intersect the verified coarse roles.
 The client-provided organization selection is never an authorization input.
 Member reads require an explicit organization predicate, hide absent/foreign
 scope as `404`, and reject known suspended scope as `403`.
+
+`GET` and `PUT /v1/me/preferences` read or replace the active subject's
+generated-client language with optimistic revision checks. The preference row
+is Booking application data keyed by the verified immutable subject; Keycloak
+continues to own authentication and identity only. One user's choice cannot
+change another user's preference, and no organization context is required.
 
 Platform organization list/create/suspend/reactivate operations require both
 the `platform_admin` coarse role and active `booking_platform_access`. Lifecycle
@@ -119,6 +127,12 @@ permissions needed to read the target subject/client roles and map roles; it
 must not receive unrestricted realm administration. Production realm bootstrap
 remains deployment-owned.
 
+Every response carries a bounded `X-Request-ID`. Safe incoming IDs are reused;
+invalid input is replaced. Operational logs contain only that ID, method,
+matched route template, status, duration, and exception type where relevant.
+They omit concrete resource IDs, query strings, bodies, bearer tokens, user
+subjects, and provider diagnostics.
+
 ## Verification
 
 Run `pdm lock --check --project app/apps/booking_service` and the Python API
@@ -145,8 +159,10 @@ validation, member visibility, administrator-only mutation, optimistic
 revision conflicts, safe archive, and unpublished reactivation. Workforce
 proofs cover tenant isolation, explicit assignments, worker self-only reads,
 automatic versus individual eligibility, dependency conflicts, stale
-replacement, and reversible activation. It runs focused contracts and the
-route guard, scans logs
+replacement, and reversible activation. Preference proofs cover per-subject
+defaults, persistence, isolation, and revision conflicts; request-correlation
+proofs cover response headers and privacy-safe logs. It runs focused contracts
+and the route guard, scans logs
 for invocation secrets, and removes its containers, network, volume, and
 locally built images.
 Keep later service routes relative to the API host and free of a redundant

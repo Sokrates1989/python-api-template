@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.settings import settings
 from .database_lock import setup_database_lock_middleware
-from .logging import setup_logging_middleware
+from .logging import REQUEST_ID_HEADER, setup_logging_middleware
 
 
 def setup_cors_middleware(app: FastAPI) -> None:
@@ -41,6 +41,7 @@ def setup_cors_middleware(app: FastAPI) -> None:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=[REQUEST_ID_HEADER],
     )
 
 
