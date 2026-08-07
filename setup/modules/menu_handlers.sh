@@ -874,6 +874,42 @@ run_api_release_tool() {
     "$python_command" "tools/release_api_image.py" "$@"
 }
 
+# Reconcile a selected API image version with its deployment-owned minimum.
+#
+# Args:
+#   app_id: Selected backend application identifier.
+#   candidate_version: Version chosen by the normal patch/minor/major menu.
+#
+# Returns:
+#   Prints only the final version on success. Returns non-zero when authority
+#   validation fails or the operator cancels the reconciliation menu.
+run_api_release_stack_selector() {
+    local app_id="$1"
+    local candidate_version="$2"
+    local python_command=""
+    local -a arguments
+
+    if command -v python3 >/dev/null 2>&1; then
+        python_command="python3"
+    elif command -v python >/dev/null 2>&1; then
+        python_command="python"
+    else
+        echo "[ERROR] Python 3 is required for API release coordination." >&2
+        return 1
+    fi
+    arguments=(
+        "tools/api_release_stack.py"
+        --repository-root "$(pwd)"
+        --app "$app_id"
+        --candidate "$candidate_version"
+    )
+    if [[ -r /dev/tty ]]; then
+        "$python_command" "${arguments[@]}" < /dev/tty
+        return $?
+    fi
+    "$python_command" "${arguments[@]}"
+}
+
 # Validate and preview the selected backend app image plan without side effects.
 handle_validate_production_image_plan() {
     local app_id="${ACTIVE_BACKEND_APP_ID:-demo_app}"
@@ -930,6 +966,12 @@ handle_build_production_image() {
     echo "This action never deploys, never pushes Git, and never deploys latest."
 
     tag_version="$(read_api_publish_version_selection "$current_version")" || return 1
+    tag_version="$(
+        run_api_release_stack_selector "$app_id" "$tag_version"
+    )" || {
+        echo "[INFO] API release version selection cancelled; nothing was changed."
+        return 0
+    }
 
     echo ""
     publish_arguments=(publish --app "$app_id" --version "$tag_version")

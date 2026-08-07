@@ -1,6 +1,13 @@
 [tool.pdm]
 distribution = false
 
+# Public cross-repository release membership. The Swarm site profile owns the
+# shared minimum; this source manifest owns only its stack/component identity.
+[tool.fe_wi.release_stack]
+stack_id = "felix"
+authority_profile_id = "felix"
+component_id = "api"
+
 [project]
 name = "felix"
 version = "1.0.8"

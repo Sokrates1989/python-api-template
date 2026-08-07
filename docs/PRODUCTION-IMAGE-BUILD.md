@@ -98,16 +98,27 @@ selected semantic-version tag to be published for the first time or replaced.
 The resulting registry digest, rather than the movable tag alone, is the
 immutable deployment evidence.
 
+Apps may opt into cross-repository coordination through
+`[tool.fe_wi.release_stack]` in their own `pyproject.toml`. The matching Swarm
+site profile is the single authority for the minimum version of the next
+release. The menu discovers it from the standard sibling workspace, or through
+`RELEASE_STACK_PROFILE_PATH` / `RELEASE_STACK_DEPLOYMENT_ROOT` overrides. An
+equal candidate continues silently. A lower candidate defaults upward to the
+minimum. A higher candidate offers to advance the deployment profile during
+the already confirmed publication action. This mechanism is app-neutral.
+
 Press Enter at the default-yes confirmation to continue, or enter `n` to
 cancel. The menu then performs one ordered release:
 
-1. keeps the current manifest unchanged or updates it to the chosen increment;
-2. creates a version-bump commit containing only the selected app manifest for
+1. reconciles an enrolled candidate with the deployment-owned next-release
+   minimum and advances that profile only when required;
+2. keeps the current manifest unchanged or updates it to the chosen increment;
+3. creates a version-bump commit containing only the selected app manifest for
    an incremented version, even when sibling-app files are already staged;
-3. rebuilds and repeats all image proof gates against the exact selected HEAD;
-4. pushes or replaces the selected semantic-version image tag;
-5. records the registry-reported digest; and
-6. pushes `latest` as a convenience tag.
+4. rebuilds and repeats all image proof gates against the exact selected HEAD;
+5. pushes or replaces the selected semantic-version image tag;
+6. records the registry-reported digest; and
+7. pushes `latest` as a convenience tag.
 
 Docker build and push output is streamed while the commands run. If a registry
 push fails, the menu offers an interactive Docker login and one retry; pressing
@@ -121,15 +132,17 @@ digest.
 If any proof, image push, or digest extraction fails, the publisher exits
 nonzero and does not report a completed publication.
 
-## Version hand-off to Swarm
+## Version coordination and deployment hand-off
 
-The version published by the menu must exactly match
-`site-configs/felix.json` in the Swarm deployment repository before preflight
-or deployment begins.
+The Swarm site profile's compatibility field `release.versionFloor` stores the
+minimum version for the next release. It is not a desired deployed version and
+does not imply that every existing API, Web, Android, or iOS artifact already
+has that version. Source repositories do not maintain another copy.
 
-For the coordinated visible-version release, the API repository and Swarm
-profile both select `1.0.8`. Choose **Keep current** to publish or replace
-`1.0.8` without another version commit. Never substitute `latest`.
+After publication, choose the real published image tag in the Swarm image
+update menu. The deployment profile's `image.defaultVersion` is the deployment
+default and is deliberately separate from the next-release minimum. Never
+substitute `latest`.
 
 The registry digest printed by the publication receipt is the value that the
 strict Swarm preflight resolves and binds to deployment evidence.

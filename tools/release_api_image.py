@@ -33,6 +33,11 @@ except ModuleNotFoundError:
         collect_image_evidence,
     )
 try:
+    from tools.api_release_stack import (
+        advance_api_release_minimum,
+        evaluate_api_release_candidate,
+    )
+    from tools.release_stack_authority import ReleaseStackAuthorityError
     from tools.release_command import CommandRunner, ReleaseError
     from tools.release_image_startup_smoke import run_image_startup_smoke
     from tools.release_registry_publication import (
@@ -49,6 +54,13 @@ try:
         validate_version_transition as _validate_version_transition,
     )
 except ModuleNotFoundError:
+    from api_release_stack import (  # type: ignore[no-redef]
+        advance_api_release_minimum,
+        evaluate_api_release_candidate,
+    )
+    from release_stack_authority import (  # type: ignore[no-redef]
+        ReleaseStackAuthorityError,
+    )
     from release_command import CommandRunner, ReleaseError  # type: ignore[no-redef]
     from release_image_startup_smoke import (  # type: ignore[no-redef]
         run_image_startup_smoke,
@@ -104,6 +116,8 @@ class ReleasePlan:
         receipt_path: Ignored sanitized receipt path.
         sbom_path: Ignored full-image SPDX path.
         dependency_sbom_path: Ignored lock-derived SPDX path.
+        release_stack: Deployment-owned coordination summary, or ``None`` for
+            an independently versioned backend app.
     """
 
     schema_version: int
@@ -124,6 +138,7 @@ class ReleasePlan:
     receipt_path: str
     sbom_path: str
     dependency_sbom_path: str
+    release_stack: dict[str, object] | None
 
 
 def _utc_timestamp() -> str:
@@ -259,6 +274,14 @@ def create_release_plan(
             "Selected image version must equal the committed app package version "
             f"({package_version}); update the package version before building."
         )
+    try:
+        stack_decision = evaluate_api_release_candidate(
+            repository_root,
+            app_id,
+            selected_version,
+        )
+    except ReleaseStackAuthorityError as error:
+        raise ReleaseError(str(error)) from error
 
     canonical_image_name = (
         image_name
@@ -309,6 +332,9 @@ def create_release_plan(
         dependency_sbom_path=(
             evidence_root / f"{selected_version}.dependencies.spdx.json"
         ).relative_to(repository_root).as_posix(),
+        release_stack=(
+            stack_decision.safe_summary() if stack_decision is not None else None
+        ),
     )
 
 
@@ -621,6 +647,29 @@ def publish_release_image(
         target_version,
         allow_current_version=allow_current_version,
     )
+    try:
+        stack_decision = evaluate_api_release_candidate(
+            repository_root,
+            app_id,
+            target_version,
+        )
+        advance_api_release_minimum(stack_decision)
+    except ReleaseStackAuthorityError as error:
+        raise ReleaseError(str(error)) from error
+    if stack_decision is not None:
+        _print_status(
+            "[RELEASE] Minimum version for the next stack release is "
+            f"{max(stack_decision.authority.minimum, stack_decision.candidate).text}."
+        )
+        if stack_decision.minimum_update_required:
+            _print_status(
+                "[RELEASE] Updated deployment authority: "
+                f"{stack_decision.authority.source}"
+            )
+            _print_status(
+                "[INFO] Commit and push that public deployment-profile change "
+                "separately when ready."
+            )
 
     if reuse_current:
         _print_status(

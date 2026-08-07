@@ -83,6 +83,25 @@ pgAdmin writes `servers.json` and `pgpassfile` on startup and will fail with
 **Do not hardcode `/home/<user>/.docker-data/...` or `../../.docker/apps/...`
 paths in `compose.override.yml`.** Always use the env vars.
 
+### Optional: enroll the app in a coordinated release stack
+
+Apps that publish independently alongside a Web, Android, iOS, or another API
+component declare only their membership in `pyproject.toml`:
+
+```toml
+[tool.fe_wi.release_stack]
+stack_id = "example-stack"
+authority_profile_id = "example_deployment"
+component_id = "api"
+```
+
+The matching Swarm `site-configs/<authority_profile_id>.json` must declare the
+same `release.stackId`, include this component ID, and own the one
+`release.versionFloor` compatibility field. Operator-facing tools call that
+field the **minimum version for the next release**. Do not copy the minimum
+into this repository. Apps without this optional table keep independent
+versioning.
+
 ### 5. Do NOT create or copy `/.docker/apps/<new_app>`
 
 The directory `.docker/apps/<new_app>` is **runtime data**. It is **not** part

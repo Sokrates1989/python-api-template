@@ -135,6 +135,8 @@ def _is_release_input_path(path: str, selected_app_id: str) -> bool:
         return True
     if normalized.startswith("tools/release_"):
         return True
+    if normalized == "tools/api_release_stack.py":
+        return True
     return normalized in {
         "quick-start.sh",
         "quick-start.ps1",
