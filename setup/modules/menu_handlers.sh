@@ -970,6 +970,7 @@ handle_build_production_image() {
     local current_version
     local tag_version
     local confirmation
+    local publish_prompt
     local -a publish_arguments
 
     current_version="$(get_active_backend_package_version "$app_id" "0.1.0")"
@@ -1010,10 +1011,11 @@ handle_build_production_image() {
         echo "Release version: ${current_version} -> ${tag_version}"
         echo "Source action: create and prove the version-bump commit"
     fi
+    publish_prompt="Build and publish ${tag_version} and latest? (Y/n): "
     if [[ -r /dev/tty ]]; then
-        read -r -p "Build and publish both image tags? (Y/n): " confirmation < /dev/tty
+        read -r -p "$publish_prompt" confirmation < /dev/tty
     else
-        read -r -p "Build and publish both image tags? (Y/n): " confirmation
+        read -r -p "$publish_prompt" confirmation
     fi
     if [[ "$confirmation" =~ ^[Nn]$ ]]; then
         echo "[INFO] Build & Push cancelled before build or registry mutation."

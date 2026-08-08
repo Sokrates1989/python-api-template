@@ -81,7 +81,11 @@ class ReleaseImageContractTests(unittest.TestCase):
         self.assertIn("run_api_release_tool build --app", source)
         self.assertIn('publish_arguments=(publish --app "$app_id"', source)
         self.assertIn("publish_arguments+=(--allow-current-version)", source)
-        self.assertIn("Build and publish both image tags? (Y/n)", source)
+        self.assertIn(
+            'publish_prompt="Build and publish ${tag_version} and latest? (Y/n): "',
+            source,
+        )
+        self.assertIn('read -r -p "$publish_prompt" confirmation', source)
         self.assertIn('if [[ "$confirmation" =~ ^[Nn]$ ]]', source)
         self.assertIn("never pushes Git", source)
 
