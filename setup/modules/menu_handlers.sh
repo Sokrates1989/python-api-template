@@ -768,7 +768,7 @@ get_active_backend_api_image_name() {
     printf 'sokrates1989/python-api-%s\n' "$app_name"
 }
 
-# Prompt for the API image version using patch/minor/major/manual/current options.
+# Prompt for the API image version through the shared semantic-version menu.
 #
 # Args:
 #   current_version: Current package version from the active app pyproject.toml.
@@ -777,53 +777,8 @@ get_active_backend_api_image_name() {
 #   Writes the selected semantic version to stdout.
 read_api_image_version_selection() {
     local current_version="${1:-0.1.0}"
-    local patch_version
-    local minor_version
-    local major_version
-    local version_choice
-    local manual_version
 
-    patch_version="$(bump_semver "$current_version" "patch")"
-    minor_version="$(bump_semver "$current_version" "minor")"
-    major_version="$(bump_semver "$current_version" "major")"
-
-    echo "" >&2
-    echo "Version options:" >&2
-    echo "  [1] Patch  (${current_version} -> ${patch_version})" >&2
-    echo "  [2] Minor  (${current_version} -> ${minor_version})" >&2
-    echo "  [3] Major  (${current_version} -> ${major_version})" >&2
-    echo "  [4] Enter manually" >&2
-    echo "  [5] Keep current (${current_version})" >&2
-    echo "" >&2
-
-    while true; do
-        if [[ -r /dev/tty ]]; then
-            read -r -p "Choose version option [1]: " version_choice < /dev/tty
-        else
-            read -r -p "Choose version option [1]: " version_choice
-        fi
-        version_choice="${version_choice:-1}"
-
-        case "$version_choice" in
-            1) printf '%s\n' "$patch_version"; return 0 ;;
-            2) printf '%s\n' "$minor_version"; return 0 ;;
-            3) printf '%s\n' "$major_version"; return 0 ;;
-            4)
-                if [[ -r /dev/tty ]]; then
-                    read -r -p "Enter version tag: " manual_version < /dev/tty
-                else
-                    read -r -p "Enter version tag: " manual_version
-                fi
-                if [[ "$manual_version" =~ ^[vV]?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                    printf '%s\n' "$manual_version"
-                    return 0
-                fi
-                echo "Invalid SemVer value. Use x.y.z, for example 1.2.3." >&2
-                ;;
-            5) printf '%s\n' "$current_version"; return 0 ;;
-            *) echo "Invalid option. Choose 1-5." >&2 ;;
-        esac
-    done
+    select_semver_version "$current_version" "API image" true
 }
 
 # Prompt for the current or a greater release version before publication.
@@ -832,53 +787,8 @@ read_api_image_version_selection() {
 # successful receipt records the resulting digest used by deployment preflight.
 read_api_publish_version_selection() {
     local current_version="${1:-0.1.0}"
-    local patch_version
-    local minor_version
-    local major_version
-    local version_choice
-    local manual_version
 
-    patch_version="$(bump_semver "$current_version" "patch")"
-    minor_version="$(bump_semver "$current_version" "minor")"
-    major_version="$(bump_semver "$current_version" "major")"
-
-    echo "" >&2
-    echo "Release version options:" >&2
-    echo "  [1] Patch  (${current_version} -> ${patch_version})" >&2
-    echo "  [2] Minor  (${current_version} -> ${minor_version})" >&2
-    echo "  [3] Major  (${current_version} -> ${major_version})" >&2
-    echo "  [4] Enter a greater SemVer manually" >&2
-    echo "  [5] Keep current (${current_version}; republish allowed)" >&2
-    echo "" >&2
-
-    while true; do
-        if [[ -r /dev/tty ]]; then
-            read -r -p "Choose release version [1]: " version_choice < /dev/tty
-        else
-            read -r -p "Choose release version [1]: " version_choice
-        fi
-        version_choice="${version_choice:-1}"
-
-        case "$version_choice" in
-            1) printf '%s\n' "$patch_version"; return 0 ;;
-            2) printf '%s\n' "$minor_version"; return 0 ;;
-            3) printf '%s\n' "$major_version"; return 0 ;;
-            4)
-                if [[ -r /dev/tty ]]; then
-                    read -r -p "Enter a greater release version: " manual_version < /dev/tty
-                else
-                    read -r -p "Enter a greater release version: " manual_version
-                fi
-                if [[ "$manual_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                    printf '%s\n' "$manual_version"
-                    return 0
-                fi
-                echo "Invalid SemVer value. Use x.y.z, for example 1.2.3." >&2
-                ;;
-            5) printf '%s\n' "$current_version"; return 0 ;;
-            *) echo "Invalid option. Choose 1-5." >&2 ;;
-        esac
-    done
+    select_semver_version "$current_version" "Release" false "; republish allowed"
 }
 
 # Run the standard-library selected-app API release tool.

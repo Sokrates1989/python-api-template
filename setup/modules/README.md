@@ -1,6 +1,8 @@
 # Quick-Start Modules
 
-This directory contains modular components used by the `quick-start.sh` and `quick-start.ps1` scripts.
+This directory contains the Bash modules used by `quick-start.sh`. On Windows,
+`quick-start.ps1` is only a WSL handoff and executes the same Bash menu; it does
+not own a second runtime implementation.
 
 ## Module Structure
 
@@ -8,39 +10,40 @@ The modular approach separates concerns and makes the quick-start scripts more m
 
 ### Available Modules
 
-#### 1. `docker_helpers.sh` / `docker_helpers.ps1`
+#### 1. `docker_helpers.sh`
 **Purpose:** Docker installation and configuration checks
 
 **Functions:**
-- `check_docker_installation()` / `Test-DockerInstallation` - Verifies Docker, Docker daemon, and Docker Compose are installed and running
-- `read_env_variable()` / `Get-EnvVariable` - Reads environment variables from .env files
-- `determine_compose_file()` / `Get-ComposeFile` - Determines which Docker Compose file to use based on database type and mode
+- `check_docker_installation()` - Verifies Docker, Docker daemon, and Docker Compose are installed and running
+- `read_env_variable()` - Reads environment variables from .env files
+- `determine_compose_file()` - Determines which Docker Compose file to use based on database type and mode
 
-#### 2. `version_manager.sh` / `version_manager.ps1`
+#### 2. `version_manager.sh`
 **Purpose:** Semantic versioning and image version management
 
 **Functions:**
-- `bump_semver()` / `Bump-SemVer` - Bumps semantic version (patch, minor, or major)
-- `update_image_version_in_file()` / `Update-ImageVersionInFile` - Updates IMAGE_VERSION in a specific file
-- `update_image_version()` / `Update-ImageVersion` - Interactive version update for both .env and .ci.env
+- `bump_semver()` - Computes a patch, feature/minor, or major increment
+- `select_semver_version()` - Owns the canonical `1/k`, `2/p`, `3/f`, `4/m`, `5/e` selector
+- `update_image_version_in_file()` - Updates IMAGE_VERSION in a specific file
+- `update_image_version()` - Uses the shared selector for .env and .ci.env maintenance
 
-#### 3. `menu_handlers.sh` / `menu_handlers.ps1`
+#### 3. `menu_handlers.sh`
 **Purpose:** Menu action handlers for the quick-start script
 
 **Functions:**
-- `handle_backend_start()` / `Start-Backend` - Starts the backend with Docker Compose
-- `handle_dependency_management()` / `Start-DependencyManagement` - Opens dependency management menu
-- `handle_dependency_and_backend()` / `Start-DependencyAndBackend` - Runs dependency management then starts backend
-- `handle_python_version_test()` / `Test-PythonVersionConfiguration` - Tests Python version configuration
+- `handle_backend_start()` - Starts the backend with Docker Compose
+- `handle_dependency_management()` - Opens dependency management menu
+- `handle_dependency_and_backend()` - Runs dependency management then starts backend
+- `handle_python_version_test()` - Tests Python version configuration
 - `handle_keycloak_bootstrap()` - Runs the Keycloak realm bootstrap (bash only)
-- `handle_build_production_image()` / `Build-ProductionImage` - Builds production Docker image
-- `handle_cicd_setup()` / `Start-CICDSetup` - Sets up CI/CD pipeline
+- `handle_build_production_image()` - Builds production Docker image
+- `handle_cicd_setup()` - Sets up CI/CD pipeline
 
-#### 4. `bootstrap_utils.sh` / `bootstrap_utils.ps1`
+#### 4. `bootstrap_utils.sh`
 **Purpose:** Docker-based Keycloak realm bootstrap utilities
 
 **Functions:**
-- `run_keycloak_bootstrap()` / `Invoke-KeycloakBootstrap` - Builds and runs the bootstrap container to create realms, clients, roles, and users
+- `run_keycloak_bootstrap()` - Builds and runs the bootstrap container to create realms, clients, roles, and users
 
 ## Usage in Quick-Start Scripts
 
@@ -57,18 +60,11 @@ if ! check_docker_installation; then
 fi
 ```
 
-### PowerShell (quick-start.ps1)
-```powershell
-# Import modules at the beginning of the script
-Import-Module "$setupDir\modules\docker_helpers.ps1" -Force
-Import-Module "$setupDir\modules\version_manager.ps1" -Force
-Import-Module "$setupDir\modules\menu_handlers.ps1" -Force
+### Windows (`quick-start.ps1`)
 
-# Use module functions
-if (-not (Test-DockerInstallation)) {
-    exit 1
-}
-```
+The PowerShell entry point validates WSL and forwards arguments to
+`quick-start.sh`. Historical `.ps1` modules are retained only for compatibility
+and must not receive new menu behavior.
 
 ## Benefits of Modular Approach
 
@@ -82,14 +78,14 @@ if (-not (Test-DockerInstallation)) {
 
 To add a new module:
 
-1. Create both `.sh` and `.ps1` versions in this directory
-2. Implement equivalent functions in both versions
-3. Source/Import the module in the main quick-start scripts
-4. Document the module functions in this README
+1. Create one documented `.sh` module in this directory.
+2. Source it from the authoritative Bash module graph.
+3. Add a focused Bash test for reusable behavior.
+4. Document the module functions in this README.
 
 ## Module Naming Convention
 
 - Use lowercase with underscores for bash files: `module_name.sh`
-- Use PascalCase for PowerShell files: `ModuleName.ps1`
+- Keep new runtime modules in Bash so Windows and Linux share one behavior.
 - Use descriptive function names that clearly indicate their purpose
-- Maintain consistency between bash and PowerShell function names (accounting for shell conventions)
+- Keep numeric and named menu contracts stable across every caller.

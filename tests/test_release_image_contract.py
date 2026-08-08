@@ -79,7 +79,7 @@ class ReleaseImageContractTests(unittest.TestCase):
             source,
         )
         self.assertIn(
-            "Keep current (${current_version}; republish allowed)",
+            'select_semver_version "$current_version" "Release" false',
             source,
         )
         self.assertIn("run_api_release_tool plan --app", source)
