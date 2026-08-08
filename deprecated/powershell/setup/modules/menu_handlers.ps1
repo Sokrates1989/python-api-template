@@ -1231,7 +1231,11 @@ function Show-MainMenu {
 
     Write-Host ""
     if ($summary) {
-        Write-Host ("{0}" -f $summary) -ForegroundColor Green
+        if ($exitCode -eq 0) {
+            Write-Host ("✅ {0}" -f $summary) -ForegroundColor Green
+        } else {
+            Write-Host ("❌ {0}" -f $summary) -ForegroundColor Red
+        }
     }
     Write-Host 'Quick-start finished. Run the script again for more actions.' -ForegroundColor Cyan
     Write-Host ""

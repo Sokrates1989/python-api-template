@@ -52,7 +52,8 @@ class ReleaseImageContractTests(unittest.TestCase):
             for package in lock_document["package"]
         }
         security_floors = {
-            "cryptography": (48, 0, 1),
+            "aiohttp": (3, 14, 3),
+            "cryptography": (50, 0, 0),
             "pyasn1": (0, 6, 4),
             "python-multipart": (0, 0, 30),
             "starlette": (1, 3, 1),
@@ -83,6 +84,23 @@ class ReleaseImageContractTests(unittest.TestCase):
         self.assertIn("Build and publish both image tags? (Y/n)", source)
         self.assertIn('if [[ "$confirmation" =~ ^[Nn]$ ]]', source)
         self.assertIn("never pushes Git", source)
+
+    def test_action_summary_uses_status_matched_icons(self) -> None:
+        """Prevent failed quick-start actions from displaying a success icon.
+
+        Returns:
+            None.
+        """
+        source = (
+            REPOSITORY_ROOT / "setup" / "modules" / "menu_handlers.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('prefix="✅"', source)
+        self.assertIn('prefix="❌"', source)
+        self.assertIn(
+            'print_action_summary "$summary_msg" "$exit_code"',
+            source,
+        )
 
     def test_felix_declares_a_non_default_production_startup_smoke(self) -> None:
         """Require Felix image proof to exercise relational Keycloak identity.

@@ -20,6 +20,32 @@ if [ -f "$SCRIPT_DIR/bootstrap_utils.sh" ]; then
     source "$SCRIPT_DIR/bootstrap_utils.sh"
 fi
 
+# Print a terminal action summary whose icon and color match its exit status.
+#
+# Args:
+#   message: Human-readable action result.
+#   status_code: Zero for success; any non-zero value for failure.
+#
+# Returns:
+#   Always returns zero after writing one summary line.
+print_action_summary() {
+    local message="${1:-}"
+    local status_code="${2:-0}"
+    local prefix="✅"
+    local color_code="32"
+
+    if [ "$status_code" -ne 0 ]; then
+        prefix="❌"
+        color_code="31"
+    fi
+
+    if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+        printf '\033[%sm%s %s\033[0m\n' "$color_code" "$prefix" "$message"
+    else
+        printf '%s %s\n' "$prefix" "$message"
+    fi
+}
+
 # Resolve the dependency-management project root for the active backend app.
 resolve_dependency_management_project_root() {
     local configured_root="${PDM_MANAGER_PROJECT_ROOT:-.}"
@@ -1218,7 +1244,7 @@ show_main_menu() {
 
     echo ""
     if [ -n "$summary_msg" ]; then
-        echo "✅ $summary_msg"
+        print_action_summary "$summary_msg" "$exit_code"
     fi
     echo "ℹ️  Quick-Start beendet. Für weitere Aktionen bitte erneut aufrufen."
     echo ""
