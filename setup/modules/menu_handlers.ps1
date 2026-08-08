@@ -242,7 +242,8 @@ function Show-MainMenu {
     $MENU_MAINT_DEP_MGMT = $menuNext; $menuNext++
     $MENU_MAINT_DIAGNOSTICS = $menuNext; $menuNext++
  
-    $MENU_BUILD_PROD_IMAGE = $menuNext; $menuNext++
+    $MENU_BUILD_PROD_IMAGE_LEGACY = $menuNext; $menuNext++
+    $MENU_BUILD_PROD_IMAGE = "p"
     $MENU_BUILD_CICD_SETUP = $menuNext; $menuNext++
     $MENU_BUILD_BUMP_VERSION = $menuNext; $menuNext++
  
@@ -270,7 +271,7 @@ function Show-MainMenu {
     Write-Host "  $MENU_MAINT_DIAGNOSTICS) Run Docker/Build Diagnostics" -ForegroundColor Gray
     Write-Host "" 
     Write-Host "Build / CI-CD:" -ForegroundColor Yellow
-    Write-Host "  $MENU_BUILD_PROD_IMAGE) Build Production Docker Image" -ForegroundColor Gray
+    Write-Host "  $MENU_BUILD_PROD_IMAGE) Build & Publish API Docker Image" -ForegroundColor Gray
     Write-Host "  $MENU_BUILD_CICD_SETUP) Setup CI/CD Pipeline" -ForegroundColor Gray
     Write-Host "  $MENU_BUILD_BUMP_VERSION) Bump release version for docker image" -ForegroundColor Gray
     Write-Host "" 
@@ -287,7 +288,10 @@ function Show-MainMenu {
     Write-Host "  $MENU_EXIT) Exit" -ForegroundColor Gray
  
     Write-Host ""
-    $choice = Read-Host "Your choice (1-$MENU_EXIT)"
+    $choice = Read-Host "Your choice (1-$MENU_EXIT, p)"
+    if ($choice -eq "P" -or $choice -eq "$MENU_BUILD_PROD_IMAGE_LEGACY") {
+        $choice = $MENU_BUILD_PROD_IMAGE
+    }
  
      $summary = $null
      $exitCode = 0
@@ -360,7 +364,7 @@ function Show-MainMenu {
         }
         "$MENU_BUILD_PROD_IMAGE" {
              Invoke-ProductionImageBuild
-             $summary = "Production Docker image build triggered"
+             $summary = "Production Docker image build/publish triggered"
          }
         "$MENU_BUILD_CICD_SETUP" {
              Start-CICDSetup

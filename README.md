@@ -86,7 +86,8 @@ generator and must not create `app/apps/<app_id>` targets directly.
 Production image planning, local proof, and build-and-push are operator actions
 owned by this repository's quick-start menu. Select the active backend app,
 then use the **Build** actions **Validate API Docker image release plan**,
-**Build API Docker image locally**, or **Build & Push API Docker Image**.
+**Build API Docker image locally**, or press **`p` Build & Publish API Docker
+Image**.
 
 Do not use raw Docker commands, the Python release tool directly, or a CI/CD
 pipeline to publish an API image. Automated CI remains quality-only. See
@@ -390,7 +391,7 @@ rm .setup-complete
 ## 🏗️ Docker Image Build & Deploy
 
 Launch `quick-start.ps1` or `quick-start.sh`, verify the selected backend app,
-and choose **Build & Push API Docker Image (current or bump + version +
+and press **`p` Build & Publish API Docker Image (current or bump + version +
 latest)**. This is the only supported image publication path. Do not publish
 with raw Docker commands or CI/CD. See
 [`docs/PRODUCTION-IMAGE-BUILD.md`](docs/PRODUCTION-IMAGE-BUILD.md).

@@ -70,7 +70,12 @@ class ReleaseImageContractTests(unittest.TestCase):
         self.assertIn("Validate API Docker image release plan", source)
         self.assertIn("Build API Docker image locally (no push)", source)
         self.assertIn(
-            "Build & Push API Docker Image (current or bump + version + latest)",
+            "Build & Publish API Docker Image (current or bump + version + latest)",
+            source,
+        )
+        self.assertIn('local MENU_BUILD_PROD_IMAGE="p"', source)
+        self.assertIn(
+            "${MENU_BUILD_PROD_IMAGE}|P|${MENU_BUILD_PROD_IMAGE_LEGACY})",
             source,
         )
         self.assertIn(
@@ -88,6 +93,15 @@ class ReleaseImageContractTests(unittest.TestCase):
         self.assertIn('read -r -p "$publish_prompt" confirmation', source)
         self.assertIn('if [[ "$confirmation" =~ ^[Nn]$ ]]', source)
         self.assertIn("never pushes Git", source)
+
+        powershell_source = (
+            REPOSITORY_ROOT / "setup" / "modules" / "menu_handlers.ps1"
+        ).read_text(encoding="utf-8")
+        self.assertIn('$MENU_BUILD_PROD_IMAGE = "p"', powershell_source)
+        self.assertIn(
+            "$choice -eq \"$MENU_BUILD_PROD_IMAGE_LEGACY\"",
+            powershell_source,
+        )
 
     def test_action_summary_uses_status_matched_icons(self) -> None:
         """Prevent failed quick-start actions from displaying a success icon.

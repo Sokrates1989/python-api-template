@@ -1072,7 +1072,8 @@ show_main_menu() {
 
         local MENU_BUILD_API_PLAN=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
         local MENU_BUILD_API_LOCAL=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
-        local MENU_BUILD_PROD_IMAGE=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_BUILD_PROD_IMAGE_LEGACY=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
+        local MENU_BUILD_PROD_IMAGE="p"
         local MENU_BUILD_CICD_SETUP=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
         local MENU_BUILD_BUMP_VERSION=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
 
@@ -1104,7 +1105,7 @@ show_main_menu() {
         echo "Build:"
         echo "  ${MENU_BUILD_API_PLAN}) Validate API Docker image release plan (v${active_api_version})"
         echo "  ${MENU_BUILD_API_LOCAL}) Build API Docker image locally (no push)"
-        echo "  ${MENU_BUILD_PROD_IMAGE}) Build & Push API Docker Image (current or bump + version + latest)"
+        echo "  ${MENU_BUILD_PROD_IMAGE}) Build & Publish API Docker Image (current or bump + version + latest)"
         echo "  ${MENU_BUILD_BUMP_VERSION}) Bump release version for docker image"
         echo ""
         echo "Legacy (not a release path):"
@@ -1121,9 +1122,9 @@ show_main_menu() {
         echo ""
 
         if [[ -r /dev/tty ]]; then
-            read -r -p "Deine Wahl (1-${MENU_EXIT}): " choice < /dev/tty
+            read -r -p "Deine Wahl (1-${MENU_EXIT}, p): " choice < /dev/tty
         else
-            read -r -p "Deine Wahl (1-${MENU_EXIT}): " choice
+            read -r -p "Deine Wahl (1-${MENU_EXIT}, p): " choice
         fi
 
         case $choice in
@@ -1203,11 +1204,11 @@ show_main_menu() {
             fi
             break
             ;;
-          ${MENU_BUILD_PROD_IMAGE})
+          ${MENU_BUILD_PROD_IMAGE}|P|${MENU_BUILD_PROD_IMAGE_LEGACY})
             if handle_build_production_image; then
-                summary_msg="API Docker image build/push completed"
+                summary_msg="API Docker image build/publish completed"
             else
-                summary_msg="API Docker image build/push failed"
+                summary_msg="API Docker image build/publish failed"
                 exit_code=1
             fi
             break

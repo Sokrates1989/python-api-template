@@ -12,7 +12,7 @@ quick-start menu.
   version, image reference, source revision, and evidence paths.
 - Use **Build API Docker image locally (no push)** to run the complete local
   build, runtime inspection, SBOM, and vulnerability gates without publishing.
-- Use **Build & Push API Docker Image (current or bump + version + latest)**
+- Press **`p` Build & Publish API Docker Image (current or bump + version + latest)**
   for the only supported publication path.
 
 Do not publish an API image by running `docker build`, `docker tag`,
@@ -115,7 +115,7 @@ disable the policy to make publication continue.
 
 ### 3. Publish through the menu
 
-Choose **Build & Push API Docker Image (current or bump + version + latest)**.
+Press **`p` Build & Publish API Docker Image (current or bump + version + latest)**.
 
 The publisher offers the exact committed version plus patch, minor, major, and
 manual greater-version choices. **Keep current** intentionally allows the
