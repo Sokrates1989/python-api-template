@@ -16,8 +16,10 @@ quick-start menu.
   for the only supported publication path.
 
 Do not publish an API image by running `docker build`, `docker tag`,
-`docker push`, Docker Compose build helpers, or
-`tools/release_api_image.py` directly. Do not publish API images from GitHub
+`docker push`, Docker Compose build helpers, or the release tool's `publish`
+action directly. The failure diagnostic may print a `release_api_image.py
+build` command; that command is an explicitly supported local, non-publishing
+reproduction of the same proof gates. Do not publish API images from GitHub
 Actions, GitLab CI/CD, or another automatic pipeline. CI is quality-only.
 
 The terminal is used only to launch the quick-start menu. The menu owns the
@@ -87,6 +89,29 @@ The action builds the selected version and then:
 
 It does not change Git history, push source, push an image, update `latest`, or
 deploy anything.
+
+### Vulnerability rejection diagnostics
+
+The vulnerability gate does not collapse every nonzero scanner result into a
+generic failure. A rejection identifies:
+
+- the scanner and exact image;
+- whether fixable HIGH/CRITICAL findings were present or the scanner failed
+  operationally (for example, registry authentication or database failure);
+- each blocking CVE/rule, affected package, installed version, and available
+  fixed version when the scanner supplies them;
+- the complete ignored machine report at
+  `build/release-evidence/api/<app_id>/<version>.vulnerabilities.json`;
+- an interactive scanner command that prints findings, plus the exact
+  machine-report gate command; and
+- a copy-paste `release_api_image.py build` command that repeats the complete
+  local proof without a registry push.
+
+The terminal shows up to 30 findings so a large report remains readable. The
+retained JSON report is complete. The gate remains fail-closed: a malformed or
+missing report is reported as a scanner operational error, never as a clean
+image. Fix the findings or scanner failure and rerun the menu action; do not
+disable the policy to make publication continue.
 
 ### 3. Publish through the menu
 
@@ -162,6 +187,7 @@ For a successful publication, the receipt must report:
 - the exact source revision and dependency-lock checksum;
 - the selected version image reference and registry digest;
 - successful runtime, SBOM, and vulnerability gates;
+- the retained vulnerability-report path, format, and checksum;
 - version-tag publication and explicit republishing allowance;
 - `latest` publication as convenience only; and
 - confirmation that Git source was left local for the operator; and

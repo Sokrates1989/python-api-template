@@ -116,6 +116,7 @@ class ReleasePlan:
         receipt_path: Ignored sanitized receipt path.
         sbom_path: Ignored full-image SPDX path.
         dependency_sbom_path: Ignored lock-derived SPDX path.
+        vulnerability_report_path: Ignored scanner-native machine report.
         release_stack: Deployment-owned coordination summary, or ``None`` for
             an independently versioned backend app.
     """
@@ -138,6 +139,7 @@ class ReleasePlan:
     receipt_path: str
     sbom_path: str
     dependency_sbom_path: str
+    vulnerability_report_path: str
     release_stack: dict[str, object] | None
 
 
@@ -331,6 +333,9 @@ def create_release_plan(
         ).relative_to(repository_root).as_posix(),
         dependency_sbom_path=(
             evidence_root / f"{selected_version}.dependencies.spdx.json"
+        ).relative_to(repository_root).as_posix(),
+        vulnerability_report_path=(
+            evidence_root / f"{selected_version}.vulnerabilities.json"
         ).relative_to(repository_root).as_posix(),
         release_stack=(
             stack_decision.safe_summary() if stack_decision is not None else None
@@ -556,11 +561,15 @@ def build_release_image(
         package_name=plan.package_name,
         package_version=plan.package_version,
         git_revision=plan.git_revision,
+        image_name=plan.image_name,
         image_ref=plan.image_ref,
         dependency_lock_path=repository_root / plan.dependency_lock_path,
         dependency_lock_sha256=plan.dependency_lock_sha256,
         image_sbom_path=repository_root / plan.sbom_path,
         dependency_sbom_path=repository_root / plan.dependency_sbom_path,
+        vulnerability_report_path=(
+            repository_root / plan.vulnerability_report_path
+        ),
     )
     try:
         evidence = collect_image_evidence(
@@ -778,6 +787,7 @@ def _print_plan(plan: ReleasePlan, action: str) -> None:
     print(f"Receipt:         {plan.receipt_path}")
     print(f"Image SBOM:      {plan.sbom_path}")
     print(f"Lock SBOM:       {plan.dependency_sbom_path}")
+    print(f"Vulnerability:   {plan.vulnerability_report_path}")
     print("Deployment:      not authorized")
 
 

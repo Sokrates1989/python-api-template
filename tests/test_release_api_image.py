@@ -37,6 +37,7 @@ class FakeRunner:
         self.worktree_status = ""
         self.manifest_exists = False
         self.vulnerability_failure = False
+        self.vulnerability_operational_failure = False
         self.trivy_available = True
 
     def run(
@@ -77,19 +78,7 @@ class FakeRunner:
         elif normalized[:3] == ("docker", "image", "inspect"):
             stdout = json.dumps(self.inspect_document)
         elif normalized[:3] == ("docker", "manifest", "inspect"):
-            if self.manifest_exists:
-                return subprocess.CompletedProcess(
-                    normalized,
-                    0,
-                    stdout='{"schemaVersion": 2}',
-                    stderr="",
-                )
-            return subprocess.CompletedProcess(
-                normalized,
-                1,
-                stdout="",
-                stderr="manifest unknown",
-            )
+            return self._manifest_result(normalized)
         elif normalized[:2] == ("docker", "push") and not normalized[-1].endswith(
             ":latest"
         ):
@@ -103,31 +92,158 @@ class FakeRunner:
                     "packages": [],
                 }
             )
+        elif normalized[:3] == ("docker", "scout", "cves"):
+            return self._scout_cves_result(normalized)
         elif normalized[:2] == ("trivy", "image") and "--output" in normalized:
-            output_path = Path(normalized[normalized.index("--output") + 1])
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            if "spdx-json" in normalized:
-                output_path.write_text(
-                    json.dumps(
-                        {
-                            "spdxVersion": "SPDX-2.3",
-                            "SPDXID": "SPDXRef-DOCUMENT",
-                            "name": "image-sbom",
-                            "packages": [],
-                        }
-                    ),
-                    encoding="utf-8",
-                )
-            else:
-                output_path.write_text('{"Results": []}\n', encoding="utf-8")
-                if self.vulnerability_failure:
-                    return subprocess.CompletedProcess(
-                        normalized,
-                        1,
-                        stdout="",
-                        stderr="policy findings",
-                    )
+            return self._trivy_result(normalized)
         return subprocess.CompletedProcess(normalized, 0, stdout=stdout, stderr="")
+
+    def _manifest_result(
+        self,
+        command: tuple[str, ...],
+    ) -> subprocess.CompletedProcess[str]:
+        """Return configured registry manifest existence.
+
+        Args:
+            command: Recorded Docker manifest command.
+
+        Returns:
+            subprocess.CompletedProcess[str]: Existing or missing result.
+        """
+
+        if self.manifest_exists:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout='{"schemaVersion": 2}',
+                stderr="",
+            )
+        return subprocess.CompletedProcess(
+            command,
+            1,
+            stdout="",
+            stderr="manifest unknown",
+        )
+
+    def _scout_cves_result(
+        self,
+        command: tuple[str, ...],
+    ) -> subprocess.CompletedProcess[str]:
+        """Write a Docker Scout SARIF fixture and return its policy result.
+
+        Args:
+            command: Recorded Docker Scout CVE command.
+
+        Returns:
+            subprocess.CompletedProcess[str]: Clean, finding, or operational result.
+
+        Side Effects:
+            Writes the requested SARIF output except during an operational failure.
+        """
+
+        output_path = Path(command[command.index("--output") + 1])
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        if self.vulnerability_operational_failure:
+            return subprocess.CompletedProcess(
+                command,
+                1,
+                stdout="",
+                stderr="registry authentication failed",
+            )
+        results: list[dict[str, object]] = []
+        if self.vulnerability_failure:
+            results.append(
+                {
+                    "ruleId": "CVE-2099-0002",
+                    "level": "error",
+                    "message": {"text": "openssl 1.0 is affected; upgrade to 1.1"},
+                    "properties": {
+                        "package": "openssl",
+                        "installedVersion": "1.0",
+                        "fixedVersion": "1.1",
+                    },
+                }
+            )
+        output_path.write_text(
+            json.dumps({"version": "2.1.0", "runs": [{"results": results}]}),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(
+            command,
+            2 if self.vulnerability_failure else 0,
+            stdout="",
+            stderr="vulnerabilities found" if self.vulnerability_failure else "",
+        )
+
+    def _trivy_result(
+        self,
+        command: tuple[str, ...],
+    ) -> subprocess.CompletedProcess[str]:
+        """Write a Trivy SPDX or vulnerability fixture.
+
+        Args:
+            command: Recorded Trivy command.
+
+        Returns:
+            subprocess.CompletedProcess[str]: Clean, finding, or operational result.
+
+        Side Effects:
+            Writes the requested scanner output except during an operational failure.
+        """
+
+        output_path = Path(command[command.index("--output") + 1])
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        if "spdx-json" in command:
+            output_path.write_text(
+                json.dumps(
+                    {
+                        "spdxVersion": "SPDX-2.3",
+                        "SPDXID": "SPDXRef-DOCUMENT",
+                        "name": "image-sbom",
+                        "packages": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        if self.vulnerability_operational_failure:
+            return subprocess.CompletedProcess(
+                command,
+                1,
+                stdout="",
+                stderr="vulnerability database unavailable",
+            )
+        vulnerabilities = []
+        if self.vulnerability_failure:
+            vulnerabilities.append(
+                {
+                    "VulnerabilityID": "CVE-2099-0001",
+                    "Severity": "CRITICAL",
+                    "PkgName": "libexample",
+                    "InstalledVersion": "1.0",
+                    "FixedVersion": "1.1",
+                    "Title": "Example memory corruption",
+                }
+            )
+        output_path.write_text(
+            json.dumps(
+                {
+                    "Results": [
+                        {
+                            "Target": "python:3.13-slim",
+                            "Vulnerabilities": vulnerabilities,
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(
+            command,
+            1 if self.vulnerability_failure else 0,
+            stdout="",
+            stderr="policy findings" if self.vulnerability_failure else "",
+        )
 
     def which(self, executable: str) -> str | None:
         """Resolve the simulated vulnerability scanner executable.
@@ -394,6 +510,13 @@ class ReleaseApiImageTests(unittest.TestCase):
         self.assertEqual(image_sbom["spdxVersion"], "SPDX-2.3")
         self.assertEqual(dependency_sbom["packages"][0]["name"], "fastapi")
         self.assertEqual(receipt["imageEvidence"]["sbomScanner"], "trivy")
+        vulnerability_report = self.repository / plan.vulnerability_report_path
+        self.assertTrue(vulnerability_report.is_file())
+        self.assertEqual(
+            receipt["vulnerabilityPolicy"]["reportPath"],
+            plan.vulnerability_report_path,
+        )
+        self.assertEqual(len(receipt["vulnerabilityPolicy"]["reportSha256"]), 64)
         self.assertIs(receipt["startupSmoke"]["executed"], True)
         self.assertTrue((self.repository / plan.receipt_path).is_file())
 
@@ -494,14 +617,67 @@ class ReleaseApiImageTests(unittest.TestCase):
         self.assertFalse((self.repository / plan.receipt_path).exists())
 
     def test_vulnerability_policy_failure_blocks_successful_receipt(self) -> None:
+        """Show the exact fixable finding while withholding a success receipt.
+
+        Returns:
+            None.
+        """
+
         plan = self._plan()
         self._set_valid_inspection(plan)
         self.runner.vulnerability_failure = True
 
-        with self.assertRaisesRegex(ReleaseError, "Vulnerability policy failed"):
+        with self.assertRaises(ReleaseError) as raised:
             build_release_image(self.repository, plan, runner=self.runner)
 
         self.assertFalse((self.repository / plan.receipt_path).exists())
+        message = str(raised.exception)
+        self.assertIn("CVE-2099-0001", message)
+        self.assertIn("package=libexample", message)
+        self.assertIn("fixed=1.1", message)
+        self.assertIn(plan.vulnerability_report_path, message)
+        self.assertIn("trivy image", message)
+        self.assertIn("release_api_image.py build", message)
+
+    def test_scanner_operational_failure_is_not_reported_as_a_cve(self) -> None:
+        """Separate scanner/database failures from vulnerability findings.
+
+        Returns:
+            None.
+        """
+
+        plan = self._plan()
+        self._set_valid_inspection(plan)
+        self.runner.vulnerability_operational_failure = True
+
+        with self.assertRaises(ReleaseError) as raised:
+            build_release_image(self.repository, plan, runner=self.runner)
+
+        message = str(raised.exception)
+        self.assertIn("scanner operational error", message)
+        self.assertIn("vulnerability database unavailable", message)
+        self.assertNotIn("Blocking findings:", message)
+
+    def test_scout_failure_prints_exact_sarif_finding_and_rerun(self) -> None:
+        """Expose Docker Scout findings instead of one ambiguous rejection.
+
+        Returns:
+            None.
+        """
+
+        plan = self._plan()
+        self._set_valid_inspection(plan)
+        self.runner.trivy_available = False
+        self.runner.vulnerability_failure = True
+
+        with self.assertRaises(ReleaseError) as raised:
+            build_release_image(self.repository, plan, runner=self.runner)
+
+        message = str(raised.exception)
+        self.assertIn("Scanner: docker-scout", message)
+        self.assertIn("CVE-2099-0002", message)
+        self.assertIn("package=openssl", message)
+        self.assertIn("docker scout cves", message)
 
     def test_scout_fallback_rejects_only_fixable_high_critical_findings(self) -> None:
         """Keep Docker Scout aligned with Trivy's ignore-unfixed policy."""

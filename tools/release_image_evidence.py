@@ -12,13 +12,23 @@ import json
 import os
 import re
 import subprocess
-import tempfile
 import tomllib
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Protocol, Sequence
+
+try:
+    from tools.release_vulnerability_diagnostics import (
+        VulnerabilityScanError,
+        run_vulnerability_policy,
+    )
+except ModuleNotFoundError:
+    from release_vulnerability_diagnostics import (  # type: ignore[no-redef]
+        VulnerabilityScanError,
+        run_vulnerability_policy,
+    )
 
 
 class ImageEvidenceError(RuntimeError):
@@ -69,22 +79,26 @@ class ImageEvidenceRequest:
         package_name: App-owned package name.
         package_version: Immutable semantic version.
         git_revision: Full source revision.
+        image_name: Registry repository without a tag.
         image_ref: Exact locally built image reference.
         dependency_lock_path: Selected app PDM lock.
         dependency_lock_sha256: Selected lock digest.
         image_sbom_path: Ignored full-image SPDX output.
         dependency_sbom_path: Ignored lock-derived SPDX output.
+        vulnerability_report_path: Ignored retained scanner-native JSON report.
     """
 
     app_id: str
     package_name: str
     package_version: str
     git_revision: str
+    image_name: str
     image_ref: str
     dependency_lock_path: Path
     dependency_lock_sha256: str
     image_sbom_path: Path
     dependency_sbom_path: Path
+    vulnerability_report_path: Path
 
 
 def _utc_timestamp() -> str:
@@ -386,76 +400,26 @@ def run_vulnerability_scan(
         dict[str, Any]: Sanitized scanner, policy, and pass result.
 
     Side Effects:
-        Runs an image scan and creates only an ephemeral raw report.
+        Runs an image scan and replaces the ignored retained machine report.
 
     Raises:
-        ImageEvidenceError: If fixable policy findings or scanner errors return
-            nonzero. Unfixed findings remain in the SBOM/scanner data but do
-            not block because neither supported scanner can remediate them.
+        ImageEvidenceError: If fixable policy findings, scanner errors, or
+            malformed scanner output prevent a trustworthy clean result.
+            Unfixed findings remain nonblocking under this release policy.
     """
 
-    if selected_scanner == "trivy":
-        with tempfile.TemporaryDirectory(prefix="felix-api-trivy-") as temp_dir:
-            report_path = Path(temp_dir) / "report.json"
-            completed = runner.run(
-                (
-                    "trivy",
-                    "image",
-                    "--quiet",
-                    "--format",
-                    "json",
-                    "--output",
-                    str(report_path),
-                    "--severity",
-                    "HIGH,CRITICAL",
-                    "--ignore-unfixed",
-                    "--exit-code",
-                    "1",
-                    request.image_ref,
-                ),
-                cwd=repository_root,
-                check=False,
-            )
-            if completed.returncode != 0:
-                raise ImageEvidenceError(
-                    "Vulnerability policy failed: fixable HIGH or CRITICAL "
-                    "findings, or a Trivy operational error, blocked the image."
-                )
-        scanner_name = "trivy"
-    elif selected_scanner == "docker-scout":
-        completed = runner.run(
-            (
-                "docker",
-                "scout",
-                "cves",
-                "--only-fixed",
-                "--only-severity",
-                "high,critical",
-                "--exit-code",
-                request.image_ref,
-            ),
-            cwd=repository_root,
-            check=False,
+    try:
+        return run_vulnerability_policy(
+            repository_root,
+            app_id=request.app_id,
+            image_name=request.image_name,
+            image_ref=request.image_ref,
+            report_path=request.vulnerability_report_path,
+            runner=runner,
+            scanner=selected_scanner,
         )
-        if completed.returncode != 0:
-            raise ImageEvidenceError(
-                "Vulnerability policy failed: fixable HIGH or CRITICAL "
-                "findings, or a Docker Scout operational error, blocked the image."
-            )
-        scanner_name = "docker-scout"
-    else:
-        raise ImageEvidenceError(
-            f"Unsupported vulnerability scanner: {selected_scanner!r}"
-        )
-
-    return {
-        "scanner": scanner_name,
-        "policy": {
-            "rejectedSeverities": ["HIGH", "CRITICAL"],
-            "ignoreUnfixed": True,
-        },
-        "result": "passed",
-    }
+    except VulnerabilityScanError as error:
+        raise ImageEvidenceError(str(error)) from error
 
 
 def collect_image_evidence(
@@ -479,7 +443,8 @@ def collect_image_evidence(
         dict[str, dict[str, Any]]: Sanitized dependency, image, and policy maps.
 
     Side Effects:
-        Writes two ignored SPDX files and runs the selected image scanner.
+        Writes two ignored SPDX files plus one retained vulnerability report,
+        then runs the selected image scanner.
 
     Raises:
         ImageEvidenceError: If scanner resolution, SBOM validation, or policy fails.
@@ -512,6 +477,9 @@ def collect_image_evidence(
         request,
         runner,
         selected_scanner,
+    )
+    vulnerability["reportSha256"] = _sha256_file(
+        request.vulnerability_report_path
     )
     if progress:
         progress("[EVIDENCE] SBOM and vulnerability gates passed.")

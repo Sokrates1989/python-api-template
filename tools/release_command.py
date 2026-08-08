@@ -144,7 +144,12 @@ def safe_command_error(completed: subprocess.CompletedProcess[str]) -> str:
         str: At most twenty bounded, secret-conscious lines.
     """
 
-    lines = (completed.stderr or completed.stdout or "").splitlines()
+    combined = "\n".join(
+        stream
+        for stream in (completed.stdout or "", completed.stderr or "")
+        if stream
+    )
+    lines = combined.splitlines()
     safe_lines = []
     for line in lines[-20:]:
         if SECRET_KEY_PATTERN.search(line):
