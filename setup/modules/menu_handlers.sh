@@ -781,14 +781,56 @@ read_api_image_version_selection() {
     select_semver_version "$current_version" "API image" true
 }
 
-# Prompt for the current or a greater release version before publication.
+# Prompt for a production or test image version from the shared next minimum.
 #
-# Current-version publication may intentionally replace the registry tag. Every
-# successful receipt records the resulting digest used by deployment preflight.
+# Args:
+#   minimum_version: Deployment-owned next minimum.
+#   channel: stable or test.
+#
+# Current-minimum publication may intentionally replace the registry tag.
+# Exact lower image overrides remain possible without lowering the minimum.
 read_api_publish_version_selection() {
-    local current_version="${1:-0.1.0}"
+    local minimum_version="${1:-0.1.0}"
+    local channel="${2:-stable}"
+    local subject="Production API image"
+    local keep_note="; republish allowed"
 
-    select_semver_version "$current_version" "Release" false "; republish allowed"
+    if [ "$channel" = "test" ]; then
+        subject="Production-connected API test image"
+        keep_note="; -test is added automatically"
+    fi
+    select_semver_version \
+        "$minimum_version" "$subject" false "$keep_note" \
+        "$minimum_version" true
+}
+
+# Print the deployment-owned minimum for one selected API app.
+#
+# Args:
+#   app_id: Selected backend application identifier.
+#   fallback_version: Manifest version for an app without stack membership.
+#
+# Returns:
+#   Prints only the floor/fallback; returns non-zero for invalid authority data.
+run_api_release_stack_minimum() {
+    local app_id="$1"
+    local fallback_version="$2"
+    local python_command=""
+
+    if command -v python3 >/dev/null 2>&1; then
+        python_command="python3"
+    elif command -v python >/dev/null 2>&1; then
+        python_command="python"
+    else
+        echo "[ERROR] Python 3 is required for API release coordination." >&2
+        return 1
+    fi
+    "$python_command" \
+        "tools/api_release_stack.py" \
+        --repository-root "$(pwd)" \
+        --app "$app_id" \
+        --candidate "$fallback_version" \
+        --minimum-only
 }
 
 # Run the standard-library selected-app API release tool.
@@ -876,9 +918,12 @@ handle_build_production_image_local() {
 # Returns:
 #   0 when build and push succeed, non-zero otherwise.
 handle_build_production_image() {
+    local channel="${1:-stable}"
     local app_id="${ACTIVE_BACKEND_APP_ID:-demo_app}"
     local current_version
+    local minimum_version
     local tag_version
+    local comparison
     local confirmation
     local publish_prompt
     local -a publish_arguments
@@ -886,33 +931,54 @@ handle_build_production_image() {
     current_version="$(get_active_backend_package_version "$app_id" "0.1.0")"
 
     echo ""
-    echo "Docker Build & Push"
-    echo "======================"
+    if [ "$channel" = "test" ]; then
+        echo "Production-Connected API Test Image"
+        echo "==================================="
+    else
+        echo "Production API Release Image"
+        echo "============================"
+    fi
     echo ""
     echo "Selected app: ${app_id}"
-    echo "Current version: ${current_version}"
+    minimum_version="$(run_api_release_stack_minimum "$app_id" "$current_version")" || return 1
+    echo "Source package version: ${current_version}"
+    echo "Next minimum version: ${minimum_version}"
     echo ""
     echo "This explicit release action will:"
-    echo "  1. Keep the current version or increment and commit pyproject.toml"
+    if [ "$channel" = "test" ]; then
+        echo "  1. Keep source unchanged and derive a -test image tag"
+    else
+        echo "  1. Keep an exact image override or commit a greater package version"
+    fi
     echo "  2. Build, inspect, create an image SPDX SBOM, and vulnerability-scan"
     echo "  3. Push or republish the selected version image"
-    echo "  4. Push latest as a convenience tag"
+    if [ "$channel" = "test" ]; then
+        echo "  4. Push latest-test as a convenience tag"
+    else
+        echo "  4. Push latest as a convenience tag"
+    fi
     echo "  5. Leave Git source local for you to push separately"
     echo ""
     echo "Deployment evidence binds the resulting registry digest."
     echo "This action never deploys, never pushes Git, and never deploys latest."
 
-    tag_version="$(read_api_publish_version_selection "$current_version")" || return 1
-    tag_version="$(
-        run_api_release_stack_selector "$app_id" "$tag_version"
-    )" || {
-        echo "[INFO] API release version selection cancelled; nothing was changed."
-        return 0
-    }
+    tag_version="$(read_api_publish_version_selection "$minimum_version" "$channel")" || return 1
+    comparison="$(compare_semver "$tag_version" "$minimum_version")" || return 1
 
     echo ""
-    publish_arguments=(publish --app "$app_id" --version "$tag_version")
-    if [ "$tag_version" = "$current_version" ]; then
+    publish_arguments=(
+        publish
+        --app "$app_id"
+        --version "$tag_version"
+        --channel "$channel"
+    )
+    if [ "$comparison" = "-1" ]; then
+        echo "Image override: ${tag_version} (next minimum remains ${minimum_version})"
+        publish_arguments+=(--allow-version-below-minimum)
+    elif [ "$channel" = "test" ]; then
+        echo "Test image version: ${tag_version}-test"
+        echo "Source action: no package-version change"
+    elif [ "$tag_version" = "$current_version" ]; then
         echo "Release version: ${current_version} (keep current)"
         echo "Source action: no version-file change or version-bump commit"
         echo "Registry action: ${tag_version} may be created or replaced"
@@ -921,7 +987,11 @@ handle_build_production_image() {
         echo "Release version: ${current_version} -> ${tag_version}"
         echo "Source action: create and prove the version-bump commit"
     fi
-    publish_prompt="Build and publish ${tag_version} and latest? (Y/n): "
+    if [ "$channel" = "test" ]; then
+        publish_prompt="Build and publish ${tag_version}-test and latest-test? (Y/n): "
+    else
+        publish_prompt="Build and publish ${tag_version} and latest? (Y/n): "
+    fi
     if [[ -r /dev/tty ]]; then
         read -r -p "$publish_prompt" confirmation < /dev/tty
     else
@@ -984,6 +1054,7 @@ show_main_menu() {
         local MENU_BUILD_API_LOCAL=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
         local MENU_BUILD_PROD_IMAGE_LEGACY=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
         local MENU_BUILD_PROD_IMAGE="p"
+        local MENU_BUILD_TEST_IMAGE="t"
         local MENU_BUILD_CICD_SETUP=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
         local MENU_BUILD_BUMP_VERSION=$MENU_NEXT; MENU_NEXT=$((MENU_NEXT+1))
 
@@ -1012,10 +1083,11 @@ show_main_menu() {
         echo "  ${MENU_MAINT_DIAGNOSTICS}) Docker/Build Diagnose ausführen"
         echo "  ${MENU_MAINT_APP_FILES}) App-spezifische Dateien und Ordner öffnen"
         echo ""
-        echo "Build:"
+        echo "Build, Test & Release:"
         echo "  ${MENU_BUILD_API_PLAN}) Validate API Docker image release plan (v${active_api_version})"
         echo "  ${MENU_BUILD_API_LOCAL}) Build API Docker image locally (no push)"
-        echo "  ${MENU_BUILD_PROD_IMAGE}) Build & Publish API Docker Image (current or bump + version + latest)"
+        echo "  ${MENU_BUILD_PROD_IMAGE}) Production Release API Image (guided; version + latest)"
+        echo "  ${MENU_BUILD_TEST_IMAGE}) Production-Connected Test API Image (guided; version-test + latest-test)"
         echo "  ${MENU_BUILD_BUMP_VERSION}) Bump release version for docker image"
         echo ""
         echo "Legacy (not a release path):"
@@ -1032,9 +1104,9 @@ show_main_menu() {
         echo ""
 
         if [[ -r /dev/tty ]]; then
-            read -r -p "Deine Wahl (1-${MENU_EXIT}, p): " choice < /dev/tty
+            read -r -p "Deine Wahl (1-${MENU_EXIT}, p, t): " choice < /dev/tty
         else
-            read -r -p "Deine Wahl (1-${MENU_EXIT}, p): " choice
+            read -r -p "Deine Wahl (1-${MENU_EXIT}, p, t): " choice
         fi
 
         case $choice in
@@ -1116,9 +1188,18 @@ show_main_menu() {
             ;;
           ${MENU_BUILD_PROD_IMAGE}|P|${MENU_BUILD_PROD_IMAGE_LEGACY})
             if handle_build_production_image; then
-                summary_msg="API Docker image build/publish completed"
+                summary_msg="Production API image build/publish completed"
             else
-                summary_msg="API Docker image build/publish failed"
+                summary_msg="Production API image build/publish failed"
+                exit_code=1
+            fi
+            break
+            ;;
+          ${MENU_BUILD_TEST_IMAGE}|T)
+            if handle_build_production_image "test"; then
+                summary_msg="Production-connected API test image build/publish completed"
+            else
+                summary_msg="Production-connected API test image build/publish failed"
                 exit_code=1
             fi
             break
@@ -1136,7 +1217,16 @@ show_main_menu() {
           ${MENU_BUILD_BUMP_VERSION})
             version_app_id="${ACTIVE_BACKEND_APP_ID:-demo_app}"
             current_app_version="$(get_active_backend_package_version "$version_app_id" "0.1.0")"
-            new_app_version="$(read_api_image_version_selection "$current_app_version")" || exit_code=1
+            minimum_app_version="$(
+                run_api_release_stack_minimum "$version_app_id" "$current_app_version"
+            )" || exit_code=1
+            if [ "$exit_code" -eq 0 ]; then
+                new_app_version="$(
+                    select_semver_version \
+                        "$minimum_app_version" "API package" false "" \
+                        "$minimum_app_version" false
+                )" || exit_code=1
+            fi
             if [ "$exit_code" -eq 0 ]; then
                 set_active_backend_package_version "$version_app_id" "$new_app_version"
             fi

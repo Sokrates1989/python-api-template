@@ -70,21 +70,27 @@ class ReleaseImageContractTests(unittest.TestCase):
         self.assertIn("Validate API Docker image release plan", source)
         self.assertIn("Build API Docker image locally (no push)", source)
         self.assertIn(
-            "Build & Publish API Docker Image (current or bump + version + latest)",
+            "Production Release API Image (guided; version + latest)",
+            source,
+        )
+        self.assertIn(
+            "Production-Connected Test API Image (guided; version-test + latest-test)",
             source,
         )
         self.assertIn('local MENU_BUILD_PROD_IMAGE="p"', source)
+        self.assertIn('local MENU_BUILD_TEST_IMAGE="t"', source)
         self.assertIn(
             "${MENU_BUILD_PROD_IMAGE}|P|${MENU_BUILD_PROD_IMAGE_LEGACY})",
             source,
         )
         self.assertIn(
-            'select_semver_version "$current_version" "Release" false',
+            'run_api_release_stack_minimum "$app_id" "$current_version"',
             source,
         )
+        self.assertIn('"$minimum_version" true', source)
         self.assertIn("run_api_release_tool plan --app", source)
         self.assertIn("run_api_release_tool build --app", source)
-        self.assertIn('publish_arguments=(publish --app "$app_id"', source)
+        self.assertIn('--channel "$channel"', source)
         self.assertIn("publish_arguments+=(--allow-current-version)", source)
         self.assertIn(
             'publish_prompt="Build and publish ${tag_version} and latest? (Y/n): "',
@@ -93,6 +99,7 @@ class ReleaseImageContractTests(unittest.TestCase):
         self.assertIn('read -r -p "$publish_prompt" confirmation', source)
         self.assertIn('if [[ "$confirmation" =~ ^[Nn]$ ]]', source)
         self.assertIn("never pushes Git", source)
+        self.assertNotIn("API publication channel choice", source)
 
         powershell_source = (
             REPOSITORY_ROOT / "setup" / "modules" / "menu_handlers.ps1"
@@ -178,6 +185,7 @@ class ReleaseImageContractTests(unittest.TestCase):
 
         for relative_path in (
             "tools/release_api_image.py",
+            "tools/release_api_publication.py",
             "tools/release_command.py",
             "tools/release_image_evidence.py",
             "tools/release_image_startup_smoke.py",

@@ -23,7 +23,7 @@ The modular approach separates concerns and makes the quick-start scripts more m
 
 **Functions:**
 - `bump_semver()` - Computes a patch, feature/minor, or major increment
-- `select_semver_version()` - Owns the canonical `1/k`, `2/p`, `3/f`, `4/m`, `5/e` selector
+- `select_semver_version()` - Owns the floor-aware `1/k`, `2/p`, `3/f`, `4/m`, `5/e` selector
 - `update_image_version_in_file()` - Updates IMAGE_VERSION in a specific file
 - `update_image_version()` - Uses the shared selector for .env and .ci.env maintenance
 
@@ -36,7 +36,7 @@ The modular approach separates concerns and makes the quick-start scripts more m
 - `handle_dependency_and_backend()` - Runs dependency management then starts backend
 - `handle_python_version_test()` - Tests Python version configuration
 - `handle_keycloak_bootstrap()` - Runs the Keycloak realm bootstrap (bash only)
-- `handle_build_production_image()` - Builds production Docker image
+- `handle_build_production_image()` - Publishes either a stable or production-connected test API image
 - `handle_cicd_setup()` - Sets up CI/CD pipeline
 
 #### 4. `bootstrap_utils.sh`

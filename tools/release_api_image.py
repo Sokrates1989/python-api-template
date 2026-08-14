@@ -33,31 +33,18 @@ except ModuleNotFoundError:
         collect_image_evidence,
     )
 try:
-    from tools.api_release_stack import (
-        advance_api_release_minimum,
-        evaluate_api_release_candidate,
-    )
+    from tools.api_release_stack import evaluate_api_release_candidate
     from tools.release_stack_authority import ReleaseStackAuthorityError
     from tools.release_command import CommandRunner, ReleaseError
     from tools.release_image_startup_smoke import run_image_startup_smoke
-    from tools.release_registry_publication import (
-        push_image_with_auth_retry as _push_image_with_auth_retry,
-        run_visible as _run_visible,
-    )
+    from tools.release_registry_publication import run_visible as _run_visible
     from tools.release_source_publication import (
         committed_release_context as _committed_release_context,
-        ensure_release_branch as _ensure_release_branch,
-        extract_push_digest as _extract_push_digest,
         git_output as _git_output,
-        prepare_release_source as _prepare_release_source,
         validate_release_worktree as _validate_release_worktree,
-        validate_version_transition as _validate_version_transition,
     )
 except ModuleNotFoundError:
-    from api_release_stack import (  # type: ignore[no-redef]
-        advance_api_release_minimum,
-        evaluate_api_release_candidate,
-    )
+    from api_release_stack import evaluate_api_release_candidate  # type: ignore[no-redef]
     from release_stack_authority import (  # type: ignore[no-redef]
         ReleaseStackAuthorityError,
     )
@@ -65,18 +52,11 @@ except ModuleNotFoundError:
     from release_image_startup_smoke import (  # type: ignore[no-redef]
         run_image_startup_smoke,
     )
-    from release_registry_publication import (  # type: ignore[no-redef]
-        push_image_with_auth_retry as _push_image_with_auth_retry,
-        run_visible as _run_visible,
-    )
+    from release_registry_publication import run_visible as _run_visible  # type: ignore[no-redef]
     from release_source_publication import (  # type: ignore[no-redef]
         committed_release_context as _committed_release_context,
-        ensure_release_branch as _ensure_release_branch,
-        extract_push_digest as _extract_push_digest,
         git_output as _git_output,
-        prepare_release_source as _prepare_release_source,
         validate_release_worktree as _validate_release_worktree,
-        validate_version_transition as _validate_version_transition,
     )
 
 
@@ -91,6 +71,42 @@ IMAGE_NAME_PATTERN = re.compile(
     r"[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$"
 )
 SHA256_PATTERN = re.compile(r"sha256:[0-9a-f]{64}")
+STABLE_CHANNEL = "stable"
+TEST_CHANNEL = "test"
+
+
+def _normalize_channel(channel: str) -> str:
+    """Validate one explicit stable or test image channel.
+
+    Args:
+        channel: Operator-selected publication channel.
+
+    Returns:
+        Normalized channel.
+
+    Raises:
+        ReleaseError: If the channel is unsupported.
+    """
+
+    normalized = channel.strip().lower()
+    if normalized not in {STABLE_CHANNEL, TEST_CHANNEL}:
+        raise ReleaseError("Image channel must be either 'stable' or 'test'.")
+    return normalized
+
+
+def _exact_image_tag(base_version: str, channel: str) -> str:
+    """Derive the exact stable or ``-test`` image tag from one base.
+
+    Args:
+        base_version: Strict stable semantic-version base.
+        channel: Stable or test channel.
+
+    Returns:
+        Exact registry tag.
+    """
+
+    normalized = _normalize_channel(channel)
+    return base_version if normalized == STABLE_CHANNEL else f"{base_version}-test"
 
 
 @dataclass(frozen=True)
@@ -227,6 +243,8 @@ def create_release_plan(
     python_version: str = DEFAULT_PYTHON_VERSION,
     pdm_version: str = DEFAULT_PDM_VERSION,
     platform: str = DEFAULT_PLATFORM,
+    channel: str = STABLE_CHANNEL,
+    allow_version_below_minimum: bool = False,
     runner: CommandRunner | None = None,
 ) -> ReleasePlan:
     """Validate selected-app release inputs.
@@ -239,6 +257,9 @@ def create_release_plan(
         python_version: Python base image tag.
         pdm_version: Exact PDM build-tool version.
         platform: Required production platform.
+        channel: Stable release or production-connected test image channel.
+        allow_version_below_minimum: Permit an explicit image-only override
+            without changing the deployment minimum.
         runner: Optional injectable command runner.
 
     Returns:
@@ -266,21 +287,28 @@ def create_release_plan(
             raise ReleaseError(f"Missing required release input: {required_path}")
 
     package_name, package_version = _read_project_manifest(manifest_path)
-    selected_version = version or package_version
-    if not SEMVER_PATTERN.fullmatch(selected_version):
+    selected_base_version = version or package_version
+    if not SEMVER_PATTERN.fullmatch(selected_base_version):
         raise ReleaseError(
-            f"Image tag must be strict SemVer x.y.z: {selected_version!r}"
+            f"Image base must be strict SemVer x.y.z: {selected_base_version!r}"
         )
-    if selected_version != package_version:
+    normalized_channel = _normalize_channel(channel)
+    if (
+        normalized_channel == STABLE_CHANNEL
+        and selected_base_version != package_version
+        and not allow_version_below_minimum
+    ):
         raise ReleaseError(
             "Selected image version must equal the committed app package version "
             f"({package_version}); update the package version before building."
         )
+    selected_image_tag = _exact_image_tag(selected_base_version, normalized_channel)
     try:
         stack_decision = evaluate_api_release_candidate(
             repository_root,
             app_id,
-            selected_version,
+            selected_base_version,
+            allow_below_minimum=allow_version_below_minimum,
         )
     except ReleaseStackAuthorityError as error:
         raise ReleaseError(str(error)) from error
@@ -308,13 +336,13 @@ def create_release_plan(
     evidence_root = (
         repository_root / "build" / "release-evidence" / "api" / app_id
     )
-    image_ref = f"{canonical_image_name}:{selected_version}"
+    image_ref = f"{canonical_image_name}:{selected_image_tag}"
     return ReleasePlan(
         schema_version=1,
         app_id=app_id,
         app_profile=app_id,
         image_name=canonical_image_name,
-        image_tag=selected_version,
+        image_tag=selected_image_tag,
         image_ref=image_ref,
         package_name=package_name,
         package_version=package_version,
@@ -326,16 +354,16 @@ def create_release_plan(
         dependency_lock_sha256=lock_sha256,
         dockerfile_path=dockerfile_path.relative_to(repository_root).as_posix(),
         receipt_path=(
-            evidence_root / f"{selected_version}.receipt.json"
+            evidence_root / f"{selected_image_tag}.receipt.json"
         ).relative_to(repository_root).as_posix(),
         sbom_path=(
-            evidence_root / f"{selected_version}.image.spdx.json"
+            evidence_root / f"{selected_image_tag}.image.spdx.json"
         ).relative_to(repository_root).as_posix(),
         dependency_sbom_path=(
-            evidence_root / f"{selected_version}.dependencies.spdx.json"
+            evidence_root / f"{selected_image_tag}.dependencies.spdx.json"
         ).relative_to(repository_root).as_posix(),
         vulnerability_report_path=(
-            evidence_root / f"{selected_version}.vulnerabilities.json"
+            evidence_root / f"{selected_image_tag}.vulnerabilities.json"
         ).relative_to(repository_root).as_posix(),
         release_stack=(
             stack_decision.safe_summary() if stack_decision is not None else None
@@ -615,152 +643,36 @@ def publish_release_image(
     pdm_version: str = DEFAULT_PDM_VERSION,
     scanner: str = "auto",
     allow_current_version: bool = False,
+    channel: str = STABLE_CHANNEL,
+    allow_version_below_minimum: bool = False,
     runner: CommandRunner | None = None,
 ) -> dict[str, Any]:
-    """Prove and publish the current or a greater selected-app version.
+    """Delegate publication while preserving the established public import.
 
-    Args:
-        repository_root: Canonical API repository.
-        app_id: Explicit selected backend app.
-        target_version: Current or greater strict semantic version.
-        image_name: Optional registry repository override.
-        python_version: Python base image tag.
-        pdm_version: Exact PDM build-tool version.
-        scanner: Image SBOM and vulnerability scanner.
-        allow_current_version: Explicitly permits the exact committed version
-            for initial publication or intentional republishing.
-        runner: Optional injectable command runner.
-
-    Returns:
-        dict[str, Any]: Receipt bound to the resulting registry digest.
-
-    Side Effects:
-        Optionally updates and commits the app version, builds/scans the image,
-        and pushes the selected version plus ``latest`` image tags. Source
-        remains local for the operator to push separately. It never deploys.
-
-    Raises:
-        ReleaseError: If version selection, preflight, commit, build evidence,
-            image push, digest extraction, or convenience-tag push fails.
+    The separate publication module keeps this build/evidence module below its
+    repository size boundary without changing callers.
     """
 
-    runner = runner or CommandRunner()
-    repository_root = repository_root.resolve()
-    _print_status("[RELEASE] Validating source and selected version...")
-    _validate_release_worktree(repository_root, app_id, runner)
-    _ensure_release_branch(repository_root, runner)
-    manifest_path = repository_root / "app" / "apps" / app_id / "pyproject.toml"
-    _, current_version = _read_project_manifest(manifest_path)
-    reuse_current = _validate_version_transition(
-        current_version,
-        target_version,
-        allow_current_version=allow_current_version,
-    )
     try:
-        stack_decision = evaluate_api_release_candidate(
-            repository_root,
-            app_id,
-            target_version,
+        from tools.release_api_publication import publish_release_image as publish
+    except ModuleNotFoundError:
+        from release_api_publication import (  # type: ignore[no-redef]
+            publish_release_image as publish,
         )
-        advance_api_release_minimum(stack_decision)
-    except ReleaseStackAuthorityError as error:
-        raise ReleaseError(str(error)) from error
-    if stack_decision is not None:
-        _print_status(
-            "[RELEASE] Minimum version for the next stack release is "
-            f"{max(stack_decision.authority.minimum, stack_decision.candidate).text}."
-        )
-        if stack_decision.minimum_update_required:
-            _print_status(
-                "[RELEASE] Updated deployment authority: "
-                f"{stack_decision.authority.source}"
-            )
-            _print_status(
-                "[INFO] Commit and push that public deployment-profile change "
-                "separately when ready."
-            )
 
-    if reuse_current:
-        _print_status(
-            f"[RELEASE] Reusing version {target_version}; an existing registry "
-            "tag may be replaced."
-        )
-    else:
-        _print_status(
-            f"[RELEASE] Creating local version commit: "
-            f"{current_version} -> {target_version}"
-        )
-    _prepare_release_source(
+    return publish(
         repository_root,
-        manifest_path,
         app_id,
-        current_version,
         target_version,
-        reuse_current_version=reuse_current,
-        runner=runner,
-    )
-
-    plan = create_release_plan(
-        repository_root,
-        app_id,
-        version=target_version,
         image_name=image_name,
         python_version=python_version,
         pdm_version=pdm_version,
-        runner=runner,
-    )
-    receipt = build_release_image(
-        repository_root,
-        plan,
-        runner=runner,
         scanner=scanner,
+        allow_current_version=allow_current_version,
+        channel=channel,
+        allow_version_below_minimum=allow_version_below_minimum,
+        runner=runner,
     )
-    receipt["sourcePublication"] = {
-        "currentVersionReused": reuse_current,
-        "versionBumpCommitCreated": not reuse_current,
-        "gitPushPerformed": False,
-        "sourcePushOwnedByOperator": True,
-    }
-    _write_json_atomic(repository_root / plan.receipt_path, receipt)
-
-    _print_status(
-        "[PUSH] Publishing selected version tag; republishing is allowed..."
-    )
-    version_push = _push_image_with_auth_retry(
-        repository_root,
-        plan.image_ref,
-        runner,
-    )
-    registry_digest = _extract_push_digest(
-        f"{version_push.stdout}\n{version_push.stderr}"
-    )
-    if registry_digest is None:
-        raise ReleaseError(
-            "Version image push succeeded without a registry digest; "
-            "deployment evidence cannot be bound."
-        )
-
-    publication = receipt["publication"]
-    publication["versionTagPushed"] = True
-    publication["versionTagRepublishAllowed"] = True
-    publication["registryDigest"] = registry_digest
-    receipt["state"] = "version-pushed"
-    _write_json_atomic(repository_root / plan.receipt_path, receipt)
-
-    latest_ref = f"{plan.image_name}:latest"
-    _print_status(f"[TAG] Tagging {plan.image_ref} as {latest_ref}")
-    runner.run(("docker", "tag", plan.image_ref, latest_ref), cwd=repository_root)
-    _print_status("[PUSH] Publishing latest convenience tag...")
-    _push_image_with_auth_retry(repository_root, latest_ref, runner)
-    publication["latestConvenienceTagPushed"] = True
-    publication["latestAllowedForDeployment"] = False
-    receipt["state"] = "published"
-    receipt["publishedAt"] = _utc_timestamp()
-    _write_json_atomic(repository_root / plan.receipt_path, receipt)
-    _print_status(f"[OK] Published version digest: {registry_digest}")
-    _print_status(f"[OK] Published latest: {latest_ref}")
-    _print_status("[INFO] Git source was not pushed; push it separately when ready.")
-    return receipt
 
 
 def _print_plan(plan: ReleasePlan, action: str) -> None:
@@ -846,11 +758,24 @@ def _build_parser() -> argparse.ArgumentParser:
     add_common(publish_parser)
     publish_parser.add_argument("--version", required=True)
     publish_parser.add_argument(
+        "--channel",
+        choices=(STABLE_CHANNEL, TEST_CHANNEL),
+        default=STABLE_CHANNEL,
+    )
+    publish_parser.add_argument(
         "--allow-current-version",
         action="store_true",
         help=(
             "Publish or intentionally republish the exact committed version "
             "without a bump."
+        ),
+    )
+    publish_parser.add_argument(
+        "--allow-version-below-minimum",
+        action="store_true",
+        help=(
+            "Publish an explicit lower image override without changing the "
+            "source package or deployment-owned next minimum."
         ),
     )
     publish_parser.add_argument(
@@ -880,13 +805,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if arguments.action == "publish":
             print("Build & Push performs these explicit effects:", flush=True)
-            if arguments.allow_current_version:
+            if arguments.allow_version_below_minimum:
+                print("  1. Keep source and the next minimum unchanged")
+            elif arguments.channel == TEST_CHANNEL:
+                print("  1. Keep source unchanged and publish a -test image")
+            elif arguments.allow_current_version:
                 print("  1. Reuse the exact committed app version without a bump")
             else:
                 print("  1. Commit the selected app version bump locally")
             print("  2. Build, inspect, inventory, and vulnerability-scan the image")
             print("  3. Push or republish the selected version image tag")
-            print("  4. Push latest as a convenience tag")
+            if arguments.channel == TEST_CHANNEL:
+                print("  4. Push latest-test as a convenience tag")
+            else:
+                print("  4. Push latest as a convenience tag")
             print("  5. Leave Git source local and never deploy an image", flush=True)
             receipt = publish_release_image(
                 repository_root,
@@ -897,6 +829,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 pdm_version=arguments.pdm_version,
                 scanner=arguments.scanner,
                 allow_current_version=arguments.allow_current_version,
+                channel=arguments.channel,
+                allow_version_below_minimum=(
+                    arguments.allow_version_below_minimum
+                ),
             )
             plan = ReleasePlan(**receipt["plan"])
             _print_plan(plan, "published")

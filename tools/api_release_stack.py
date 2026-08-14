@@ -66,12 +66,15 @@ class ApiReleaseStackDecision:
         candidate: Selected API image version.
         minimum_update_required: Whether confirmed publication must advance
             the authority before building the image.
+        minimum_override: Whether an explicit image-only candidate remains
+            below the minimum without changing it.
     """
 
     binding: ApiReleaseStackBinding
     authority: ReleaseStackAuthority
     candidate: StableVersion
     minimum_update_required: bool
+    minimum_override: bool = False
 
     def safe_summary(self) -> dict[str, object]:
         """Return secret-free receipt data.
@@ -86,6 +89,7 @@ class ApiReleaseStackDecision:
             "candidateVersion": self.candidate.text,
             "nextReleaseMinimum": self.authority.minimum.text,
             "minimumUpdateRequired": self.minimum_update_required,
+            "minimumOverride": self.minimum_override,
             "authorityProfile": str(self.authority.source),
         }
 
@@ -171,6 +175,7 @@ def evaluate_api_release_candidate(
     app_id: str,
     candidate_version: str,
     *,
+    allow_below_minimum: bool = False,
     environment: Mapping[str, str] | None = None,
 ) -> ApiReleaseStackDecision | None:
     """Validate one API candidate against its deployment authority.
@@ -179,6 +184,8 @@ def evaluate_api_release_candidate(
         repository_root: Backend source repository.
         app_id: Explicit app directory identifier.
         candidate_version: Proposed stable image version.
+        allow_below_minimum: Permit an explicit image-only override without
+            lowering or advancing the deployment minimum.
         environment: Optional authority path overrides.
 
     Returns:
@@ -201,7 +208,7 @@ def evaluate_api_release_candidate(
         component_id=binding.component_id,
         environment=environment,
     )
-    if candidate < authority.minimum:
+    if candidate < authority.minimum and not allow_below_minimum:
         raise ReleaseStackAuthorityError(
             f"API candidate {candidate.text} is below the minimum version for "
             f"the next release ({authority.minimum.text})."
@@ -211,6 +218,7 @@ def evaluate_api_release_candidate(
         authority=authority,
         candidate=candidate,
         minimum_update_required=candidate > authority.minimum,
+        minimum_override=candidate < authority.minimum,
     )
 
 
@@ -357,6 +365,19 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repository-root", type=Path, required=True)
     parser.add_argument("--app", required=True)
     parser.add_argument("--candidate", required=True)
+    parser.add_argument(
+        "--minimum-only",
+        action="store_true",
+        help=(
+            "Print the deployment-owned next minimum, or the candidate for an "
+            "app without release-stack membership."
+        ),
+    )
+    parser.add_argument(
+        "--allow-below-minimum",
+        action="store_true",
+        help="Permit an explicit image override without lowering the minimum.",
+    )
     return parser
 
 
@@ -397,6 +418,12 @@ def main(
             component_id=binding.component_id,
             environment=active_environment,
         )
+        if arguments.minimum_only:
+            print(authority.minimum.text)
+            return 0
+        if arguments.allow_below_minimum and candidate < authority.minimum:
+            print(candidate.text)
+            return 0
         if candidate != authority.minimum:
             _stderr(f"Authority: {authority.source}")
         selected = select_api_candidate(candidate, authority.minimum)

@@ -226,8 +226,10 @@ rm .setup-complete
 ## 🏗️ Docker Image Build & Deploy
 
 `quick-start.ps1` oder `quick-start.sh` starten, die ausgewählte Backend-App
-prüfen und **`p` Build & Publish API Docker Image (current or bump + version +
-latest)** auswählen. Dies ist der einzige unterstützte Weg zur
+prüfen und **`p` Production Release API Image** für `<version>` plus `latest`
+oder **`t` Production-Connected Test API Image** für `<version>-test` plus
+`latest-test` auswählen. Beide geführten Versionsmenüs beginnen bei der
+gemeinsamen nächsten Mindestversion. Dies sind die unterstützten Wege zur
 Image-Veröffentlichung. Keine direkten Docker-Befehle und keine CI/CD-Pipeline
 zum Veröffentlichen verwenden. Siehe
 [`PRODUCTION-IMAGE-BUILD.md`](PRODUCTION-IMAGE-BUILD.md).

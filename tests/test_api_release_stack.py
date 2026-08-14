@@ -5,11 +5,14 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 from tools.api_release_stack import (
     advance_api_release_minimum,
     evaluate_api_release_candidate,
+    main,
     select_api_candidate,
 )
 from tools.release_stack_authority import (
@@ -104,6 +107,24 @@ class ApiReleaseStackTests(unittest.TestCase):
                 environment=self.environment,
             )
 
+    def test_lower_exact_image_override_never_changes_the_minimum(self) -> None:
+        """Allow a deliberate lower image tag without creating a version track."""
+
+        decision = evaluate_api_release_candidate(
+            self.repository,
+            "sample_backend",
+            "2.3.9",
+            allow_below_minimum=True,
+            environment=self.environment,
+        )
+        assert decision is not None
+
+        self.assertTrue(decision.minimum_override)
+        self.assertFalse(decision.minimum_update_required)
+        advance_api_release_minimum(decision)
+        payload = json.loads(self.authority_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["release"]["versionFloor"], "2.4.0")
+
     def test_higher_candidate_advances_only_authoritative_profile(self) -> None:
         """Advance the deployment minimum after a confirmed API release."""
 
@@ -141,7 +162,27 @@ class ApiReleaseStackTests(unittest.TestCase):
         self.assertEqual(lower.text if lower else None, "2.4.0")
         self.assertEqual(higher.text if higher else None, "2.5.0")
 
+    def test_minimum_only_reports_floor_when_package_candidate_is_older(self) -> None:
+        """Let shell menus start at the floor without a reconciliation prompt."""
+
+        output = StringIO()
+        with redirect_stdout(output):
+            result = main(
+                (
+                    "--repository-root",
+                    str(self.repository),
+                    "--app",
+                    "sample_backend",
+                    "--candidate",
+                    "2.3.0",
+                    "--minimum-only",
+                ),
+                environment=self.environment,
+            )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(output.getvalue().strip(), "2.4.0")
+
 
 if __name__ == "__main__":
     unittest.main()
-

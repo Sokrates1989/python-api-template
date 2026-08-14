@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+from tools.release_stack_authority import PROFILE_PATH_ENV
 
 from tools.release_api_image import (
     CommandRunner,
@@ -343,6 +347,42 @@ class ReleaseApiImageTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def _enroll_release_stack(self, minimum: str) -> Path:
+        """Add API membership and create its isolated deployment authority."""
+
+        manifest_path = self.app_root / "pyproject.toml"
+        manifest_path.write_text(
+            "\n".join(
+                (
+                    "[tool.fe_wi.release_stack]",
+                    'stack_id = "felix"',
+                    'authority_profile_id = "felix"',
+                    'component_id = "api"',
+                    "",
+                    manifest_path.read_text(encoding="utf-8"),
+                )
+            ),
+            encoding="utf-8",
+        )
+        authority_path = self.repository / "deployment" / "felix.json"
+        authority_path.parent.mkdir()
+        authority_path.write_text(
+            json.dumps(
+                {
+                    "release": {
+                        "stackId": "felix",
+                        "versionPolicy": "monotonic-floor",
+                        "versionFloor": minimum,
+                        "components": ["api", "web", "android", "ios"],
+                    }
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return authority_path
+
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
@@ -388,6 +428,24 @@ class ReleaseApiImageTests(unittest.TestCase):
         self.assertEqual(len(plan.dependency_lock_sha256), 64)
         self.assertEqual(plan.pdm_version, "2.27.0")
         self.assertEqual(plan.git_revision, REVISION)
+
+    def test_test_plan_uses_suffix_without_requiring_package_version_match(self) -> None:
+        """Treat -test as an artifact channel, not a second source version."""
+
+        plan = create_release_plan(
+            self.repository,
+            "felix",
+            version="1.2.4",
+            channel="test",
+            runner=self.runner,
+        )
+
+        self.assertEqual(plan.package_version, "1.2.3")
+        self.assertEqual(plan.image_tag, "1.2.4-test")
+        self.assertEqual(
+            plan.image_ref,
+            "sokrates1989/python-api-felix:1.2.4-test",
+        )
 
     def test_command_runner_replaces_non_utf8_scanner_bytes(self) -> None:
         """Keep Windows locale decoding from crashing scanner capture.
@@ -828,6 +886,79 @@ class ReleaseApiImageTests(unittest.TestCase):
             ),
             1,
         )
+
+    def test_test_publication_advances_floor_without_mutating_source(self) -> None:
+        """Publish version-test/latest-test from the shared stable base line."""
+
+        authority_path = self._enroll_release_stack("1.2.3")
+        with patch.dict(os.environ, {PROFILE_PATH_ENV: str(authority_path)}):
+            plan = create_release_plan(
+                self.repository,
+                "felix",
+                version="1.2.4",
+                channel="test",
+                runner=self.runner,
+            )
+            self._set_valid_inspection(plan)
+            receipt = publish_release_image(
+                self.repository,
+                "felix",
+                "1.2.4",
+                channel="test",
+                runner=self.runner,
+            )
+
+        self.assertFalse(
+            any(command[:2] == ("git", "commit") for command in self.runner.commands)
+        )
+        self.assertIn(
+            ("docker", "push", "sokrates1989/python-api-felix:1.2.4-test"),
+            self.runner.commands,
+        )
+        self.assertIn(
+            ("docker", "push", "sokrates1989/python-api-felix:latest-test"),
+            self.runner.commands,
+        )
+        manifest = (self.app_root / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertEqual(manifest.count('version = "1.2.3"'), 1)
+        authority = json.loads(authority_path.read_text(encoding="utf-8"))
+        self.assertEqual(authority["release"]["versionFloor"], "1.2.4")
+        self.assertEqual(receipt["publication"]["channel"], "test")
+        self.assertEqual(receipt["publication"]["baseVersion"], "1.2.4")
+
+    def test_lower_exact_image_override_preserves_source_and_floor(self) -> None:
+        """Publish a deliberate older image tag without creating a version line."""
+
+        authority_path = self._enroll_release_stack("1.2.3")
+        with patch.dict(os.environ, {PROFILE_PATH_ENV: str(authority_path)}):
+            plan = create_release_plan(
+                self.repository,
+                "felix",
+                version="1.2.2",
+                allow_version_below_minimum=True,
+                runner=self.runner,
+            )
+            self._set_valid_inspection(plan)
+            receipt = publish_release_image(
+                self.repository,
+                "felix",
+                "1.2.2",
+                allow_version_below_minimum=True,
+                runner=self.runner,
+            )
+
+        self.assertFalse(
+            any(command[:2] == ("git", "commit") for command in self.runner.commands)
+        )
+        self.assertIn(
+            ("docker", "push", "sokrates1989/python-api-felix:1.2.2"),
+            self.runner.commands,
+        )
+        manifest = (self.app_root / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertEqual(manifest.count('version = "1.2.3"'), 1)
+        authority = json.loads(authority_path.read_text(encoding="utf-8"))
+        self.assertEqual(authority["release"]["versionFloor"], "1.2.3")
+        self.assertTrue(receipt["publication"]["minimumOverride"])
 
     def test_publish_rejects_non_increment_before_git_or_docker_mutation(self) -> None:
         """Reject current-version publication without explicit authorization."""

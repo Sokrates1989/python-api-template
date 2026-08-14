@@ -1,4 +1,4 @@
-# Production API image release
+# Production API image release and test publication
 
 This document defines the authoritative operator workflow for planning,
 building, and publishing selected-app API images.
@@ -12,8 +12,9 @@ quick-start menu.
   version, image reference, source revision, and evidence paths.
 - Use **Build API Docker image locally (no push)** to run the complete local
   build, runtime inspection, SBOM, and vulnerability gates without publishing.
-- Press **`p` Build & Publish API Docker Image (current or bump + version + latest)**
-  for the only supported publication path.
+- Press **`p` Production Release API Image** for `<version>` plus `latest`.
+- Press **`t` Production-Connected Test API Image** for `<version>-test` plus
+  `latest-test` without changing the source package version.
 
 Do not publish an API image by running `docker build`, `docker tag`,
 `docker push`, Docker Compose build helpers, or the release tool's `publish`
@@ -113,46 +114,54 @@ missing report is reported as a scanner operational error, never as a clean
 image. Fix the findings or scanner failure and rerun the menu action; do not
 disable the policy to make publication continue.
 
-### 3. Publish through the menu
+### 3. Publish through a direct-intent menu action
 
-Press **`p` Build & Publish API Docker Image (current or bump + version + latest)**.
+Press **`p` Production Release API Image** or **`t` Production-Connected Test
+API Image**. These keys select the publication channel directly; no later
+stable/test question appears.
 
-The publisher offers the exact committed version plus patch, minor, major, and
-manual greater-version choices. **Keep current** intentionally allows the
-selected semantic-version tag to be published for the first time or replaced.
-The resulting registry digest, rather than the movable tag alone, is the
-immutable deployment evidence.
+The publisher first resolves the deployment-owned **next minimum version**.
+Guided choices mean: keep that minimum, minimum plus patch, minimum plus minor,
+or minimum plus major. They never start from an older package or test tag.
+Exact image input may intentionally be lower as an image-only override; that
+choice changes neither source nor the minimum. An exact value equal to or above
+the minimum follows the normal channel behavior. The resulting registry
+digest, rather than the movable tag alone, is the immutable deployment
+evidence.
 
 Apps may opt into cross-repository coordination through
 `[tool.fe_wi.release_stack]` in their own `pyproject.toml`. The matching Swarm
 site profile is the single authority for the minimum version of the next
 release. The menu discovers it from the standard sibling workspace, or through
 `RELEASE_STACK_PROFILE_PATH` / `RELEASE_STACK_DEPLOYMENT_ROOT` overrides. An
-equal candidate continues silently. A lower candidate defaults upward to the
-minimum. A higher candidate offers to advance the deployment profile during
-the already confirmed publication action. This mechanism is app-neutral.
+Both stable and test publication validate the same minimum. An equal candidate
+continues without rewriting it, and a higher candidate advances the deployment
+profile during the confirmed action. This mechanism is app-neutral and does
+not create API, test, Android, or Web version tracks.
 
 Press Enter at the default-yes confirmation to continue, or enter `n` to
 cancel. The menu then performs one ordered release:
 
 1. reconciles an enrolled candidate with the deployment-owned next-release
    minimum and advances that profile only when required;
-2. keeps the current manifest unchanged or updates it to the chosen increment;
-3. creates a version-bump commit containing only the selected app manifest for
-   an incremented version, even when sibling-app files are already staged;
+2. for stable publication only, keeps the current manifest unchanged or
+   updates it to the chosen non-override version;
+3. for a stable increment, creates a version-bump commit containing only the
+   selected app manifest, even when sibling-app files are already staged;
 4. rebuilds and repeats all image proof gates against the exact selected HEAD;
 5. pushes or replaces the selected semantic-version image tag;
 6. records the registry-reported digest; and
-7. pushes `latest` as a convenience tag.
+7. pushes `latest` for stable publication or `latest-test` for test
+   publication as a convenience tag.
 
 Docker build and push output is streamed while the commands run. If a registry
 push fails, the menu offers an interactive Docker login and one retry; pressing
 Enter accepts that retry. Docker credentials remain owned by the Docker CLI.
 
-The operation does not push Git source and never deploys the image. Push the
-prepared source commit separately when ready. `latest` is never valid
-deployment evidence; Swarm must use the semantic version and resolved registry
-digest.
+The operation does not push Git source and never deploys the image. Push any
+prepared stable source commit separately when ready. Neither convenience alias
+is valid deployment evidence; Swarm must use the exact versioned tag and
+resolved registry digest.
 
 If any proof, image push, or digest extraction fails, the publisher exits
 nonzero and does not report a completed publication.
@@ -161,8 +170,9 @@ nonzero and does not report a completed publication.
 
 The Swarm site profile's compatibility field `release.versionFloor` stores the
 minimum version for the next release. It is not a desired deployed version and
-does not imply that every existing API, Web, Android, or iOS artifact already
-has that version. Source repositories do not maintain another copy.
+does not imply that every existing API, Web, Android, iOS, or legacy WebApp
+artifact already has that version. Stable and `-test` guided selectors share
+this one line. Source repositories do not maintain another copy.
 
 After publication, choose the real published image tag in the Swarm image
 update menu. The deployment profile's `image.defaultVersion` is the deployment
@@ -189,7 +199,7 @@ For a successful publication, the receipt must report:
 - successful runtime, SBOM, and vulnerability gates;
 - the retained vulnerability-report path, format, and checksum;
 - version-tag publication and explicit republishing allowance;
-- `latest` publication as convenience only; and
+- `latest` or `latest-test` publication as convenience only; and
 - confirmation that Git source was left local for the operator; and
 - deployment authorization as false.
 

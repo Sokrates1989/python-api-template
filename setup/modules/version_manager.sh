@@ -50,6 +50,44 @@ bump_semver() {
     echo "${prefix}${major}.${minor}.${patch}"
 }
 
+# Compare two strict stable semantic versions component by component.
+#
+# Args:
+#   $1: Left MAJOR.MINOR.PATCH value.
+#   $2: Right MAJOR.MINOR.PATCH value.
+#
+# Returns:
+#   Writes -1, 0, or 1 to stdout; returns non-zero for malformed input.
+compare_semver() {
+    local left="$1"
+    local right="$2"
+    local left_major=""
+    local left_minor=""
+    local left_patch=""
+    local right_major=""
+    local right_minor=""
+    local right_patch=""
+
+    [[ "$left" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || return 1
+    left_major="${BASH_REMATCH[1]}"
+    left_minor="${BASH_REMATCH[2]}"
+    left_patch="${BASH_REMATCH[3]}"
+    [[ "$right" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || return 1
+    right_major="${BASH_REMATCH[1]}"
+    right_minor="${BASH_REMATCH[2]}"
+    right_patch="${BASH_REMATCH[3]}"
+
+    if ((10#$left_major < 10#$right_major)) ||
+        ((10#$left_major == 10#$right_major && 10#$left_minor < 10#$right_minor)) ||
+        ((10#$left_major == 10#$right_major && 10#$left_minor == 10#$right_minor && 10#$left_patch < 10#$right_patch)); then
+        printf '%s\n' "-1"
+    elif [ "$left" = "$right" ]; then
+        printf '%s\n' "0"
+    else
+        printf '%s\n' "1"
+    fi
+}
+
 # Read one line from the operator without contaminating captured stdout.
 #
 # Args:
@@ -83,6 +121,8 @@ read_semver_menu_value() {
 #   $2: Human-readable subject, such as "API image" or "Release".
 #   $3: true to permit a v/V prefix for an exact value; false otherwise.
 #   $4: Optional text appended inside the keep-current parentheses.
+#   $5: Optional deployment-owned next minimum used for floor-aware labels.
+#   $6: true to permit an exact image override below that minimum.
 #
 # Returns:
 #   Writes only the selected version to stdout. Menus and errors use stderr.
@@ -94,15 +134,26 @@ select_semver_version() {
     local subject="${2:-Version}"
     local allow_prefix="${3:-false}"
     local keep_note="${4:-}"
+    local minimum_version="${5:-}"
+    local allow_lower_override="${6:-false}"
     local patch_version=""
     local minor_version=""
     local major_version=""
     local choice=""
     local exact_version=""
+    local comparison=""
+    local keep_label="current"
+    local exact_label="Enter an exact semantic version"
     local exact_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
 
     if [ "$allow_prefix" = "true" ]; then
         exact_pattern='^[vV]?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+    fi
+    if [ -n "$minimum_version" ]; then
+        keep_label="next minimum"
+        if [ "$allow_lower_override" = "true" ]; then
+            exact_label="Enter an exact image version (lower override keeps the minimum)"
+        fi
     fi
     patch_version="$(bump_semver "$current_version" patch)"
     minor_version="$(bump_semver "$current_version" minor)"
@@ -115,11 +166,14 @@ select_semver_version() {
     while true; do
         echo "" >&2
         echo "${subject} version options:" >&2
-        echo "  1/k) Keep current (${current_version}${keep_note})" >&2
+        if [ -n "$minimum_version" ]; then
+            echo "  Next minimum version: ${minimum_version}" >&2
+        fi
+        echo "  1/k) Keep ${keep_label} (${current_version}${keep_note})" >&2
         echo "  2/p) Patch (${current_version} -> ${patch_version})" >&2
         echo "  3/f) Feature / Minor (${current_version} -> ${minor_version})" >&2
         echo "  4/m) Major (${current_version} -> ${major_version})" >&2
-        echo "  5/e) Enter an exact semantic version" >&2
+        echo "  5/e) ${exact_label}" >&2
         echo "" >&2
         read_semver_menu_value "Choose ${subject} version [1/k]: " choice
         choice="${choice,,}"
@@ -134,6 +188,18 @@ select_semver_version() {
             *) exact_version="$choice" ;;
         esac
         if [[ "$exact_version" =~ $exact_pattern ]]; then
+            if [ -n "$minimum_version" ]; then
+                comparison="$(compare_semver "${exact_version#[vV]}" "$minimum_version")" || {
+                    echo "Invalid exact semantic version." >&2
+                    exact_version=""
+                    continue
+                }
+                if [ "$comparison" = "-1" ] && [ "$allow_lower_override" != "true" ]; then
+                    echo "Choose ${minimum_version} or newer." >&2
+                    exact_version=""
+                    continue
+                fi
+            fi
             printf '%s\n' "$exact_version"
             return 0
         fi
