@@ -175,7 +175,7 @@ def publish_release_image(
             stack_decision.candidate,
         )
         _print_status(
-            "[RELEASE] Minimum version for the next stack release is "
+            "[RELEASE] Minimum version for the next API release is "
             f"{effective_minimum.text}."
         )
         if stack_decision.minimum_update_required:
@@ -200,7 +200,7 @@ def publish_release_image(
     if allow_version_below_minimum:
         _print_status(
             f"[RELEASE] Using exact image override {target_version}; source and "
-            "the next minimum remain unchanged."
+            "the API minimum remain unchanged."
         )
     elif normalized_channel == TEST_CHANNEL:
         _print_status(

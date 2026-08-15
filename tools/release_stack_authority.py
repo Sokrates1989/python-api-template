@@ -1,9 +1,9 @@
-"""Resolve and update the deployment-owned release-stack minimum.
+"""Resolve and update deployment-owned release-stack component minimums.
 
 The Swarm deployment profile is the single authority for the minimum semantic
-version that the next independently published stack component may use. Source
-repositories discover that profile through an explicit environment override or
-the standard sibling-workspace layout; no application identity is hardcoded.
+version that each independently published stack component may use. Legacy
+profiles retain one shared fallback, while component-aware profiles can advance
+Web, Android, iOS, API, and other publishers independently.
 """
 
 from __future__ import annotations
@@ -58,15 +58,66 @@ class ReleaseStackAuthority:
         source: Exact Swarm site-profile path.
         profile_id: Site-profile filename without its JSON suffix.
         stack_id: Stable cross-repository release identity.
-        minimum: Minimum version permitted for the next component release.
+        component_id: Component whose minimum was selected.
+        minimum: Minimum version permitted for that component's next release.
         components: Complete set of coordinated component identifiers.
     """
 
     source: Path
     profile_id: str
     stack_id: str
+    component_id: str
     minimum: StableVersion
     components: tuple[str, ...]
+
+
+def _parse_component_version_floors(
+    release: Mapping[str, Any],
+    components: tuple[str, ...],
+    *,
+    path: Path,
+) -> dict[str, StableVersion]:
+    """Parse optional component-specific overrides for the legacy shared floor.
+
+    Args:
+        release: Validated release mapping from the deployment profile.
+        components: Complete validated component catalog.
+        path: Profile path used in diagnostics.
+
+    Returns:
+        Parsed component minimums. An empty mapping keeps legacy shared-floor
+        behavior.
+
+    Raises:
+        ReleaseStackAuthorityError: If the override mapping contains unknown
+            components or malformed stable versions.
+    """
+
+    raw_floors = release.get("componentVersionFloors")
+    if raw_floors is None:
+        return {}
+    if not isinstance(raw_floors, dict):
+        raise ReleaseStackAuthorityError(
+            f"{path}: release.componentVersionFloors must be an object."
+        )
+    unknown = sorted(set(raw_floors).difference(components))
+    if unknown:
+        raise ReleaseStackAuthorityError(
+            f"{path}: release.componentVersionFloors contains unknown components: "
+            + ", ".join(unknown)
+        )
+    parsed: dict[str, StableVersion] = {}
+    for component_id, raw_version in raw_floors.items():
+        if not isinstance(raw_version, str):
+            raise ReleaseStackAuthorityError(
+                f"{path}: release.componentVersionFloors.{component_id} "
+                "must be a SemVer string."
+            )
+        parsed[component_id] = parse_stable_version(
+            raw_version,
+            field=f"release.componentVersionFloors.{component_id}",
+        )
+    return parsed
 
 
 def parse_stable_version(value: str, *, field: str) -> StableVersion:
@@ -233,8 +284,8 @@ def load_release_stack_authority(
         raise ReleaseStackAuthorityError(
             f"{path}: release.versionPolicy must equal 'monotonic-floor'."
         )
-    raw_minimum = release.get("versionFloor")
-    if not isinstance(raw_minimum, str):
+    raw_fallback_minimum = release.get("versionFloor")
+    if not isinstance(raw_fallback_minimum, str):
         raise ReleaseStackAuthorityError(
             f"{path}: release.versionFloor must be a SemVer string."
         )
@@ -254,14 +305,21 @@ def load_release_stack_authority(
         raise ReleaseStackAuthorityError(
             f"{path}: release.components does not include {required_component!r}."
         )
+    fallback_minimum = parse_stable_version(
+        raw_fallback_minimum,
+        field="release.versionFloor",
+    )
+    component_floors = _parse_component_version_floors(
+        release,
+        components,
+        path=path,
+    )
     return ReleaseStackAuthority(
         source=path.resolve(),
         profile_id=path.stem,
         stack_id=expected_stack_id,
-        minimum=parse_stable_version(
-            raw_minimum,
-            field="release.versionFloor",
-        ),
+        component_id=required_component,
+        minimum=component_floors.get(required_component, fallback_minimum),
         components=components,
     )
 
@@ -365,17 +423,31 @@ def advance_release_stack_minimum(
         )
     if candidate == authority.minimum:
         return authority
+    current = load_release_stack_authority(
+        authority.source,
+        expected_stack_id=authority.stack_id,
+        required_component=authority.component_id,
+    )
+    if current.minimum != authority.minimum:
+        raise ReleaseStackAuthorityError(
+            f"{authority.source}: {authority.component_id} minimum changed after "
+            "validation; retry the release plan."
+        )
     payload = _read_mapping(authority.source)
     release = payload.get("release")
     if not isinstance(release, dict):
         raise ReleaseStackAuthorityError(
             f"{authority.source}: release block disappeared before update."
         )
-    if release.get("versionFloor") != authority.minimum.text:
+    component_floors = release.get("componentVersionFloors")
+    if component_floors is None:
+        release["versionFloor"] = candidate.text
+    elif isinstance(component_floors, dict):
+        component_floors[authority.component_id] = candidate.text
+    else:
         raise ReleaseStackAuthorityError(
-            f"{authority.source}: minimum changed after validation; retry the release plan."
+            f"{authority.source}: release.componentVersionFloors changed after validation."
         )
-    release["versionFloor"] = candidate.text
     temporary = authority.source.with_suffix(authority.source.suffix + ".tmp")
     temporary.write_text(
         json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
@@ -385,8 +457,7 @@ def advance_release_stack_minimum(
     return load_release_stack_authority(
         authority.source,
         expected_stack_id=authority.stack_id,
-        required_component=authority.components[0],
+        required_component=authority.component_id,
     )
-
 
 

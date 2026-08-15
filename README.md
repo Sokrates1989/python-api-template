@@ -395,8 +395,9 @@ Launch `quick-start.ps1` or `quick-start.sh`, verify the selected backend app,
 and press **`p` Production Release API Image** for `<version>` plus `latest`,
 or **`t` Production-Connected Test API Image** for `<version>-test` plus
 `latest-test`. These are the supported image publication paths. Both guided
-selectors start at the deployment-owned next minimum rather than the package's
-older version. Do not publish with raw Docker commands or CI/CD. See
+selectors start at the deployment-owned API component minimum rather than the
+package's older version. Publishing Web or a mobile app no longer consumes the
+same API version. Do not publish with raw Docker commands or CI/CD. See
 [`docs/PRODUCTION-IMAGE-BUILD.md`](docs/PRODUCTION-IMAGE-BUILD.md).
 
 ## ✨ Benefits

@@ -120,9 +120,10 @@ Press **`p` Production Release API Image** or **`t` Production-Connected Test
 API Image**. These keys select the publication channel directly; no later
 stable/test question appears.
 
-The publisher first resolves the deployment-owned **next minimum version**.
+The publisher first resolves the deployment-owned **API component minimum**.
 Guided choices mean: keep that minimum, minimum plus patch, minimum plus minor,
-or minimum plus major. They never start from an older package or test tag.
+or minimum plus major. They never start from an older package or test tag, and
+another component's publication cannot force an artificial API patch bump.
 Exact image input may intentionally be lower as an image-only override; that
 choice changes neither source nor the minimum. An exact value equal to or above
 the minimum follows the normal channel behavior. The resulting registry
@@ -131,19 +132,19 @@ evidence.
 
 Apps may opt into cross-repository coordination through
 `[tool.fe_wi.release_stack]` in their own `pyproject.toml`. The matching Swarm
-site profile is the single authority for the minimum version of the next
-release. The menu discovers it from the standard sibling workspace, or through
-`RELEASE_STACK_PROFILE_PATH` / `RELEASE_STACK_DEPLOYMENT_ROOT` overrides. An
-Both stable and test publication validate the same minimum. An equal candidate
-continues without rewriting it, and a higher candidate advances the deployment
-profile during the confirmed action. This mechanism is app-neutral and does
-not create API, test, Android, or Web version tracks.
+site profile is the single authority for component minimums. The menu discovers
+it from the standard sibling workspace, or through
+`RELEASE_STACK_PROFILE_PATH` / `RELEASE_STACK_DEPLOYMENT_ROOT` overrides. Both
+stable and test publication validate the API minimum. An equal candidate
+continues without rewriting it, and a higher candidate advances only the API
+entry during the confirmed action. Legacy profiles without component overrides
+continue using their shared compatibility floor.
 
 Press Enter at the default-yes confirmation to continue, or enter `n` to
 cancel. The menu then performs one ordered release:
 
-1. reconciles an enrolled candidate with the deployment-owned next-release
-   minimum and advances that profile only when required;
+1. reconciles an enrolled candidate with the deployment-owned API minimum and
+   advances that component only when required;
 2. for stable publication only, keeps the current manifest unchanged or
    updates it to the chosen non-override version;
 3. for a stable increment, creates a version-bump commit containing only the
@@ -168,11 +169,12 @@ nonzero and does not report a completed publication.
 
 ## Version coordination and deployment hand-off
 
-The Swarm site profile's compatibility field `release.versionFloor` stores the
-minimum version for the next release. It is not a desired deployed version and
-does not imply that every existing API, Web, Android, iOS, or legacy WebApp
-artifact already has that version. Stable and `-test` guided selectors share
-this one line. Source repositories do not maintain another copy.
+The Swarm site profile's `release.componentVersionFloors.api` value stores the
+API minimum. `release.versionFloor` remains the compatibility fallback when an
+API override is absent. Neither is a desired deployed version or an assertion
+about existing Web, Android, iOS, or legacy WebApp artifacts. Stable and
+`-test` API selectors share the API line; source repositories do not maintain
+another copy.
 
 After publication, choose the real published image tag in the Swarm image
 update menu. The deployment profile's `image.defaultVersion` is the deployment

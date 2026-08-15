@@ -58,11 +58,11 @@ class ApiReleaseStackBinding:
 
 @dataclass(frozen=True)
 class ApiReleaseStackDecision:
-    """Describe one API candidate relative to the shared minimum.
+    """Describe one API candidate relative to its component minimum.
 
     Attributes:
         binding: Source-owned stack identity.
-        authority: Deployment profile owning the shared minimum.
+        authority: Deployment profile owning the API component minimum.
         candidate: Selected API image version.
         minimum_update_required: Whether confirmed publication must advance
             the authority before building the image.
@@ -193,7 +193,7 @@ def evaluate_api_release_candidate(
 
     Raises:
         ReleaseStackAuthorityError: If membership, authority, or the candidate
-            is invalid, or if the candidate is below the shared minimum.
+            is invalid, or if the candidate is below the API minimum.
     """
 
     manifest = repository_root / "app" / "apps" / app_id / "pyproject.toml"
@@ -223,7 +223,7 @@ def evaluate_api_release_candidate(
 
 
 def advance_api_release_minimum(decision: ApiReleaseStackDecision | None) -> None:
-    """Advance the shared minimum for one confirmed API publication.
+    """Advance the API component minimum for one confirmed publication.
 
     Args:
         decision: Validated API decision, or ``None`` for an unenrolled app.
@@ -273,7 +273,7 @@ def _read_manual_candidate(
     reader: InputReader,
     writer: OutputWriter,
 ) -> StableVersion:
-    """Read a valid manual candidate at or above the shared minimum.
+    """Read a valid manual candidate at or above the API minimum.
 
     Args:
         minimum: Current lower bound.
@@ -369,7 +369,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--minimum-only",
         action="store_true",
         help=(
-            "Print the deployment-owned next minimum, or the candidate for an "
+            "Print the deployment-owned API minimum, or the candidate for an "
             "app without release-stack membership."
         ),
     )

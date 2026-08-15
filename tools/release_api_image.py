@@ -775,7 +775,7 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Publish an explicit lower image override without changing the "
-            "source package or deployment-owned next minimum."
+            "source package or deployment-owned API minimum."
         ),
     )
     publish_parser.add_argument(
@@ -806,7 +806,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if arguments.action == "publish":
             print("Build & Push performs these explicit effects:", flush=True)
             if arguments.allow_version_below_minimum:
-                print("  1. Keep source and the next minimum unchanged")
+                print("  1. Keep source and the API minimum unchanged")
             elif arguments.channel == TEST_CHANNEL:
                 print("  1. Keep source unchanged and publish a -test image")
             elif arguments.allow_current_version:

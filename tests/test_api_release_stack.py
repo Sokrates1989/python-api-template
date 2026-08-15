@@ -63,6 +63,12 @@ class ApiReleaseStackTests(unittest.TestCase):
                         "stackId": "sample_stack",
                         "versionPolicy": "monotonic-floor",
                         "versionFloor": "2.4.0",
+                        "componentVersionFloors": {
+                            "api": "2.4.0",
+                            "android": "2.5.0",
+                            "ios": "2.5.0",
+                            "web": "2.5.1",
+                        },
                         "components": ["api", "web", "android", "ios"],
                     },
                 },
@@ -124,6 +130,10 @@ class ApiReleaseStackTests(unittest.TestCase):
         advance_api_release_minimum(decision)
         payload = json.loads(self.authority_path.read_text(encoding="utf-8"))
         self.assertEqual(payload["release"]["versionFloor"], "2.4.0")
+        self.assertEqual(
+            payload["release"]["componentVersionFloors"]["api"],
+            "2.4.0",
+        )
 
     def test_higher_candidate_advances_only_authoritative_profile(self) -> None:
         """Advance the deployment minimum after a confirmed API release."""
@@ -140,7 +150,16 @@ class ApiReleaseStackTests(unittest.TestCase):
         advance_api_release_minimum(decision)
 
         payload = json.loads(self.authority_path.read_text(encoding="utf-8"))
-        self.assertEqual(payload["release"]["versionFloor"], "2.5.0")
+        self.assertEqual(payload["release"]["versionFloor"], "2.4.0")
+        self.assertEqual(
+            payload["release"]["componentVersionFloors"],
+            {
+                "api": "2.5.0",
+                "android": "2.5.0",
+                "ios": "2.5.0",
+                "web": "2.5.1",
+            },
+        )
 
     def test_selector_defaults_cover_both_mismatch_directions(self) -> None:
         """Default lower candidates upward and higher candidates to advance."""
