@@ -50,6 +50,8 @@ legacy_wellness_router = APIRouter(
 )
 router = APIRouter()
 
+_BACKUP_EXPORT_ROW_LIMIT = 20_001
+
 
 def get_service() -> FelixWellnessService:
     """Return the Felix wellness service."""
@@ -182,6 +184,35 @@ async def get_sync_bootstrap(
         current_user_id,
         diary_limit=diary_limit,
         checkin_limit=checkin_limit,
+    )
+    if result.get("status") != "success":
+        _raise_result_error(result)
+    return WellnessSyncBootstrapResponse(**result)
+
+
+@app_sync_router.get("/export")
+async def get_sync_export(
+    current_user_id: str = Depends(get_user_id_from_token),
+) -> WellnessSyncBootstrapResponse:
+    """Return a complete, bounded wellness snapshot for manual backups.
+
+    The extra row lets the client detect and reject a domain that exceeds the
+    portable backup contract's 20,000-row limit instead of silently truncating
+    user history. Normal synchronization keeps its smaller bootstrap limits.
+
+    Args:
+        current_user_id (str): Authenticated owner from the bearer token.
+
+    Returns:
+        WellnessSyncBootstrapResponse: Complete bounded wellness state.
+
+    Raises:
+        HTTPException: When the active provider cannot load the snapshot.
+    """
+    result = await get_service().get_sync_bootstrap(
+        current_user_id,
+        diary_limit=_BACKUP_EXPORT_ROW_LIMIT,
+        checkin_limit=_BACKUP_EXPORT_ROW_LIMIT,
     )
     if result.get("status") != "success":
         _raise_result_error(result)
