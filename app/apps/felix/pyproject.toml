@@ -10,7 +10,7 @@ component_id = "api"
 
 [project]
 name = "felix"
-version = "1.0.8"
+version = "1.1.1"
 description = "App-specific backend dependency manifest for the Felix backend."
 requires-python = ">=3.13,<3.14"
 dependencies = [
