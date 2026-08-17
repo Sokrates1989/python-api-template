@@ -1,9 +1,8 @@
-"""Resolve and update deployment-owned release-stack component minimums.
+"""Resolve and update deployment-owned release-stack version tracks.
 
-The Swarm deployment profile is the single authority for the minimum semantic
-version that each independently published stack component may use. Legacy
-profiles retain one shared fallback, while component-aware profiles can advance
-Web, Android, iOS, API, and other publishers independently.
+The Swarm deployment profile records the latest built version per component.
+Optional component tracks let related publishers share one semantic-version
+high-water mark while retaining enough history to identify lagging artifacts.
 """
 
 from __future__ import annotations
@@ -58,8 +57,11 @@ class ReleaseStackAuthority:
         source: Exact Swarm site-profile path.
         profile_id: Site-profile filename without its JSON suffix.
         stack_id: Stable cross-repository release identity.
-        component_id: Component whose minimum was selected.
-        minimum: Minimum version permitted for that component's next release.
+        component_id: Component whose release plan was selected.
+        component_version: Latest recorded version for the selected component.
+        minimum: Shared high-water mark for the selected component's track.
+        next_version: Lowest recommended version for its next distinct build.
+        version_track: Components sharing the selected semantic-version line.
         components: Complete set of coordinated component identifiers.
     """
 
@@ -67,8 +69,17 @@ class ReleaseStackAuthority:
     profile_id: str
     stack_id: str
     component_id: str
+    component_version: StableVersion
     minimum: StableVersion
+    next_version: StableVersion
+    version_track: tuple[str, ...]
     components: tuple[str, ...]
+
+
+def _next_patch(version: StableVersion) -> StableVersion:
+    """Return the next stable patch version."""
+
+    return StableVersion(version.major, version.minor, version.patch + 1)
 
 
 def _parse_component_version_floors(
@@ -118,6 +129,74 @@ def _parse_component_version_floors(
             field=f"release.componentVersionFloors.{component_id}",
         )
     return parsed
+
+
+def _resolve_component_version_track(
+    release: Mapping[str, Any],
+    components: tuple[str, ...],
+    component_id: str,
+    *,
+    component_floors_present: bool,
+    path: Path,
+) -> tuple[str, ...]:
+    """Resolve the component set sharing one semantic-version high-water mark.
+
+    Profiles without explicit tracks preserve their earlier behavior: a
+    component-floor map means independent lines, while the legacy single-floor
+    form remains one shared line.
+    """
+
+    raw_tracks = release.get("componentVersionTracks")
+    if raw_tracks is None:
+        return (component_id,) if component_floors_present else components
+    if not isinstance(raw_tracks, dict) or not raw_tracks:
+        raise ReleaseStackAuthorityError(
+            f"{path}: release.componentVersionTracks must be a non-empty object."
+        )
+    assigned: dict[str, str] = {}
+    selected_track: tuple[str, ...] | None = None
+    for track_id, raw_members in raw_tracks.items():
+        if not isinstance(track_id, str) or not _IDENTIFIER_PATTERN.fullmatch(track_id):
+            raise ReleaseStackAuthorityError(
+                f"{path}: release.componentVersionTracks contains an unsafe track ID."
+            )
+        if not isinstance(raw_members, list) or not raw_members:
+            raise ReleaseStackAuthorityError(
+                f"{path}: release.componentVersionTracks.{track_id} must be a "
+                "non-empty array."
+            )
+        members = tuple(str(item) for item in raw_members)
+        if len(members) != len(set(members)):
+            raise ReleaseStackAuthorityError(
+                f"{path}: release.componentVersionTracks.{track_id} "
+                "contains duplicates."
+            )
+        for member in members:
+            if member not in components:
+                raise ReleaseStackAuthorityError(
+                    f"{path}: release.componentVersionTracks.{track_id} contains "
+                    f"unknown component {member!r}."
+                )
+            previous = assigned.get(member)
+            if previous is not None:
+                raise ReleaseStackAuthorityError(
+                    f"{path}: release component {member!r} belongs to both "
+                    f"{previous!r} and {track_id!r}."
+                )
+            assigned[member] = track_id
+        if component_id in members:
+            selected_track = members
+    missing = sorted(set(components).difference(assigned))
+    if missing:
+        raise ReleaseStackAuthorityError(
+            f"{path}: release.componentVersionTracks omits components: "
+            + ", ".join(missing)
+        )
+    if selected_track is None:
+        raise ReleaseStackAuthorityError(
+            f"{path}: no release version track contains {component_id!r}."
+        )
+    return selected_track
 
 
 def parse_stable_version(value: str, *, field: str) -> StableVersion:
@@ -314,12 +393,28 @@ def load_release_stack_authority(
         components,
         path=path,
     )
+    version_track = _resolve_component_version_track(
+        release,
+        components,
+        required_component,
+        component_floors_present="componentVersionFloors" in release,
+        path=path,
+    )
+    component_version = component_floors.get(required_component, fallback_minimum)
+    track_versions = (
+        component_floors.get(component_id, fallback_minimum)
+        for component_id in version_track
+    )
+    shared_minimum = max(track_versions)
     return ReleaseStackAuthority(
         source=path.resolve(),
         profile_id=path.stem,
         stack_id=expected_stack_id,
         component_id=required_component,
-        minimum=component_floors.get(required_component, fallback_minimum),
+        component_version=component_version,
+        minimum=shared_minimum,
+        next_version=max(shared_minimum, _next_patch(component_version)),
+        version_track=version_track,
         components=components,
     )
 
@@ -421,16 +516,20 @@ def advance_release_stack_minimum(
             f"Candidate {candidate.text} is below the minimum version for the "
             f"next release ({authority.minimum.text})."
         )
-    if candidate == authority.minimum:
+    if candidate == authority.component_version:
         return authority
     current = load_release_stack_authority(
         authority.source,
         expected_stack_id=authority.stack_id,
         required_component=authority.component_id,
     )
-    if current.minimum != authority.minimum:
+    if (
+        current.minimum != authority.minimum
+        or current.component_version != authority.component_version
+        or current.version_track != authority.version_track
+    ):
         raise ReleaseStackAuthorityError(
-            f"{authority.source}: {authority.component_id} minimum changed after "
+            f"{authority.source}: {authority.component_id} version plan changed after "
             "validation; retry the release plan."
         )
     payload = _read_mapping(authority.source)
@@ -446,7 +545,8 @@ def advance_release_stack_minimum(
         component_floors[authority.component_id] = candidate.text
     else:
         raise ReleaseStackAuthorityError(
-            f"{authority.source}: release.componentVersionFloors changed after validation."
+            f"{authority.source}: release.componentVersionFloors changed "
+            "after validation."
         )
     temporary = authority.source.with_suffix(authority.source.suffix + ".tmp")
     temporary.write_text(
@@ -459,5 +559,3 @@ def advance_release_stack_minimum(
         expected_stack_id=authority.stack_id,
         required_component=authority.component_id,
     )
-
-

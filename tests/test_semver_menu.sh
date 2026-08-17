@@ -60,6 +60,15 @@ assert_floor_selection "f" "1.1.0"
 assert_floor_selection "m" "2.0.0"
 assert_floor_selection $'e\n1.0.8' "1.0.8"
 
+catch_up="$(
+    select_semver_version \
+        "1.1.2" "Catch-up" false "" "1.1.2" false "1.1.2" patch <<< ""
+)"
+if [ "$catch_up" != "1.1.2" ]; then
+    printf 'Expected patch to catch up at the shared baseline.\n' >&2
+    exit 1
+fi
+
 restricted="$(
     select_semver_version \
         "1.0.15" "Mobile-style" false "" "1.0.15" false \

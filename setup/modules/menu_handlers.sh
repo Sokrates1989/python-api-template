@@ -784,14 +784,16 @@ read_api_image_version_selection() {
 # Prompt for a production or test image version from the shared next minimum.
 #
 # Args:
-#   minimum_version: Deployment-owned next minimum.
+#   baseline_version: Shared release-track baseline and rebuild candidate.
+#   next_version: Lowest version for the next distinct API build.
 #   channel: stable or test.
 #
 # Current-minimum publication may intentionally replace the registry tag.
 # Exact lower image overrides remain possible without lowering the minimum.
 read_api_publish_version_selection() {
-    local minimum_version="${1:-0.1.0}"
-    local channel="${2:-stable}"
+    local baseline_version="${1:-0.1.0}"
+    local next_version="${2:-0.1.1}"
+    local channel="${3:-stable}"
     local subject="Production API image"
     local keep_note="; republish allowed"
 
@@ -800,8 +802,8 @@ read_api_publish_version_selection() {
         keep_note="; -test is added automatically"
     fi
     select_semver_version \
-        "$minimum_version" "$subject" false "$keep_note" \
-        "$minimum_version" true
+        "$baseline_version" "$subject" false "$keep_note" \
+        "$baseline_version" true "$next_version" patch
 }
 
 # Print the deployment-owned minimum for one selected API app.
@@ -831,6 +833,35 @@ run_api_release_stack_minimum() {
         --app "$app_id" \
         --candidate "$fallback_version" \
         --minimum-only
+}
+
+# Print the shared release baseline and selected API's next required version.
+#
+# Args:
+#   app_id: Selected backend application identifier.
+#   fallback_version: Manifest version for an app without stack membership.
+#
+# Returns:
+#   Prints "BASELINE NEXT_MINIMUM" for machine-readable Bash consumption.
+run_api_release_stack_plan() {
+    local app_id="$1"
+    local fallback_version="$2"
+    local python_command=""
+
+    if command -v python3 >/dev/null 2>&1; then
+        python_command="python3"
+    elif command -v python >/dev/null 2>&1; then
+        python_command="python"
+    else
+        echo "[ERROR] Python 3 is required for API release coordination." >&2
+        return 1
+    fi
+    "$python_command" \
+        "tools/api_release_stack.py" \
+        --repository-root "$(pwd)" \
+        --app "$app_id" \
+        --candidate "$fallback_version" \
+        --plan-only
 }
 
 # Run the standard-library selected-app API release tool.
@@ -921,7 +952,9 @@ handle_build_production_image() {
     local channel="${1:-stable}"
     local app_id="${ACTIVE_BACKEND_APP_ID:-demo_app}"
     local current_version
+    local baseline_version
     local minimum_version
+    local version_plan
     local tag_version
     local comparison
     local confirmation
@@ -940,8 +973,11 @@ handle_build_production_image() {
     fi
     echo ""
     echo "Selected app: ${app_id}"
-    minimum_version="$(run_api_release_stack_minimum "$app_id" "$current_version")" || return 1
+    version_plan="$(run_api_release_stack_plan "$app_id" "$current_version")" || return 1
+    read -r baseline_version minimum_version <<< "$version_plan"
+    [ -n "$baseline_version" ] && [ -n "$minimum_version" ] || return 1
     echo "Source package version: ${current_version}"
+    echo "Shared release baseline: ${baseline_version}"
     echo "Next minimum version: ${minimum_version}"
     echo ""
     echo "This explicit release action will:"
@@ -962,8 +998,11 @@ handle_build_production_image() {
     echo "Deployment evidence binds the resulting registry digest."
     echo "This action never deploys, never pushes Git, and never deploys latest."
 
-    tag_version="$(read_api_publish_version_selection "$minimum_version" "$channel")" || return 1
-    comparison="$(compare_semver "$tag_version" "$minimum_version")" || return 1
+    tag_version="$(
+        read_api_publish_version_selection \
+            "$baseline_version" "$minimum_version" "$channel"
+    )" || return 1
+    comparison="$(compare_semver "$tag_version" "$baseline_version")" || return 1
 
     echo ""
     publish_arguments=(
@@ -973,7 +1012,7 @@ handle_build_production_image() {
         --channel "$channel"
     )
     if [ "$comparison" = "-1" ]; then
-        echo "Image override: ${tag_version} (next minimum remains ${minimum_version})"
+        echo "Image override: ${tag_version} (shared baseline remains ${baseline_version})"
         publish_arguments+=(--allow-version-below-minimum)
     elif [ "$channel" = "test" ]; then
         echo "Test image version: ${tag_version}-test"
@@ -1217,14 +1256,15 @@ show_main_menu() {
           ${MENU_BUILD_BUMP_VERSION})
             version_app_id="${ACTIVE_BACKEND_APP_ID:-demo_app}"
             current_app_version="$(get_active_backend_package_version "$version_app_id" "0.1.0")"
-            minimum_app_version="$(
-                run_api_release_stack_minimum "$version_app_id" "$current_app_version"
+            version_plan="$(
+                run_api_release_stack_plan "$version_app_id" "$current_app_version"
             )" || exit_code=1
             if [ "$exit_code" -eq 0 ]; then
+                read -r baseline_app_version minimum_app_version <<< "$version_plan"
                 new_app_version="$(
                     select_semver_version \
-                        "$minimum_app_version" "API package" false "" \
-                        "$minimum_app_version" false
+                        "$baseline_app_version" "API package" false "" \
+                        "$baseline_app_version" false "$minimum_app_version" patch
                 )" || exit_code=1
             fi
             if [ "$exit_code" -eq 0 ]; then

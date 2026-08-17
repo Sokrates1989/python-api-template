@@ -170,11 +170,13 @@ nonzero and does not report a completed publication.
 ## Version coordination and deployment hand-off
 
 The Swarm site profile's `release.componentVersionFloors.api` value stores the
-API minimum. `release.versionFloor` remains the compatibility fallback when an
-API override is absent. Neither is a desired deployed version or an assertion
-about existing Web, Android, iOS, or legacy WebApp artifacts. Stable and
-`-test` API selectors share the API line; source repositories do not maintain
-another copy.
+last recorded API build version. `release.componentVersionTracks` may group it
+with Web, Android, and iOS: a lagging API catches up to that track's highest
+version, while an API already at the baseline advances to the next patch.
+`release.versionFloor` remains the compatibility fallback when an API history
+is absent. The legacy WebApp can remain on a separate track. Stable and `-test`
+selectors share the same history; source repositories do not maintain another
+copy.
 
 After publication, choose the real published image tag in the Swarm image
 update menu. The deployment profile's `image.defaultVersion` is the deployment

@@ -1,8 +1,8 @@
-"""Coordinate API image versions with a deployment-owned stack minimum.
+"""Coordinate API image versions with a deployment-owned version track.
 
 Backend apps opt in through ``[tool.fe_wi.release_stack]`` in their own
 ``pyproject.toml``. The selected Swarm site profile remains the only authority
-for the minimum version of the next independently published component.
+for the shared baseline and per-component build history.
 """
 
 from __future__ import annotations
@@ -87,7 +87,9 @@ class ApiReleaseStackDecision:
             "stackId": self.binding.stack_id,
             "componentId": self.binding.component_id,
             "candidateVersion": self.candidate.text,
-            "nextReleaseMinimum": self.authority.minimum.text,
+            "componentVersion": self.authority.component_version.text,
+            "sharedReleaseBaseline": self.authority.minimum.text,
+            "nextReleaseMinimum": self.authority.next_version.text,
             "minimumUpdateRequired": self.minimum_update_required,
             "minimumOverride": self.minimum_override,
             "authorityProfile": str(self.authority.source),
@@ -217,7 +219,10 @@ def evaluate_api_release_candidate(
         binding=binding,
         authority=authority,
         candidate=candidate,
-        minimum_update_required=candidate > authority.minimum,
+        minimum_update_required=(
+            candidate >= authority.minimum
+            and candidate > authority.component_version
+        ),
         minimum_override=candidate < authority.minimum,
     )
 
@@ -374,6 +379,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="Print the shared baseline and next API version separated by a space.",
+    )
+    parser.add_argument(
         "--allow-below-minimum",
         action="store_true",
         help="Permit an explicit image override without lowering the minimum.",
@@ -409,6 +419,17 @@ def main(
         binding = load_api_release_stack_binding(manifest)
         candidate = parse_stable_version(arguments.candidate, field="candidate version")
         if binding is None:
+            next_version = StableVersion(
+                candidate.major,
+                candidate.minor,
+                candidate.patch + 1,
+            )
+            if arguments.plan_only:
+                print(candidate.text, next_version.text)
+                return 0
+            if arguments.minimum_only:
+                print(next_version.text)
+                return 0
             print(candidate.text)
             return 0
         authority = resolve_release_stack_authority(
@@ -418,8 +439,11 @@ def main(
             component_id=binding.component_id,
             environment=active_environment,
         )
+        if arguments.plan_only:
+            print(authority.minimum.text, authority.next_version.text)
+            return 0
         if arguments.minimum_only:
-            print(authority.minimum.text)
+            print(authority.next_version.text)
             return 0
         if arguments.allow_below_minimum and candidate < authority.minimum:
             print(candidate.text)

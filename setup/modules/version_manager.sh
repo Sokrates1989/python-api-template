@@ -123,6 +123,8 @@ read_semver_menu_value() {
 #   $4: Optional text appended inside the keep-current parentheses.
 #   $5: Optional deployment-owned next minimum used for floor-aware labels.
 #   $6: true to permit an exact image override below that minimum.
+#   $7: Optional patch/next-version override for coordinated release tracks.
+#   $8: Optional default choice: keep (default) or patch.
 #
 # Returns:
 #   Writes only the selected version to stdout. Menus and errors use stderr.
@@ -136,6 +138,8 @@ select_semver_version() {
     local keep_note="${4:-}"
     local minimum_version="${5:-}"
     local allow_lower_override="${6:-false}"
+    local patch_override="${7:-}"
+    local default_choice="${8:-keep}"
     local patch_version=""
     local minor_version=""
     local major_version=""
@@ -143,6 +147,8 @@ select_semver_version() {
     local exact_version=""
     local comparison=""
     local keep_label="current"
+    local prompt_default="1/k"
+    local choice_default="1"
     local exact_label="Enter an exact semantic version"
     local exact_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
 
@@ -155,10 +161,25 @@ select_semver_version() {
             exact_label="Enter an exact image version (lower override keeps the minimum)"
         fi
     fi
-    patch_version="$(bump_semver "$current_version" patch)"
+    if [ -n "$patch_override" ]; then
+        keep_label="shared baseline"
+    fi
+    if [ "$default_choice" = "patch" ]; then
+        prompt_default="2/p"
+        choice_default="2"
+    elif [ "$default_choice" != "keep" ]; then
+        echo "Invalid semantic-version default choice: ${default_choice}" >&2
+        return 1
+    fi
+    if [ -n "$patch_override" ]; then
+        patch_version="$patch_override"
+    else
+        patch_version="$(bump_semver "$current_version" patch)"
+    fi
     minor_version="$(bump_semver "$current_version" minor)"
     major_version="$(bump_semver "$current_version" major)"
-    if [ -z "$patch_version" ] || [ -z "$minor_version" ] || [ -z "$major_version" ]; then
+    if [[ ! "$patch_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+        [ -z "$minor_version" ] || [ -z "$major_version" ]; then
         echo "Invalid current SemVer value: ${current_version}" >&2
         return 1
     fi
@@ -166,7 +187,10 @@ select_semver_version() {
     while true; do
         echo "" >&2
         echo "${subject} version options:" >&2
-        if [ -n "$minimum_version" ]; then
+        if [ -n "$patch_override" ]; then
+            echo "  Shared release baseline: ${current_version}" >&2
+            echo "  Next minimum version: ${patch_version}" >&2
+        elif [ -n "$minimum_version" ]; then
             echo "  Next minimum version: ${minimum_version}" >&2
         fi
         echo "  1/k) Keep ${keep_label} (${current_version}${keep_note})" >&2
@@ -175,9 +199,9 @@ select_semver_version() {
         echo "  4/m) Major (${current_version} -> ${major_version})" >&2
         echo "  5/e) ${exact_label}" >&2
         echo "" >&2
-        read_semver_menu_value "Choose ${subject} version [1/k]: " choice
+        read_semver_menu_value "Choose ${subject} version [${prompt_default}]: " choice
         choice="${choice,,}"
-        case "${choice:-1}" in
+        case "${choice:-$choice_default}" in
             1|k|keep|current) printf '%s\n' "$current_version"; return 0 ;;
             2|p|patch) printf '%s\n' "$patch_version"; return 0 ;;
             3|f|feature|minor) printf '%s\n' "$minor_version"; return 0 ;;
