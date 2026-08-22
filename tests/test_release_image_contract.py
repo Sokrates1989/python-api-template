@@ -24,6 +24,15 @@ class ReleaseImageContractTests(unittest.TestCase):
         self.assertIn('com.fe-wi.backend-app-id="${BACKEND_APP_ID}"', source)
         self.assertIn('com.fe-wi.app-profile="${APP_PROFILE}"', source)
 
+    def test_local_compose_binds_both_build_selectors_to_active_app(self) -> None:
+        source = (
+            REPOSITORY_ROOT / "local-deployment" / "base" / "api.compose.yml"
+        ).read_text(encoding="utf-8")
+
+        selected_app_argument = "${ACTIVE_BACKEND_APP_ID:-demo_app}"
+        self.assertIn(f"BACKEND_APP_ID: {selected_app_argument}", source)
+        self.assertIn(f"APP_PROFILE: {selected_app_argument}", source)
+
     def test_dockerfile_pins_pdm_and_declares_non_root_health_contract(self) -> None:
         source = (REPOSITORY_ROOT / "Dockerfile").read_text(encoding="utf-8")
 

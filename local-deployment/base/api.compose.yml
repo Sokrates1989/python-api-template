@@ -10,6 +10,7 @@ services:
       args:
         PYTHON_VERSION: ${PYTHON_VERSION}
         BACKEND_APP_ID: ${ACTIVE_BACKEND_APP_ID:-demo_app}
+        APP_PROFILE: ${ACTIVE_BACKEND_APP_ID:-demo_app}
         BACKEND_DATA_PROFILE: ${DB_TYPE}
     ports:
       - "${PORT}:8000"
